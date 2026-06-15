@@ -82,3 +82,9 @@ pnpm build
 npx wrangler d1 migrations apply energy-storage-platform --local
 pnpm dev
 ```
+
+## 管理端瘦身规则
+
+Cloudflare Worker 包里的 `admin-vue3/` 只保留移动储能项目需要的能源业务、系统基础、登录、首页和错误页。原 RuoYi Pro 的 BPM、商城、CRM、ERP、IoT、MES、WMS、公众号、支付、报表设计器等演示/通用业务模块已经移除。
+
+后续新增管理端功能时，优先放在 `admin-vue3/src/views/energy/` 和 `admin-vue3/src/api/energy/`，不要重新引入未使用的大模块；如果确实需要恢复某个模块，需要同步更新本文档和 `design-standards/09-cloudflare-deployment-standards.md`。

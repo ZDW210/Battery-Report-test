@@ -2,19 +2,26 @@
 
 ## 适用范围
 
-当项目部署到 Cloudflare Workers 时，后端运行模式按 Worker + D1 + R2 设计，不再依赖本地 MySQL，也不把 Java 后端作为线上运行服务。
+项目部署到 Cloudflare Workers 时，线上运行模式按 Worker + D1 + R2 设计，不依赖本地 MySQL，也不把 Java 后端作为线上运行服务。
 
 ## 目录约束
 
 Cloudflare 部署相关内容统一放在 `cloudflare-worker-package/` 内：
 
-- Worker 入口：`worker/src/`
+- Worker 入口：`worker/`
 - D1 迁移：`migrations/`
 - 管理端源码：`admin-vue3/`
 - 小程序板块：`wechat-miniprogram-section/`
 - 部署说明：`README.md`
 
 不要把 Cloudflare 部署脚本散放到 `current/`、桌面或其它临时目录。
+
+## 管理端瘦身规则
+
+- `admin-vue3/` 只保留移动储能项目需要的能源业务、系统基础、登录、首页和错误页。
+- 不保留原 RuoYi Pro 的 BPM、商城、CRM、ERP、IoT、MES、WMS、公众号、支付、报表设计器等演示/通用业务模块。
+- 新增管理端页面优先放入 `admin-vue3/src/views/energy/`，新增接口封装优先放入 `admin-vue3/src/api/energy/`。
+- 如果后续确实要恢复被移除的大模块，必须说明业务原因、评估 Cloudflare 构建耗时影响，并同步更新 `README.md`、`docs/cloudflare-worker-d1-r2.md` 和本文档。
 
 ## D1 规则
 
