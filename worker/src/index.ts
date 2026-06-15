@@ -36,6 +36,11 @@ const PRICING_RULE_FEE_COLUMNS: Record<string, string> = {
   battery_depreciation_cost: 'REAL NOT NULL DEFAULT 0',
   other_fixed_fee: 'REAL NOT NULL DEFAULT 0'
 }
+const DEVICE_FIELDS = [
+  'deviceNo', 'deviceName', 'deviceType', 'gatewaySn', 'meterSn', 'meterNo', 'customerId', 'projectId', 'status',
+  'runMode', 'latitude', 'longitude', 'lastSoc', 'lastSoh', 'lastPower', 'lastVoltage', 'lastCurrent', 'lastTemp',
+  'lastReadingTime', 'remark'
+]
 
 const ENERGY_MENUS = [
   menu(1002, 0, '数据面板', '/energy/telemetry', 'energy/telemetry/index', 'EnergyTelemetry', 'ep:trend-charts', 1),
@@ -476,11 +481,19 @@ async function deviceApi(request: Request, url: URL, env: Env, path: string) {
     const body = await readJson(request)
     return ok({ controlLogId: Date.now(), success: true, message: `已记录 ${body.method || 'CONTROL'} 指令，等待设备网关执行` })
   }
-  return crud(request, url, env, 'energy_device', [
-    'deviceNo', 'deviceName', 'deviceType', 'gatewaySn', 'meterSn', 'meterNo', 'customerId', 'projectId', 'status',
-    'runMode', 'latitude', 'longitude', 'lastSoc', 'lastSoh', 'lastPower', 'lastVoltage', 'lastCurrent', 'lastTemp',
-    'lastReadingTime', 'remark'
-  ])
+  if (path === '/energy/device/create' && request.method === 'POST') {
+    const body = await readJson(request)
+    const validation = await validateDeviceUnique(env, body)
+    if (validation) return validation
+    return createRowFromBody(body, env, 'energy_device', DEVICE_FIELDS)
+  }
+  if (path === '/energy/device/update' && request.method === 'PUT') {
+    const body = await readJson(request)
+    const validation = await validateDeviceUnique(env, body, Number(body.id))
+    if (validation) return validation
+    return updateRowFromBody(body, env, 'energy_device', DEVICE_FIELDS)
+  }
+  return crud(request, url, env, 'energy_device', DEVICE_FIELDS)
 }
 
 async function alarmApi(request: Request, url: URL, env: Env, path: string) {
@@ -610,7 +623,10 @@ async function getById(url: URL, env: Env, table: string) {
 }
 
 async function createRow(request: Request, env: Env, table: string, fields: string[]) {
-  const body = await readJson(request)
+  return createRowFromBody(await readJson(request), env, table, fields)
+}
+
+async function createRowFromBody(body: AnyRecord, env: Env, table: string, fields: string[]) {
   const dbFields = fields.map(snake).filter((field) => body[camelKey(field)] !== undefined)
   const values = dbFields.map((field) => body[camelKey(field)])
   const sql = `INSERT INTO ${table}(${dbFields.join(',')}, create_time) VALUES (${dbFields.map(() => '?').join(',')}, ?) RETURNING id`
@@ -619,12 +635,36 @@ async function createRow(request: Request, env: Env, table: string, fields: stri
 }
 
 async function updateRow(request: Request, env: Env, table: string, fields: string[]) {
-  const body = await readJson(request)
+  return updateRowFromBody(await readJson(request), env, table, fields)
+}
+
+async function updateRowFromBody(body: AnyRecord, env: Env, table: string, fields: string[]) {
   const dbFields = fields.map(snake).filter((field) => body[camelKey(field)] !== undefined)
   const values = dbFields.map((field) => body[camelKey(field)])
   const sql = `UPDATE ${table} SET ${dbFields.map((field) => `${field} = ?`).join(', ')}, update_time = ? WHERE id = ?`
   await env.DB.prepare(sql).bind(...values, nowText(), body.id).run()
   return ok(true)
+}
+
+async function validateDeviceUnique(env: Env, body: AnyRecord, id?: number) {
+  const currentId = Number.isFinite(id) && id ? id : null
+  const deviceNo = cleanText(body.deviceNo)
+  const meterNo = cleanText(body.meterNo)
+  if (deviceNo) {
+    body.deviceNo = deviceNo
+    const row = await env.DB.prepare('SELECT id FROM energy_device WHERE device_no = ? AND (? IS NULL OR id <> ?) LIMIT 1')
+      .bind(deviceNo, currentId, currentId)
+      .first<AnyRecord>()
+    if (row) return fail('设备编码已存在，请更换后再保存', 400)
+  }
+  if (meterNo) {
+    body.meterNo = meterNo
+    const row = await env.DB.prepare('SELECT id FROM energy_device WHERE meter_no = ? AND (? IS NULL OR id <> ?) LIMIT 1')
+      .bind(meterNo, currentId, currentId)
+      .first<AnyRecord>()
+    if (row) return fail('仪表编号已存在，请更换后再保存', 400)
+  }
+  return null
 }
 
 async function deleteRow(url: URL, env: Env, table: string) {
@@ -760,6 +800,10 @@ function nowText() {
 function num(value: string | null, fallback: number) {
   const parsed = Number(value)
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
+}
+
+function cleanText(value: unknown) {
+  return typeof value === 'string' ? value.trim() : ''
 }
 
 async function scalar(env: Env, sql: string, args: any[]) {
