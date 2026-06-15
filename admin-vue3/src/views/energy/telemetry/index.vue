@@ -22,8 +22,8 @@
         <section class="bill-report-panel">
           <div class="bill-report-panel__header">
             <div>
-              <h2>数据面板 · 用电量报表</h2>
-              <span>按电表遥测、充放电任务和计费规则汇总，未接入参数保持待录入状态</span>
+              <h2>用电量汇总报表</h2>
+              <span>默认汇总全部电表，可切换为按场站汇总或查看单个电表；未接入的成本参数会标记为待录入。</span>
             </div>
             <el-button type="primary" :loading="billLoading" @click="loadBillReport">
               <Icon class="mr-5px" icon="ep:refresh" />
@@ -31,8 +31,31 @@
             </el-button>
           </div>
 
-          <el-form :inline="true" :model="billQuery" class="telemetry-form" label-width="84px">
-            <el-form-item label="电表">
+          <el-form :inline="true" :model="billQuery" class="telemetry-form bill-report__filters" label-width="84px">
+            <el-form-item label="统计范围">
+              <el-radio-group v-model="billQuery.scopeType" @change="handleBillScopeChange">
+                <el-radio-button label="all">全部电表</el-radio-button>
+                <el-radio-button label="project">按场站</el-radio-button>
+                <el-radio-button label="device">单个电表</el-radio-button>
+              </el-radio-group>
+            </el-form-item>
+            <el-form-item v-if="billQuery.scopeType === 'project'" label="场站">
+              <el-select
+                v-model="billQuery.projectId"
+                filterable
+                placeholder="请选择场站"
+                class="!w-260px"
+                @change="loadBillReport"
+              >
+                <el-option
+                  v-for="item in billProjectOptions"
+                  :key="item.value"
+                  :label="item.label"
+                  :value="item.value"
+                />
+              </el-select>
+            </el-form-item>
+            <el-form-item v-if="billQuery.scopeType === 'device'" label="电表">
               <el-select
                 v-model="billQuery.deviceId"
                 filterable
@@ -59,13 +82,18 @@
             </el-form-item>
           </el-form>
 
-          <el-empty v-if="!billQuery.deviceId" description="请先选择电表" />
+          <el-empty v-if="selectedBillDevices.length === 0" description="当前范围下暂无电表数据" />
           <div v-else v-loading="billLoading" class="bill-report">
+            <div class="bill-report__scope-summary">
+              <strong>{{ billScopeTitle }}</strong>
+              <span>共 {{ selectedBillDevices.length }} 块电表，账单月份 {{ billQuery.billMonth }}</span>
+            </div>
             <div class="bill-report__kpis">
               <div v-for="item in billTopCards" :key="item.label" class="bill-report__kpi">
                 <div>
                   <span>{{ item.label }}</span>
                   <strong>{{ item.value }}</strong>
+                  <small>{{ item.hint }}</small>
                 </div>
                 <Icon :icon="item.icon" :size="42" :style="{ color: item.color }" />
               </div>
@@ -73,7 +101,7 @@
 
             <div class="bill-report__grid">
               <section class="bill-report__section bill-report__section--tall">
-                <h3>① 电量统计（核心）</h3>
+                <h3>① 电量汇总</h3>
                 <div class="bill-report__list">
                   <div v-for="item in energyStatRows" :key="item.label">
                     <span>{{ item.label }}</span>
@@ -84,7 +112,7 @@
               </section>
 
               <section class="bill-report__section">
-                <h3>② 电费成本</h3>
+                <h3>② 购电成本</h3>
                 <el-table :data="costRows" size="small">
                   <el-table-column label="时段" prop="period" min-width="90" />
                   <el-table-column label="电量(kWh)" prop="energy" align="right" width="110" />
@@ -99,7 +127,7 @@
               </section>
 
               <section class="bill-report__section">
-                <h3>③ 充电收益</h3>
+                <h3>③ 售电收入</h3>
                 <div class="bill-report__split">
                   <div class="bill-report__list">
                     <div v-for="item in revenueRows" :key="item.label">
@@ -112,8 +140,8 @@
               </section>
 
               <section class="bill-report__section">
-                <h3>④ 利润分析</h3>
-                <p class="bill-report__formula">收益公式：利润 = 售电收入 - 购电成本 - 运营成本</p>
+                <h3>④ 利润测算</h3>
+                <p class="bill-report__formula">毛利润 = 售电收入 - 购电成本；场地费、运维费等录入后再计入净利润。</p>
                 <div class="bill-report__profit">
                   <div v-for="item in profitRows" :key="item.label">
                     <span>{{ item.label }}</span>
@@ -124,14 +152,14 @@
               </section>
 
               <section class="bill-report__section">
-                <h3>⑤ 电池收益分析</h3>
+                <h3>⑤ 储能利用情况</h3>
                 <div class="bill-report__battery">
                   <div v-for="item in batteryRows" :key="item.label">
                     <span>{{ item.label }}</span>
                     <strong>{{ item.value }}</strong>
                   </div>
                 </div>
-                <div class="bill-report__chart-title">电量曲线（EPI）</div>
+                <div class="bill-report__chart-title">电表正向有功电能曲线（EPI）</div>
                 <Echart :options="energyLineOptions" height="210px" />
               </section>
             </div>
@@ -751,6 +779,7 @@ defineOptions({ name: 'EnergyTelemetry' })
 
 type MetricKey = 'pa' | 'pb' | 'pc' | 'p' | 'ua' | 'ub' | 'uc' | 'ia' | 'ib' | 'ic' | 'pf' | 'epi'
 type MetricGroupValue = 'activePower' | 'phaseVoltage' | 'phaseCurrent' | 'powerFactor' | 'energy'
+type BillScopeType = 'all' | 'project' | 'device'
 type MetricField = { key: MetricKey; label: string; unit: string }
 type RealtimeCard = { title: string; items: Array<{ label: string; value: string }> }
 type DetailRow = { time: string } & Partial<Record<MetricKey, number | null>>
@@ -871,9 +900,13 @@ const detailQuery = reactive<{
 })
 
 const billQuery = reactive<{
+  scopeType: BillScopeType
+  projectId?: number
   deviceId?: number
   billMonth: string
 }>({
+  scopeType: 'all',
+  projectId: undefined,
   deviceId: undefined,
   billMonth: dayjs().format('YYYY-MM')
 })
@@ -946,7 +979,8 @@ const statusCounts = computed(() => {
     normal: source.filter((item) => item.status === 0).length,
     offline: source.filter((item) => item.status === 1).length,
     fault: source.filter((item) => item.status === 2).length,
-    maintenance: source.filter((item) => item.status === 3).length
+    maintenance: source.filter((item) => item.status === 3).length,
+    alarm: source.filter((item) => item.status === 3).length
   }
 })
 
@@ -1056,36 +1090,92 @@ const statCards = computed(() => [
   }
 ])
 
+const billProjectOptions = computed(() => {
+  const map = new Map<number, string>()
+  devices.value.forEach((device) => {
+    const projectId = normalizeNumber(device.projectId)
+    if (projectId === null) {
+      return
+    }
+    map.set(projectId, device.projectName || `场站 ${projectId}`)
+  })
+  return Array.from(map.entries()).map(([value, label]) => ({ value, label }))
+})
+
+const selectedBillDevices = computed(() => {
+  if (billQuery.scopeType === 'device') {
+    return devices.value.filter((device) => Number(device.id) === Number(billQuery.deviceId))
+  }
+  if (billQuery.scopeType === 'project') {
+    return devices.value.filter((device) => Number(device.projectId) === Number(billQuery.projectId))
+  }
+  return devices.value
+})
+
+const selectedBillDeviceIds = computed(() => {
+  return new Set(selectedBillDevices.value.map((device) => Number(device.id)).filter((id) => Number.isFinite(id)))
+})
+
+const billScopeTitle = computed(() => {
+  if (billQuery.scopeType === 'device') {
+    const device = selectedBillDevices.value[0]
+    return device?.deviceName || device?.deviceNo || '单个电表'
+  }
+  if (billQuery.scopeType === 'project') {
+    return billProjectOptions.value.find((item) => Number(item.value) === Number(billQuery.projectId))?.label || '场站汇总'
+  }
+  return '全部电表汇总'
+})
+
+const scopedBillTelemetryRows = computed(() => {
+  const deviceIds = selectedBillDeviceIds.value
+  if (billQuery.scopeType === 'all') {
+    return billTelemetryRows.value
+  }
+  return billTelemetryRows.value.filter((item) => deviceIds.has(Number(item.deviceId)))
+})
+
 const sortedBillTelemetry = computed(() => {
-  return [...billTelemetryRows.value]
+  return [...scopedBillTelemetryRows.value]
     .filter((item) => item.collectTime)
     .sort((a, b) => dayjs(a.collectTime as string).valueOf() - dayjs(b.collectTime as string).valueOf())
 })
 
-const startEpi = computed(() => firstNumber(sortedBillTelemetry.value.map((item) => normalizeNumber(item.epi))))
-const endEpi = computed(() => lastNumber(sortedBillTelemetry.value.map((item) => normalizeNumber(item.epi))))
+const startEpi = computed(() => calculateEpiBoundary(sortedBillTelemetry.value, 'start'))
+const endEpi = computed(() => calculateEpiBoundary(sortedBillTelemetry.value, 'end'))
 const epiDelta = computed(() => {
-  if (startEpi.value === null || endEpi.value === null) return 0
-  return Math.max(0, Number((endEpi.value - startEpi.value).toFixed(2)))
+  const groups = groupTelemetryByDevice(sortedBillTelemetry.value)
+  let total = 0
+  groups.forEach((rows) => {
+    const start = firstNumber(rows.map((item) => normalizeNumber(item.epi)))
+    const end = lastNumber(rows.map((item) => normalizeNumber(item.epi)))
+    if (start !== null && end !== null) {
+      total += Math.max(0, end - start)
+    }
+  })
+  return Number(total.toFixed(2))
 })
 
 const billSessions = computed(() => {
   const start = dayjs(billRange.value.start).valueOf()
   const end = dayjs(billRange.value.end).valueOf()
+  const deviceIds = selectedBillDeviceIds.value
   return chargeSessionRows.value.filter((item) => {
     const time = dayjs(item.startTime || item.createTime).valueOf()
-    return Number(item.deviceId) === Number(billQuery.deviceId) && time >= start && time <= end
+    return deviceIds.has(Number(item.deviceId)) && time >= start && time <= end
   })
 })
 
-const billDevice = computed(() => devices.value.find((item) => Number(item.id) === Number(billQuery.deviceId)))
 const applicablePricingRules = computed(() => {
-  const device = billDevice.value
+  const selectedDevices = selectedBillDevices.value
+  const deviceIds = selectedBillDeviceIds.value
+  const selectedProjectIds = new Set(selectedDevices.map((device) => Number(device.projectId)).filter((id) => Number.isFinite(id)))
+  const selectedCustomerIds = new Set(selectedDevices.map((device) => Number(device.customerId)).filter((id) => Number.isFinite(id)))
   return pricingRuleRows.value.filter((rule) => {
     if (Number(rule.status) !== 0) return false
-    if (rule.deviceId) return Number(rule.deviceId) === Number(billQuery.deviceId)
-    if (rule.projectId && device?.projectId) return Number(rule.projectId) === Number(device.projectId)
-    if (rule.customerId && device?.customerId) return Number(rule.customerId) === Number(device.customerId)
+    if (rule.deviceId) return deviceIds.has(Number(rule.deviceId))
+    if (rule.projectId) return selectedProjectIds.has(Number(rule.projectId))
+    if (rule.customerId) return selectedCustomerIds.has(Number(rule.customerId))
     return !rule.deviceId && !rule.projectId && !rule.customerId
   })
 })
@@ -1109,18 +1199,42 @@ const batteryEfficiencyText = computed(() => {
 })
 
 const billTopCards = computed(() => [
-  { label: '本月购电', value: formatKwh(monthlyPurchasedEnergy.value), icon: 'ep:connection', color: '#2088d8' },
-  { label: '本月售电', value: formatKwh(monthlySoldEnergy.value), icon: 'ep:truck', color: '#0ea5a4' },
-  { label: '本月收益', value: formatCurrency(monthlyRevenue.value), icon: 'ep:money', color: '#16a34a' },
-  { label: '本月利润', value: finalProfitText.value, icon: 'ep:trophy', color: '#f59e0b' }
+  {
+    label: '购电量合计',
+    value: formatKwh(monthlyPurchasedEnergy.value),
+    hint: '优先统计充电任务；缺失时按 EPI 增量估算',
+    icon: 'ep:connection',
+    color: '#2088d8'
+  },
+  {
+    label: '售电量合计',
+    value: formatKwh(monthlySoldEnergy.value),
+    hint: '来自已记录的放电任务电量',
+    icon: 'ep:truck',
+    color: '#0ea5a4'
+  },
+  {
+    label: '售电收入合计',
+    value: formatCurrency(monthlyRevenue.value),
+    hint: '来自放电任务费用合计',
+    icon: 'ep:money',
+    color: '#16a34a'
+  },
+  {
+    label: '毛利润测算',
+    value: finalProfitText.value,
+    hint: '售电收入减购电成本，其他费用待录入',
+    icon: 'ep:trophy',
+    color: '#f59e0b'
+  }
 ])
 
 const energyStatRows = computed(() => [
-  { label: '期初电量', value: formatNullableKwh(startEpi.value) },
-  { label: '期末电量', value: formatNullableKwh(endEpi.value) },
-  { label: '本期充电量', value: formatKwh(monthlyPurchasedEnergy.value) },
-  { label: '本期放电量', value: formatKwh(monthlySoldEnergy.value) },
-  { label: '自耗电量', value: formatKwh(Math.max(0, monthlyPurchasedEnergy.value - monthlySoldEnergy.value)) },
+  { label: '期初累计电能', value: formatNullableKwh(startEpi.value) },
+  { label: '期末累计电能', value: formatNullableKwh(endEpi.value) },
+  { label: '充电量合计', value: formatKwh(monthlyPurchasedEnergy.value) },
+  { label: '放电量合计', value: formatKwh(monthlySoldEnergy.value) },
+  { label: '未售出/自耗电量', value: formatKwh(Math.max(0, monthlyPurchasedEnergy.value - monthlySoldEnergy.value)) },
   { label: '充放电效率', value: batteryEfficiencyText.value },
   { label: '损耗电量', value: formatKwh(Math.max(0, monthlyPurchasedEnergy.value - monthlySoldEnergy.value)) },
   { label: '峰电量', value: '待录入分时' },
@@ -1148,11 +1262,11 @@ const costRows = computed(() => {
 })
 
 const revenueRows = computed(() => [
-  { label: '服务车辆数', value: '待接入车辆' },
-  { label: '充电订单数', value: billSessions.value.length },
-  { label: '售电量', value: formatKwh(monthlySoldEnergy.value) },
-  { label: '平均售电价', value: averageSellRate.value > 0 ? `${averageSellRate.value.toFixed(2)} 元/kWh` : '待录入' },
-  { label: '售电收入', value: formatCurrency(monthlyRevenue.value) }
+  { label: '服务车辆数（待接入）', value: '待接入车辆' },
+  { label: '任务记录数', value: billSessions.value.length },
+  { label: '售电量合计', value: formatKwh(monthlySoldEnergy.value) },
+  { label: '平均售电单价', value: averageSellRate.value > 0 ? `${averageSellRate.value.toFixed(2)} 元/kWh` : '待录入' },
+  { label: '售电收入合计', value: formatCurrency(monthlyRevenue.value) }
 ])
 
 const profitRows = computed(() => [
@@ -1170,8 +1284,8 @@ const finalProfitText = computed(() => {
 })
 
 const batteryRows = computed(() => [
-  { label: '充电量', value: formatKwh(monthlyPurchasedEnergy.value) },
-  { label: '放电量', value: formatKwh(monthlySoldEnergy.value) },
+  { label: '充电量合计', value: formatKwh(monthlyPurchasedEnergy.value) },
+  { label: '放电量合计', value: formatKwh(monthlySoldEnergy.value) },
   { label: '循环次数', value: '待录入容量' },
   { label: '当月任务次数', value: `${billSessions.value.length} 次` },
   { label: '电池效率', value: batteryEfficiencyText.value },
@@ -1215,20 +1329,35 @@ const revenueBarOptions = computed<EChartsOption>(() => {
   }
 })
 
+const billEnergyLineRows = computed(() => {
+  const map = new Map<string, number>()
+  sortedBillTelemetry.value.forEach((item) => {
+    const time = formatAxisTime(item.collectTime)
+    const value = normalizeNumber(item.epi)
+    if (!time || value === null) {
+      return
+    }
+    map.set(time, (map.get(time) || 0) + value)
+  })
+  return Array.from(map.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([time, value]) => ({ time, value: Number(value.toFixed(2)) }))
+})
+
 const energyLineOptions = computed<EChartsOption>(() => ({
   color: ['#2088d8'],
   tooltip: { trigger: 'axis' },
   grid: { left: 44, right: 16, top: 24, bottom: 32 },
-  xAxis: { type: 'category', data: sortedBillTelemetry.value.map((item) => formatAxisTime(item.collectTime)) },
+  xAxis: { type: 'category', data: billEnergyLineRows.value.map((item) => item.time) },
   yAxis: { type: 'value', name: 'kWh' },
   series: [
     {
-      name: 'EPI',
+      name: billQuery.scopeType === 'device' ? 'EPI' : 'EPI 合计',
       type: 'line',
       smooth: true,
       showSymbol: false,
       areaStyle: { opacity: 0.16 },
-      data: sortedBillTelemetry.value.map((item) => normalizeNumber(item.epi))
+      data: billEnergyLineRows.value.map((item) => item.value)
     }
   ]
 }))
@@ -1397,10 +1526,10 @@ const loadDevices = async () => {
     devices.value = data?.list || []
     if (!selectedDeviceId.value && devices.value[0]?.id) {
       selectedDeviceId.value = devices.value[0].id
-      billQuery.deviceId = devices.value[0].id
       trendQuery.deviceId = devices.value[0].id
       detailQuery.deviceId = devices.value[0].id
     }
+    ensureBillScopeSelection()
   } catch (error) {
     message.error('电表数据加载失败，请检查后端服务和登录状态')
   } finally {
@@ -1429,7 +1558,8 @@ const loadLatestTelemetry = async () => {
 }
 
 const loadBillReport = async () => {
-  if (!billQuery.deviceId || !billQuery.billMonth) {
+  ensureBillScopeSelection()
+  if (!billQuery.billMonth || selectedBillDevices.value.length === 0) {
     billTelemetryRows.value = []
     chargeSessionRows.value = []
     pricingRuleRows.value = []
@@ -1437,14 +1567,17 @@ const loadBillReport = async () => {
   }
   billLoading.value = true
   try {
+    const telemetryParams: Record<string, unknown> = {
+      collectTime: [billRange.value.start, billRange.value.end],
+      limit: 5000
+    }
+    if (billQuery.scopeType === 'device' && billQuery.deviceId) {
+      telemetryParams.deviceId = billQuery.deviceId
+    }
     const [telemetryRows, chargeSessions, pricingRules] = await Promise.all([
-      EnergyTelemetryApi.getTelemetryChart({
-        deviceId: billQuery.deviceId,
-        collectTime: [billRange.value.start, billRange.value.end],
-        limit: 1200
-      }),
-      EnergyChargeSessionApi.getChargeSessionPage({ pageNo: 1, pageSize: 1000, deviceId: billQuery.deviceId }),
-      EnergyPricingRuleApi.getPricingRulePage({ pageNo: 1, pageSize: 1000, deviceId: billQuery.deviceId })
+      EnergyTelemetryApi.getTelemetryChart(telemetryParams),
+      EnergyChargeSessionApi.getChargeSessionPage({ pageNo: 1, pageSize: 5000 }),
+      EnergyPricingRuleApi.getPricingRulePage({ pageNo: 1, pageSize: 5000 })
     ])
     billTelemetryRows.value = telemetryRows || []
     chargeSessionRows.value = chargeSessions?.list || []
@@ -1565,10 +1698,17 @@ const loadAll = async () => {
 
 const selectDevice = async (device: EnergyDeviceVO) => {
   selectedDeviceId.value = device.id
-  billQuery.deviceId = device.id
+  if (billQuery.scopeType === 'device') {
+    billQuery.deviceId = device.id
+  }
   trendQuery.deviceId = device.id
   detailQuery.deviceId = device.id
   await Promise.all([loadLatestTelemetry(), loadBillReport(), loadTrendData(), loadDetailData()])
+}
+
+const handleBillScopeChange = async () => {
+  ensureBillScopeSelection()
+  await loadBillReport()
 }
 
 const handleBillDeviceChange = async (deviceId?: number) => {
@@ -1616,6 +1756,26 @@ const getMetricGroup = (value: MetricGroupValue) => {
 
 const getDeviceOptionLabel = (device: EnergyDeviceVO) => {
   return `${device.deviceName || device.deviceNo || '未命名电表'} / ${device.meterNo || device.gatewaySn || '-'}`
+}
+
+const ensureBillScopeSelection = () => {
+  if (billQuery.scopeType === 'all') {
+    billQuery.projectId = undefined
+    billQuery.deviceId = undefined
+    return
+  }
+  if (billQuery.scopeType === 'project') {
+    billQuery.deviceId = undefined
+    const hasProject = billProjectOptions.value.some((item) => Number(item.value) === Number(billQuery.projectId))
+    if (!hasProject) {
+      billQuery.projectId = billProjectOptions.value[0]?.value
+    }
+    return
+  }
+  const hasDevice = devices.value.some((device) => Number(device.id) === Number(billQuery.deviceId))
+  if (!hasDevice) {
+    billQuery.deviceId = devices.value[0]?.id
+  }
 }
 
 const isDeviceInSelectedNode = (device: EnergyDeviceVO, selectedNode: string) => {
@@ -1740,6 +1900,39 @@ const averageNumber = (values: Array<number | null>) => {
 
 const firstNumber = (values: Array<number | null>) => values.find((value) => value !== null) ?? null
 const lastNumber = (values: Array<number | null>) => [...values].reverse().find((value) => value !== null) ?? null
+
+const groupTelemetryByDevice = (rows: EnergyTelemetryVO[]) => {
+  const groups = new Map<number, EnergyTelemetryVO[]>()
+  rows.forEach((row) => {
+    const deviceId = normalizeNumber(row.deviceId)
+    if (deviceId === null) {
+      return
+    }
+    if (!groups.has(deviceId)) {
+      groups.set(deviceId, [])
+    }
+    groups.get(deviceId)!.push(row)
+  })
+  groups.forEach((items) => {
+    items.sort((a, b) => dayjs(a.collectTime as string).valueOf() - dayjs(b.collectTime as string).valueOf())
+  })
+  return groups
+}
+
+const calculateEpiBoundary = (rows: EnergyTelemetryVO[], boundary: 'start' | 'end') => {
+  const groups = groupTelemetryByDevice(rows)
+  let total = 0
+  let hasValue = false
+  groups.forEach((items) => {
+    const values = items.map((item) => normalizeNumber(item.epi))
+    const value = boundary === 'start' ? firstNumber(values) : lastNumber(values)
+    if (value !== null) {
+      total += value
+      hasValue = true
+    }
+  })
+  return hasValue ? Number(total.toFixed(2)) : null
+}
 
 const sumBy = <T extends Record<string, any>>(rows: T[], key: keyof T) => {
   return rows.reduce((sum, item) => sum + Number(item[key] || 0), 0)
@@ -2331,12 +2524,47 @@ onMounted(() => {
 
     span {
       color: #64748b;
-      font-size: 13px;
+      font-size: 14px;
+      line-height: 20px;
     }
   }
 }
 
 .bill-report {
+  &__filters {
+    margin-bottom: 12px;
+    padding: 12px 12px 0;
+    background: #ffffff;
+    border: 1px solid #e5edf6;
+    border-radius: 8px;
+  }
+
+  &__scope-summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 12px;
+    padding: 12px 14px;
+    background: #eaf4ff;
+    border: 1px solid #d8e7f5;
+    border-radius: 8px;
+
+    strong {
+      color: #0f172a;
+      font-size: 18px;
+      font-weight: 800;
+      line-height: 24px;
+    }
+
+    span {
+      color: #334155;
+      font-size: 14px;
+      font-weight: 600;
+      line-height: 20px;
+    }
+  }
+
   &__kpis {
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -2359,7 +2587,8 @@ onMounted(() => {
     box-shadow: 0 8px 22px rgba(15, 23, 42, 0.06);
 
     span,
-    strong {
+    strong,
+    small {
       display: block;
     }
 
@@ -2370,12 +2599,20 @@ onMounted(() => {
     }
 
     strong {
-      margin-top: 12px;
+      margin-top: 10px;
       color: #000000;
-      font-size: 30px;
+      font-size: 28px;
       font-weight: 800;
-      line-height: 36px;
+      line-height: 34px;
       white-space: nowrap;
+    }
+
+    small {
+      margin-top: 8px;
+      color: #475569;
+      font-size: 12px;
+      font-weight: 600;
+      line-height: 18px;
     }
   }
 
