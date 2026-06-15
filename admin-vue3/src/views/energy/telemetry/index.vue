@@ -18,6 +18,127 @@
     </div>
 
     <el-tabs v-model="activeSection" class="telemetry-tabs">
+      <el-tab-pane label="用电量报表" name="bill">
+        <section class="bill-report-panel">
+          <div class="bill-report-panel__header">
+            <div>
+              <h2>数据面板 · 用电量报表</h2>
+              <span>按电表遥测、充放电任务和计费规则汇总，未接入参数保持待录入状态</span>
+            </div>
+            <el-button type="primary" :loading="billLoading" @click="loadBillReport">
+              <Icon class="mr-5px" icon="ep:refresh" />
+              刷新报表
+            </el-button>
+          </div>
+
+          <el-form :inline="true" :model="billQuery" class="telemetry-form" label-width="84px">
+            <el-form-item label="电表">
+              <el-select
+                v-model="billQuery.deviceId"
+                filterable
+                placeholder="请选择电表"
+                class="!w-280px"
+                @change="handleBillDeviceChange"
+              >
+                <el-option
+                  v-for="item in devices"
+                  :key="item.id"
+                  :label="getDeviceOptionLabel(item)"
+                  :value="item.id"
+                />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="账单月">
+              <el-date-picker
+                v-model="billQuery.billMonth"
+                type="month"
+                value-format="YYYY-MM"
+                class="!w-180px"
+                @change="loadBillReport"
+              />
+            </el-form-item>
+          </el-form>
+
+          <el-empty v-if="!billQuery.deviceId" description="请先选择电表" />
+          <div v-else v-loading="billLoading" class="bill-report">
+            <div class="bill-report__kpis">
+              <div v-for="item in billTopCards" :key="item.label" class="bill-report__kpi">
+                <div>
+                  <span>{{ item.label }}</span>
+                  <strong>{{ item.value }}</strong>
+                </div>
+                <Icon :icon="item.icon" :size="42" :style="{ color: item.color }" />
+              </div>
+            </div>
+
+            <div class="bill-report__grid">
+              <section class="bill-report__section bill-report__section--tall">
+                <h3>① 电量统计（核心）</h3>
+                <div class="bill-report__list">
+                  <div v-for="item in energyStatRows" :key="item.label">
+                    <span>{{ item.label }}</span>
+                    <strong>{{ item.value }}</strong>
+                  </div>
+                </div>
+                <Echart :options="energyPieOptions" height="210px" />
+              </section>
+
+              <section class="bill-report__section">
+                <h3>② 电费成本</h3>
+                <el-table :data="costRows" size="small">
+                  <el-table-column label="时段" prop="period" min-width="90" />
+                  <el-table-column label="电量(kWh)" prop="energy" align="right" width="110" />
+                  <el-table-column label="单价(元)" prop="rate" align="right" width="100" />
+                  <el-table-column label="金额" prop="amount" align="right" width="110" />
+                </el-table>
+                <div class="bill-report__total">
+                  <div><span>总购电量</span><strong>{{ formatKwh(monthlyPurchasedEnergy) }}</strong></div>
+                  <div><span>平均购电单价</span><strong>{{ averageBuyRateText }}</strong></div>
+                  <div><span>购电成本</span><strong>{{ averageBuyRate > 0 ? formatCurrency(purchaseCost) : '待录入' }}</strong></div>
+                </div>
+              </section>
+
+              <section class="bill-report__section">
+                <h3>③ 充电收益</h3>
+                <div class="bill-report__split">
+                  <div class="bill-report__list">
+                    <div v-for="item in revenueRows" :key="item.label">
+                      <span>{{ item.label }}</span>
+                      <strong>{{ item.value }}</strong>
+                    </div>
+                  </div>
+                  <Echart :options="revenueBarOptions" height="210px" />
+                </div>
+              </section>
+
+              <section class="bill-report__section">
+                <h3>④ 利润分析</h3>
+                <p class="bill-report__formula">收益公式：利润 = 售电收入 - 购电成本 - 运营成本</p>
+                <div class="bill-report__profit">
+                  <div v-for="item in profitRows" :key="item.label">
+                    <span>{{ item.label }}</span>
+                    <strong>{{ item.value }}</strong>
+                  </div>
+                </div>
+                <div class="bill-report__final">最终利润：{{ finalProfitText }}</div>
+              </section>
+
+              <section class="bill-report__section">
+                <h3>⑤ 电池收益分析</h3>
+                <div class="bill-report__battery">
+                  <div v-for="item in batteryRows" :key="item.label">
+                    <span>{{ item.label }}</span>
+                    <strong>{{ item.value }}</strong>
+                  </div>
+                </div>
+                <div class="bill-report__chart-title">电量曲线（EPI）</div>
+                <Echart :options="energyLineOptions" height="210px" />
+              </section>
+            </div>
+          </div>
+        </section>
+      </el-tab-pane>
+
       <el-tab-pane label="设备监控面板" name="monitor">
         <section class="monitor-workbench">
           <aside class="monitor-sidebar">
@@ -615,6 +736,10 @@ import { EnergyDeviceApi } from '@/api/energy/device'
 import type { EnergyDeviceVO } from '@/api/energy/device'
 import { EnergyTelemetryApi } from '@/api/energy/telemetry'
 import type { EnergyTelemetryDailyStatVO, EnergyTelemetryVO } from '@/api/energy/telemetry'
+import { EnergyChargeSessionApi } from '@/api/energy/chargeSession'
+import type { EnergyChargeSessionVO } from '@/api/energy/chargeSession'
+import { EnergyPricingRuleApi } from '@/api/energy/pricingRule'
+import type { EnergyPricingRuleVO } from '@/api/energy/pricingRule'
 import { EnergyAlarmApi } from '@/api/energy/alarm'
 import type { EnergyAlarmVO } from '@/api/energy/alarm'
 import { DICT_TYPE } from '@/utils/dict'
@@ -643,11 +768,15 @@ const today = dayjs().format('YYYY-MM-DD')
 
 const loading = ref(true)
 const latestLoading = ref(false)
+const billLoading = ref(false)
 const trendLoading = ref(false)
 const detailLoading = ref(false)
 const devices = ref<EnergyDeviceVO[]>([])
 const selectedDeviceId = ref<number>()
 const latestTelemetry = ref<EnergyTelemetryVO>()
+const billTelemetryRows = ref<EnergyTelemetryVO[]>([])
+const chargeSessionRows = ref<EnergyChargeSessionVO[]>([])
+const pricingRuleRows = ref<EnergyPricingRuleVO[]>([])
 const trendRawList = ref<EnergyTelemetryVO[]>([])
 const dailyStatList = ref<EnergyTelemetryDailyStatVO[]>([])
 const detailRawList = ref<EnergyTelemetryVO[]>([])
@@ -660,7 +789,7 @@ const monitorViewMode = ref<'grid' | 'table'>('grid')
 const dataTab = ref<'raw' | 'daily'>('raw')
 const rawViewMode = ref<'chart' | 'table'>('chart')
 const dailyViewMode = ref<'chart' | 'table'>('chart')
-const activeSection = ref<'monitor' | 'trend' | 'detail'>('monitor')
+const activeSection = ref<'bill' | 'monitor' | 'trend' | 'detail'>('bill')
 const realtimeDetailVisible = ref(false)
 const realtimeDetailTab = ref<'history' | 'alarm'>('history')
 const realtimeHistoryMetricGroup = ref<MetricGroupValue>('activePower')
@@ -739,6 +868,22 @@ const detailQuery = reactive<{
   endTime: '23:59:59',
   metricGroup: 'phaseVoltage',
   intervalMinutes: 5
+})
+
+const billQuery = reactive<{
+  deviceId?: number
+  billMonth: string
+}>({
+  deviceId: undefined,
+  billMonth: dayjs().format('YYYY-MM')
+})
+
+const billRange = computed(() => {
+  const month = dayjs(billQuery.billMonth || dayjs().format('YYYY-MM'))
+  return {
+    start: month.startOf('month').format('YYYY-MM-DD HH:mm:ss'),
+    end: month.endOf('month').format('YYYY-MM-DD HH:mm:ss')
+  }
 })
 
 const selectedDevice = computed(() => devices.value.find((item) => item.id === selectedDeviceId.value))
@@ -911,6 +1056,183 @@ const statCards = computed(() => [
   }
 ])
 
+const sortedBillTelemetry = computed(() => {
+  return [...billTelemetryRows.value]
+    .filter((item) => item.collectTime)
+    .sort((a, b) => dayjs(a.collectTime as string).valueOf() - dayjs(b.collectTime as string).valueOf())
+})
+
+const startEpi = computed(() => firstNumber(sortedBillTelemetry.value.map((item) => normalizeNumber(item.epi))))
+const endEpi = computed(() => lastNumber(sortedBillTelemetry.value.map((item) => normalizeNumber(item.epi))))
+const epiDelta = computed(() => {
+  if (startEpi.value === null || endEpi.value === null) return 0
+  return Math.max(0, Number((endEpi.value - startEpi.value).toFixed(2)))
+})
+
+const billSessions = computed(() => {
+  const start = dayjs(billRange.value.start).valueOf()
+  const end = dayjs(billRange.value.end).valueOf()
+  return chargeSessionRows.value.filter((item) => {
+    const time = dayjs(item.startTime || item.createTime).valueOf()
+    return Number(item.deviceId) === Number(billQuery.deviceId) && time >= start && time <= end
+  })
+})
+
+const billDevice = computed(() => devices.value.find((item) => Number(item.id) === Number(billQuery.deviceId)))
+const applicablePricingRules = computed(() => {
+  const device = billDevice.value
+  return pricingRuleRows.value.filter((rule) => {
+    if (Number(rule.status) !== 0) return false
+    if (rule.deviceId) return Number(rule.deviceId) === Number(billQuery.deviceId)
+    if (rule.projectId && device?.projectId) return Number(rule.projectId) === Number(device.projectId)
+    if (rule.customerId && device?.customerId) return Number(rule.customerId) === Number(device.customerId)
+    return !rule.deviceId && !rule.projectId && !rule.customerId
+  })
+})
+
+const chargeSessions = computed(() => billSessions.value.filter((item) => Number(item.sessionType) === 2))
+const dischargeSessions = computed(() => billSessions.value.filter((item) => Number(item.sessionType) === 1))
+const sessionChargeEnergy = computed(() => sumBy(chargeSessions.value, 'totalEnergy'))
+const sessionDischargeEnergy = computed(() => sumBy(dischargeSessions.value, 'totalEnergy'))
+const monthlyPurchasedEnergy = computed(() => Number((sessionChargeEnergy.value || epiDelta.value).toFixed(2)))
+const monthlySoldEnergy = computed(() => Number(sessionDischargeEnergy.value.toFixed(2)))
+const monthlyRevenue = computed(() => Number(sumBy(dischargeSessions.value, 'totalFee').toFixed(2)))
+const averageSellRate = computed(() => (monthlySoldEnergy.value > 0 ? monthlyRevenue.value / monthlySoldEnergy.value : 0))
+const averageBuyRate = computed(() => averageNumber(applicablePricingRules.value.map((item) => normalizeNumber(item.energyRate))))
+const averageBuyRateText = computed(() => averageBuyRate.value > 0 ? `${averageBuyRate.value.toFixed(2)} 元/kWh` : '待录入')
+const purchaseCost = computed(() => Number((monthlyPurchasedEnergy.value * averageBuyRate.value).toFixed(2)))
+const knownProfit = computed(() => Number((monthlyRevenue.value - purchaseCost.value).toFixed(2)))
+const batteryEfficiencyText = computed(() => {
+  if (!monthlyPurchasedEnergy.value) return '--'
+  if (monthlySoldEnergy.value > monthlyPurchasedEnergy.value) return '待补充购电量'
+  return formatPercent(monthlySoldEnergy.value, monthlyPurchasedEnergy.value)
+})
+
+const billTopCards = computed(() => [
+  { label: '本月购电', value: formatKwh(monthlyPurchasedEnergy.value), icon: 'ep:connection', color: '#2088d8' },
+  { label: '本月售电', value: formatKwh(monthlySoldEnergy.value), icon: 'ep:truck', color: '#0ea5a4' },
+  { label: '本月收益', value: formatCurrency(monthlyRevenue.value), icon: 'ep:money', color: '#16a34a' },
+  { label: '本月利润', value: finalProfitText.value, icon: 'ep:trophy', color: '#f59e0b' }
+])
+
+const energyStatRows = computed(() => [
+  { label: '期初电量', value: formatNullableKwh(startEpi.value) },
+  { label: '期末电量', value: formatNullableKwh(endEpi.value) },
+  { label: '本期充电量', value: formatKwh(monthlyPurchasedEnergy.value) },
+  { label: '本期放电量', value: formatKwh(monthlySoldEnergy.value) },
+  { label: '自耗电量', value: formatKwh(Math.max(0, monthlyPurchasedEnergy.value - monthlySoldEnergy.value)) },
+  { label: '充放电效率', value: batteryEfficiencyText.value },
+  { label: '损耗电量', value: formatKwh(Math.max(0, monthlyPurchasedEnergy.value - monthlySoldEnergy.value)) },
+  { label: '峰电量', value: '待录入分时' },
+  { label: '平电量', value: '待录入分时' },
+  { label: '谷电量', value: '待录入分时' },
+  { label: '深谷电量', value: '待录入分时' }
+])
+
+const costRows = computed(() => {
+  if (averageBuyRate.value <= 0) {
+    return [
+      { period: '统一', energy: formatKwh(monthlyPurchasedEnergy.value), rate: '待录入', amount: '待录入' },
+      { period: '峰/平/谷', energy: '待录入', rate: '待录入', amount: '待录入' }
+    ]
+  }
+  return [
+    {
+      period: '统一',
+      energy: numberText(monthlyPurchasedEnergy.value),
+      rate: averageBuyRate.value.toFixed(2),
+      amount: numberText(purchaseCost.value)
+    },
+    { period: '峰/平/谷', energy: '待录入', rate: '待录入', amount: '待录入' }
+  ]
+})
+
+const revenueRows = computed(() => [
+  { label: '服务车辆数', value: '待接入车辆' },
+  { label: '充电订单数', value: billSessions.value.length },
+  { label: '售电量', value: formatKwh(monthlySoldEnergy.value) },
+  { label: '平均售电价', value: averageSellRate.value > 0 ? `${averageSellRate.value.toFixed(2)} 元/kWh` : '待录入' },
+  { label: '售电收入', value: formatCurrency(monthlyRevenue.value) }
+])
+
+const profitRows = computed(() => [
+  { label: '售电收入', value: formatCurrency(monthlyRevenue.value) },
+  { label: '购电成本', value: averageBuyRate.value > 0 ? formatCurrency(purchaseCost.value) : '待录入' },
+  { label: '场地费', value: '待录入' },
+  { label: '运维费', value: '待录入' },
+  { label: '通信费', value: '待录入' },
+  { label: '平台服务费', value: '待录入' }
+])
+
+const finalProfitText = computed(() => {
+  if (averageBuyRate.value <= 0) return '待录入成本'
+  return formatCurrency(knownProfit.value)
+})
+
+const batteryRows = computed(() => [
+  { label: '充电量', value: formatKwh(monthlyPurchasedEnergy.value) },
+  { label: '放电量', value: formatKwh(monthlySoldEnergy.value) },
+  { label: '循环次数', value: '待录入容量' },
+  { label: '当月任务次数', value: `${billSessions.value.length} 次` },
+  { label: '电池效率', value: batteryEfficiencyText.value },
+  { label: '电池折旧成本', value: '待录入' },
+  { label: '折旧费用', value: '待录入' }
+])
+
+const energyPieOptions = computed<EChartsOption>(() => ({
+  color: ['#2088d8', '#14b8a6', '#8bdc65'],
+  tooltip: { trigger: 'item' },
+  legend: { bottom: 0 },
+  series: [
+    {
+      type: 'pie',
+      radius: ['42%', '68%'],
+      center: ['50%', '44%'],
+      data: [
+        { name: '充电量', value: monthlyPurchasedEnergy.value },
+        { name: '放电量', value: monthlySoldEnergy.value },
+        { name: '损耗/自耗', value: Math.max(0, monthlyPurchasedEnergy.value - monthlySoldEnergy.value) }
+      ]
+    }
+  ]
+}))
+
+const revenueBarOptions = computed<EChartsOption>(() => {
+  const days = Array.from({ length: 7 }).map((_, index) => dayjs(billRange.value.end).subtract(6 - index, 'day'))
+  const energy = days.map((day) => sumDaily(dischargeSessions.value, day, 'totalEnergy'))
+  const revenue = days.map((day) => sumDaily(dischargeSessions.value, day, 'totalFee'))
+  return {
+    color: ['#2088d8', '#22c55e'],
+    tooltip: { trigger: 'axis' },
+    legend: { top: 0 },
+    grid: { left: 36, right: 16, top: 36, bottom: 28 },
+    xAxis: { type: 'category', data: days.map((day) => day.format('MM-DD')) },
+    yAxis: { type: 'value' },
+    series: [
+      { name: '售电量', type: 'bar', data: energy },
+      { name: '收入', type: 'bar', data: revenue }
+    ]
+  }
+})
+
+const energyLineOptions = computed<EChartsOption>(() => ({
+  color: ['#2088d8'],
+  tooltip: { trigger: 'axis' },
+  grid: { left: 44, right: 16, top: 24, bottom: 32 },
+  xAxis: { type: 'category', data: sortedBillTelemetry.value.map((item) => formatAxisTime(item.collectTime)) },
+  yAxis: { type: 'value', name: 'kWh' },
+  series: [
+    {
+      name: 'EPI',
+      type: 'line',
+      smooth: true,
+      showSymbol: false,
+      areaStyle: { opacity: 0.16 },
+      data: sortedBillTelemetry.value.map((item) => normalizeNumber(item.epi))
+    }
+  ]
+}))
+
 const rawChartOptions = computed<EChartsOption>(() => {
   const fields = activeTrendGroup.value.fields
   return buildLineOptions({
@@ -1075,6 +1397,7 @@ const loadDevices = async () => {
     devices.value = data?.list || []
     if (!selectedDeviceId.value && devices.value[0]?.id) {
       selectedDeviceId.value = devices.value[0].id
+      billQuery.deviceId = devices.value[0].id
       trendQuery.deviceId = devices.value[0].id
       detailQuery.deviceId = devices.value[0].id
     }
@@ -1102,6 +1425,37 @@ const loadLatestTelemetry = async () => {
     message.error('电表实时详情加载失败')
   } finally {
     latestLoading.value = false
+  }
+}
+
+const loadBillReport = async () => {
+  if (!billQuery.deviceId || !billQuery.billMonth) {
+    billTelemetryRows.value = []
+    chargeSessionRows.value = []
+    pricingRuleRows.value = []
+    return
+  }
+  billLoading.value = true
+  try {
+    const [telemetryRows, chargeSessions, pricingRules] = await Promise.all([
+      EnergyTelemetryApi.getTelemetryChart({
+        deviceId: billQuery.deviceId,
+        collectTime: [billRange.value.start, billRange.value.end],
+        limit: 1200
+      }),
+      EnergyChargeSessionApi.getChargeSessionPage({ pageNo: 1, pageSize: 1000, deviceId: billQuery.deviceId }),
+      EnergyPricingRuleApi.getPricingRulePage({ pageNo: 1, pageSize: 1000, deviceId: billQuery.deviceId })
+    ])
+    billTelemetryRows.value = telemetryRows || []
+    chargeSessionRows.value = chargeSessions?.list || []
+    pricingRuleRows.value = pricingRules?.list || []
+  } catch (error) {
+    billTelemetryRows.value = []
+    chargeSessionRows.value = []
+    pricingRuleRows.value = []
+    message.error('用电量报表加载失败，请检查遥测、任务和计费规则接口')
+  } finally {
+    billLoading.value = false
   }
 }
 
@@ -1206,14 +1560,22 @@ const loadRealtimeLowerData = async () => {
 
 const loadAll = async () => {
   await loadDevices()
-  await Promise.all([loadLatestTelemetry(), loadTrendData(), loadDetailData()])
+  await Promise.all([loadLatestTelemetry(), loadBillReport(), loadTrendData(), loadDetailData()])
 }
 
 const selectDevice = async (device: EnergyDeviceVO) => {
   selectedDeviceId.value = device.id
+  billQuery.deviceId = device.id
   trendQuery.deviceId = device.id
   detailQuery.deviceId = device.id
-  await Promise.all([loadLatestTelemetry(), loadTrendData(), loadDetailData()])
+  await Promise.all([loadLatestTelemetry(), loadBillReport(), loadTrendData(), loadDetailData()])
+}
+
+const handleBillDeviceChange = async (deviceId?: number) => {
+  selectedDeviceId.value = deviceId
+  trendQuery.deviceId = deviceId
+  detailQuery.deviceId = deviceId
+  await Promise.all([loadLatestTelemetry(), loadBillReport()])
 }
 
 const openRealtimeDetail = async (device: EnergyDeviceVO) => {
@@ -1369,6 +1731,36 @@ const average = (values: number[]) => {
   }
   return values.reduce((sum, item) => sum + item, 0) / values.length
 }
+
+const averageNumber = (values: Array<number | null>) => {
+  const valid = values.filter(isNumber)
+  if (!valid.length) return 0
+  return Number((valid.reduce((sum, item) => sum + item, 0) / valid.length).toFixed(2))
+}
+
+const firstNumber = (values: Array<number | null>) => values.find((value) => value !== null) ?? null
+const lastNumber = (values: Array<number | null>) => [...values].reverse().find((value) => value !== null) ?? null
+
+const sumBy = <T extends Record<string, any>>(rows: T[], key: keyof T) => {
+  return rows.reduce((sum, item) => sum + Number(item[key] || 0), 0)
+}
+
+const sumDaily = (rows: EnergyChargeSessionVO[], day: dayjs.Dayjs, key: keyof EnergyChargeSessionVO) => {
+  return Number(
+    rows
+      .filter((item) => dayjs(item.startTime || item.createTime).isSame(day, 'day'))
+      .reduce((sum, item) => sum + Number(item[key] || 0), 0)
+      .toFixed(2)
+  )
+}
+
+const numberText = (value: number) => {
+  return Number.isInteger(value) ? String(value) : value.toFixed(2)
+}
+
+const formatKwh = (value: number) => `${numberText(value)} kWh`
+const formatNullableKwh = (value: number | null) => (value === null ? '--' : formatKwh(value))
+const formatCurrency = (value: number) => `¥${numberText(value)}`
 
 const exportRawData = () => {
   const headers = [
@@ -1910,6 +2302,245 @@ onMounted(() => {
       color: var(--el-text-color-secondary);
       font-size: 12px;
     }
+  }
+}
+
+.bill-report-panel {
+  padding: 16px;
+  background:
+    radial-gradient(circle at 12% 0, rgba(56, 189, 248, 0.1), transparent 28%),
+    radial-gradient(circle at 92% 8%, rgba(34, 197, 94, 0.12), transparent 24%),
+    #f8fbff;
+  border: 1px solid #e5edf6;
+  border-radius: 8px;
+
+  &__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 14px;
+
+    h2 {
+      margin: 0;
+      color: #111827;
+      font-size: 20px;
+      font-weight: 800;
+      line-height: 28px;
+    }
+
+    span {
+      color: #64748b;
+      font-size: 13px;
+    }
+  }
+}
+
+.bill-report {
+  &__kpis {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+
+  &__kpi {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    min-height: 112px;
+    padding: 16px 18px;
+    overflow: hidden;
+    background:
+      radial-gradient(circle at 100% 100%, rgba(34, 197, 94, 0.16), transparent 38%),
+      #ffffff;
+    border: 1px solid #e5edf6;
+    border-radius: 8px;
+    box-shadow: 0 8px 22px rgba(15, 23, 42, 0.06);
+
+    span,
+    strong {
+      display: block;
+    }
+
+    span {
+      color: #111827;
+      font-size: 17px;
+      font-weight: 700;
+    }
+
+    strong {
+      margin-top: 12px;
+      color: #000000;
+      font-size: 30px;
+      font-weight: 800;
+      line-height: 36px;
+      white-space: nowrap;
+    }
+  }
+
+  &__grid {
+    display: grid;
+    grid-template-columns: 1fr 1.06fr 1.06fr;
+    gap: 12px;
+  }
+
+  &__section {
+    min-width: 0;
+    padding: 14px;
+    background: #ffffff;
+    border: 1px solid #e5edf6;
+    border-radius: 8px;
+    box-shadow: 0 8px 22px rgba(15, 23, 42, 0.05);
+
+    h3 {
+      margin: 0 0 12px;
+      color: #111827;
+      font-size: 18px;
+      font-weight: 800;
+    }
+
+    :deep(.el-table th.el-table__cell) {
+      color: #1f2937;
+      background: #eaf4ff;
+      font-weight: 700;
+    }
+  }
+
+  &__section--tall {
+    grid-row: span 2;
+  }
+
+  &__list,
+  &__profit {
+    display: grid;
+    gap: 0;
+
+    div {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      min-height: 34px;
+      padding: 7px 10px;
+      border-bottom: 1px solid #edf2f7;
+
+      &:first-child {
+        background: #eaf4ff;
+      }
+    }
+
+    span {
+      color: #1f2937;
+      font-weight: 600;
+    }
+
+    strong {
+      color: #111827;
+      font-weight: 700;
+      text-align: right;
+      white-space: nowrap;
+    }
+  }
+
+  &__total {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    margin-top: 10px;
+    overflow: hidden;
+    background: #eaf4ff;
+    border-radius: 6px;
+
+    div {
+      padding: 12px;
+      text-align: center;
+      border-right: 1px solid #d8e7f5;
+
+      &:last-child {
+        border-right: 0;
+      }
+    }
+
+    span,
+    strong {
+      display: block;
+    }
+
+    span {
+      color: #475569;
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    strong {
+      margin-top: 6px;
+      color: #0f172a;
+      font-size: 18px;
+      font-weight: 800;
+    }
+  }
+
+  &__split {
+    display: grid;
+    grid-template-columns: minmax(180px, 0.85fr) minmax(240px, 1.15fr);
+    gap: 12px;
+    align-items: stretch;
+  }
+
+  &__formula {
+    margin: -4px 0 10px;
+    color: #111827;
+    font-weight: 700;
+  }
+
+  &__final {
+    margin-top: 10px;
+    padding: 12px;
+    color: #000000;
+    background: #eaf4ff;
+    border-radius: 6px;
+    font-size: 26px;
+    font-weight: 900;
+    text-align: center;
+  }
+
+  &__battery {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
+    margin-bottom: 12px;
+
+    div {
+      min-height: 66px;
+      padding: 10px;
+      background: #eaf4ff;
+      border-radius: 6px;
+    }
+
+    span,
+    strong {
+      display: block;
+    }
+
+    span {
+      color: #475569;
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    strong {
+      margin-top: 6px;
+      color: #0f172a;
+      font-size: 18px;
+      font-weight: 800;
+    }
+  }
+
+  &__chart-title {
+    margin-bottom: 6px;
+    color: #111827;
+    font-size: 15px;
+    font-weight: 700;
   }
 }
 
