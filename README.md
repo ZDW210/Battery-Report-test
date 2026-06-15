@@ -30,7 +30,7 @@ Build command: 留空
 Deploy command: bun run deploy
 ```
 
-不能只填 `npx wrangler deploy`。如果只执行 Wrangler 部署，Cloudflare 会只上传 `worker/public/.gitkeep`，管理端 Vue3 页面不会被构建进去，访问根路径就会看到 404。
+不能只填 `npx wrangler deploy`。如果只执行 Wrangler 部署，管理端 Vue3 页面不会被构建进去。当前 `wrangler.jsonc` 的 Assets 目录直接指向 `admin-vue3/dist-worker`，所以没有构建时部署会失败，避免再次发布空页面。
 
 ## 初始化 D1
 

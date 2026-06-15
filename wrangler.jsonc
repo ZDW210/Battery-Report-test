@@ -5,7 +5,7 @@
   "compatibility_date": "2026-06-15",
   "assets": {
     "binding": "ASSETS",
-    "directory": "worker/public"
+    "directory": "admin-vue3/dist-worker"
   },
   "d1_databases": [
     {
