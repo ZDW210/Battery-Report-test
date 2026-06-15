@@ -7,7 +7,7 @@ import { CACHE_KEY, useCache } from '@/hooks/web/useCache'
 
 const { wsCache } = useCache()
 
-const PROJECT_MENU_ROOTS = new Set(['/energy', '/system'])
+const PROJECT_MENU_ROOTS = new Set(['/system'])
 const ENERGY_MENU_CHILDREN = new Set([
   'telemetry',
   'device',
@@ -30,7 +30,14 @@ const keepProjectRoute = (route: AppRouteRecordRaw): boolean => {
   }
 
   const path = route.path.startsWith('/') ? route.path : `/${route.path}`
-  return PROJECT_MENU_ROOTS.has(path)
+  if (PROJECT_MENU_ROOTS.has(path)) {
+    return true
+  }
+  if (!path.startsWith('/energy/')) {
+    return false
+  }
+  const menuKey = path.replace(/^\/energy\//, '').split('/')[0]
+  return ENERGY_MENU_CHILDREN.has(menuKey)
 }
 
 const filterProjectRoutes = (routes: AppRouteRecordRaw[]): AppRouteRecordRaw[] => {
