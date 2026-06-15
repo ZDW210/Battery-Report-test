@@ -13,21 +13,20 @@ const ADMIN_PREFIX = '/admin-api'
 const DAILY_FIELDS = new Set(['pa', 'pb', 'pc', 'ua', 'ub', 'uc', 'ia', 'ib', 'ic', 'p', 'pf', 'epi'])
 
 const ENERGY_MENUS = [
-  rootMenu(1000, '运营面板', '/energy', 'ep:monitor', '/energy/dashboard'),
-  menu(1001, 1000, '运营面板', 'dashboard', 'energy/dashboard/index', 'EnergyDashboard', 'ep:data-analysis', 1),
-  menu(1002, 1000, '数据面板', 'telemetry', 'energy/telemetry/index', 'EnergyTelemetry', 'ep:trend-charts', 2),
-  menu(1003, 1000, '设备管理', 'device', 'energy/device/index', 'EnergyDevice', 'ep:cpu', 3),
-  menu(1004, 1000, '车辆管理', 'vehicle', 'energy/vehicle/index', 'EnergyVehicle', 'ep:van', 4),
-  menu(1005, 1000, '小程序用户', 'app-user', 'energy/appUser/index', 'EnergyAppUser', 'ep:user', 5),
-  menu(1006, 1000, '扫码刷卡记录', 'account-event', 'energy/account-event/index', 'EnergyAccountEvent', 'ep:connection', 6),
-  menu(1007, 1000, '报警信息', 'alarm', 'energy/alarm/index', 'EnergyAlarm', 'ep:warning', 7),
-  menu(1008, 1000, '客户管理', 'customer', 'energy/customer/index', 'EnergyCustomer', 'ep:office-building', 8),
-  menu(1014, 1000, '客户账号权限', 'customer-account', 'energy/customerAccount/index', 'EnergyCustomerAccount', 'ep:lock', 9),
-  menu(1009, 1000, '项目管理', 'project', 'energy/project/index', 'EnergyProject', 'ep:location', 10),
-  menu(1010, 1000, '用户授权', 'user-scope', 'energy/userScope/index', 'EnergyUserScope', 'ep:key', 11),
-  menu(1011, 1000, 'EIOT 同步日志', 'eiot-log', 'energy/eiotLog/index', 'EnergyEiotLog', 'ep:document', 12),
-  menu(1012, 1000, '计费规则', 'pricing-rule', 'energy/pricing-rule/index', 'EnergyPricingRule', 'ep:money', 13),
-  menu(1013, 1000, '充放电任务', 'charge-session', 'energy/charge-session/index', 'EnergyChargeSession', 'ep:switch-button', 14)
+  rootMenu(1000, '运营面板', '/energy', 'ep:monitor', '/energy/telemetry'),
+  menu(1002, 1000, '数据面板', 'telemetry', 'energy/telemetry/index', 'EnergyTelemetry', 'ep:trend-charts', 1),
+  menu(1003, 1000, '设备管理', 'device', 'energy/device/index', 'EnergyDevice', 'ep:cpu', 2),
+  menu(1004, 1000, '车辆管理', 'vehicle', 'energy/vehicle/index', 'EnergyVehicle', 'ep:van', 3),
+  menu(1005, 1000, '小程序用户', 'app-user', 'energy/appUser/index', 'EnergyAppUser', 'ep:user', 4),
+  menu(1006, 1000, '扫码刷卡记录', 'account-event', 'energy/account-event/index', 'EnergyAccountEvent', 'ep:connection', 5),
+  menu(1007, 1000, '报警信息', 'alarm', 'energy/alarm/index', 'EnergyAlarm', 'ep:warning', 6),
+  menu(1008, 1000, '客户管理', 'customer', 'energy/customer/index', 'EnergyCustomer', 'ep:office-building', 7),
+  menu(1014, 1000, '客户账号权限', 'customer-account', 'energy/customerAccount/index', 'EnergyCustomerAccount', 'ep:lock', 8),
+  menu(1009, 1000, '项目管理', 'project', 'energy/project/index', 'EnergyProject', 'ep:location', 9),
+  menu(1010, 1000, '用户授权', 'user-scope', 'energy/userScope/index', 'EnergyUserScope', 'ep:key', 10),
+  menu(1011, 1000, 'EIOT 同步日志', 'eiot-log', 'energy/eiotLog/index', 'EnergyEiotLog', 'ep:document', 11),
+  menu(1012, 1000, '计费规则', 'pricing-rule', 'energy/pricing-rule/index', 'EnergyPricingRule', 'ep:money', 12),
+  menu(1013, 1000, '充放电任务', 'charge-session', 'energy/charge-session/index', 'EnergyChargeSession', 'ep:switch-button', 13)
 ]
 
 export default {
@@ -642,7 +641,7 @@ function buildMenuTree(rows: AnyRecord[], parentId = 0): AnyRecord[] {
 }
 
 function permissionsForMenus(menuIds: number[]) {
-  const permissions = ['energy:dashboard:query', 'energy:telemetry:query']
+  const permissions = ['energy:telemetry:query']
   if (menuIds.includes(1014)) permissions.push('energy:customer-account:create', 'energy:customer-account:update', 'energy:customer-account:reset-password')
   if (menuIds.includes(1003)) permissions.push('energy:device:create', 'energy:device:update', 'energy:device:delete', 'energy:device:control')
   return permissions

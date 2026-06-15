@@ -9,7 +9,6 @@ const { wsCache } = useCache()
 
 const PROJECT_MENU_ROOTS = new Set(['/energy', '/system'])
 const ENERGY_MENU_CHILDREN = new Set([
-  'dashboard',
   'telemetry',
   'device',
   'vehicle',
