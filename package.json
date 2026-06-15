@@ -4,8 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "pnpm --dir admin-vue3 install --frozen-lockfile && pnpm --dir admin-vue3 exec vite build --mode worker && node scripts/copy-admin-dist.mjs",
+    "build": "npx --yes pnpm@10 --dir admin-vue3 install --frozen-lockfile && npx --yes pnpm@10 --dir admin-vue3 exec vite build --mode worker && node scripts/copy-admin-dist.mjs",
     "deploy": "wrangler deploy",
+    "deploy:full": "npm run build && wrangler deploy",
     "dev": "wrangler dev"
   },
   "devDependencies": {
