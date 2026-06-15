@@ -26,17 +26,11 @@ binding DB of type d1 must have a valid `database_id` specified
 Cloudflare Workers 连接 GitHub 后，建议这样设置：
 
 ```text
-Build command: bun run build
-Deploy command: npx wrangler deploy
+Build command: 留空
+Deploy command: bun run deploy
 ```
 
-如果页面里只有一个 deploy command，可以直接填：
-
-```text
-bun run build && npx wrangler deploy
-```
-
-不能只填 `npx wrangler deploy`，否则 Cloudflare 会只上传 `worker/public/.gitkeep`，管理端 Vue3 页面不会被构建进去。
+不能只填 `npx wrangler deploy`。如果只执行 Wrangler 部署，Cloudflare 会只上传 `worker/public/.gitkeep`，管理端 Vue3 页面不会被构建进去，访问根路径就会看到 404。
 
 ## 初始化 D1
 
