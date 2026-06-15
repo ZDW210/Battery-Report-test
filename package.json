@@ -1,0 +1,14 @@
+{
+  "name": "energy-storage-platform-worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "pnpm --dir admin-vue3 install --frozen-lockfile && pnpm --dir admin-vue3 exec vite build --mode worker && node scripts/copy-admin-dist.mjs",
+    "deploy": "wrangler deploy",
+    "dev": "wrangler dev"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  }
+}

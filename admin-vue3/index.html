@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" href="/favicon.ico" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="keywords"
+      content="芋道管理系统 基于 vue3 + CompositionAPI + typescript + vite3 + element plus 的后台开源免费管理系统！"
+    />
+    <meta
+      name="description"
+      content="芋道管理系统 基于 vue3 + CompositionAPI + typescript + vite3 + element plus 的后台开源免费管理系统！"
+    />
+    <title>%VITE_APP_TITLE%</title>
+  </head>
+  <body>
+    <div id="app">
+      <style>
+        .app-loading {
+          display: flex;
+          width: 100%;
+          height: 100%;
+          justify-content: center;
+          align-items: center;
+          flex-direction: column;
+          background: #f4f7fb;
+          color: #172033;
+          font-family:
+            Inter,
+            "PingFang SC",
+            "Microsoft YaHei",
+            Arial,
+            sans-serif;
+        }
+
+        .app-loading .app-loading-wrap {
+          position: absolute;
+          top: 50%;
+          left: 50%;
+          display: flex;
+          -webkit-transform: translate3d(-50%, -50%, 0);
+          transform: translate3d(-50%, -50%, 0);
+          justify-content: center;
+          align-items: center;
+          flex-direction: column;
+          min-width: 280px;
+        }
+
+        .app-loading .app-loading-title {
+          margin-bottom: 20px;
+          color: #172033;
+          font-size: 20px;
+          font-weight: 700;
+          line-height: 28px;
+          text-align: center;
+        }
+
+        .app-loading .app-loading-subtitle {
+          margin-top: 6px;
+          color: #657386;
+          font-size: 13px;
+          font-weight: 500;
+          line-height: 20px;
+        }
+
+        .app-loading .app-loading-item {
+          position: relative;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          width: 138px;
+          height: 54px;
+          padding: 7px 12px;
+          background: #ffffff;
+          border: 1px solid #d9e2ec;
+          border-radius: 8px;
+          box-shadow: 0 12px 28px rgb(21 33 52 / 8%);
+        }
+
+        .app-loading .app-loading-item::after {
+          position: absolute;
+          right: -8px;
+          width: 6px;
+          height: 20px;
+          content: "";
+          background: #c6d2df;
+          border-radius: 0 4px 4px 0;
+        }
+
+        .app-loading .app-loading-track {
+          display: grid;
+          grid-template-columns: repeat(4, 1fr);
+          gap: 6px;
+          width: 100%;
+          height: 100%;
+        }
+
+        .app-loading .app-loading-cell {
+          border-radius: 5px;
+          animation: energy-cell 1.25s ease-in-out infinite;
+        }
+
+        .app-loading .app-loading-cell:nth-child(1) {
+          background: #409eff;
+          animation-delay: 0s;
+        }
+
+        .app-loading .app-loading-cell:nth-child(2) {
+          background: #2fbf9b;
+          animation-delay: 0.16s;
+        }
+
+        .app-loading .app-loading-cell:nth-child(3) {
+          background: #f5b041;
+          animation-delay: 0.32s;
+        }
+
+        .app-loading .app-loading-cell:nth-child(4) {
+          background: #38a3ff;
+          animation-delay: 0.48s;
+        }
+
+        .app-loading .app-loading-progress {
+          position: absolute;
+          bottom: -18px;
+          left: 0;
+          width: 100%;
+          height: 3px;
+          overflow: hidden;
+          background: #dce5ee;
+          border-radius: 999px;
+        }
+
+        .app-loading .app-loading-progress::before {
+          position: absolute;
+          width: 44%;
+          height: 100%;
+          content: "";
+          background: #409eff;
+          border-radius: 999px;
+          animation: energy-progress 1.4s ease-in-out infinite;
+        }
+
+        @keyframes energy-cell {
+          0%,
+          100% {
+            opacity: 0.28;
+            transform: scaleY(0.58);
+          }
+
+          45%,
+          65% {
+            opacity: 1;
+            transform: scaleY(1);
+          }
+        }
+
+        @keyframes energy-progress {
+          0% {
+            left: -46%;
+          }
+
+          100% {
+            left: 104%;
+          }
+        }
+      </style>
+      <div class="app-loading">
+        <div class="app-loading-wrap">
+          <div class="app-loading-title">
+            <div>%VITE_APP_TITLE%</div>
+            <div class="app-loading-subtitle">系统初始化中</div>
+          </div>
+          <div class="app-loading-item">
+            <div class="app-loading-track">
+              <div class="app-loading-cell"></div>
+              <div class="app-loading-cell"></div>
+              <div class="app-loading-cell"></div>
+              <div class="app-loading-cell"></div>
+            </div>
+            <div class="app-loading-progress"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

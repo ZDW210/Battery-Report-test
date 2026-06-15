@@ -1,0 +1,16 @@
+node_modules/
+dist/
+dist-prod/
+dist-worker/
+worker/public/*
+!worker/public/.gitkeep
+.wrangler/
+.dev.vars
+.env.local
+*.log
+*.out
+*.err
+target/
+.idea/
+.vscode/
+.DS_Store

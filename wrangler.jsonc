@@ -1,0 +1,26 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "energy-storage-platform",
+  "main": "worker/src/index.ts",
+  "compatibility_date": "2026-06-15",
+  "assets": {
+    "binding": "ASSETS",
+    "directory": "worker/public"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "energy-storage-platform",
+      "database_id": "REPLACE_WITH_D1_DATABASE_ID"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "BUCKET",
+      "bucket_name": "energy-storage-platform-files"
+    }
+  ],
+  "vars": {
+    "WECHAT_APP_ID": "wxf43120ae9b42d6dd"
+  }
+}
