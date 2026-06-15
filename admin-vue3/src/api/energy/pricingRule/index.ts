@@ -11,6 +11,12 @@ export interface EnergyPricingRuleVO {
   deviceNo?: string
   timeRate?: number
   energyRate?: number
+  siteFee?: number
+  maintenanceFee?: number
+  communicationFee?: number
+  platformServiceFee?: number
+  batteryDepreciationCost?: number
+  otherFixedFee?: number
   effectiveStart?: string | Date
   effectiveEnd?: string | Date
   status?: number

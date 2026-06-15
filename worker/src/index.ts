@@ -11,6 +11,31 @@ type AnyRecord = Record<string, any>
 
 const ADMIN_PREFIX = '/admin-api'
 const DAILY_FIELDS = new Set(['pa', 'pb', 'pc', 'ua', 'ub', 'uc', 'ia', 'ib', 'ic', 'p', 'pf', 'epi'])
+const PRICING_RULE_FIELDS = [
+  'customerId',
+  'projectId',
+  'deviceId',
+  'timeRate',
+  'energyRate',
+  'siteFee',
+  'maintenanceFee',
+  'communicationFee',
+  'platformServiceFee',
+  'batteryDepreciationCost',
+  'otherFixedFee',
+  'effectiveStart',
+  'effectiveEnd',
+  'status',
+  'remark'
+]
+const PRICING_RULE_FEE_COLUMNS: Record<string, string> = {
+  site_fee: 'REAL NOT NULL DEFAULT 0',
+  maintenance_fee: 'REAL NOT NULL DEFAULT 0',
+  communication_fee: 'REAL NOT NULL DEFAULT 0',
+  platform_service_fee: 'REAL NOT NULL DEFAULT 0',
+  battery_depreciation_cost: 'REAL NOT NULL DEFAULT 0',
+  other_fixed_fee: 'REAL NOT NULL DEFAULT 0'
+}
 
 const ENERGY_MENUS = [
   rootMenu(1000, '运营面板', '/energy', 'ep:monitor', '/energy/telemetry'),
@@ -466,6 +491,7 @@ async function alarmApi(request: Request, url: URL, env: Env, path: string) {
 }
 
 async function pricingRuleApi(request: Request, url: URL, env: Env, path: string) {
+  await ensurePricingRuleFeeColumns(env)
   if (path === '/energy/pricing-rule/match') {
     const row = await env.DB.prepare(
       `SELECT * FROM energy_pricing_rule
@@ -476,7 +502,24 @@ async function pricingRuleApi(request: Request, url: URL, env: Env, path: string
       .first<AnyRecord>()
     return ok(row ? camel(row) : null)
   }
-  return crud(request, url, env, 'energy_pricing_rule', ['customerId', 'projectId', 'deviceId', 'timeRate', 'energyRate', 'effectiveStart', 'effectiveEnd', 'status', 'remark'])
+  return crud(request, url, env, 'energy_pricing_rule', PRICING_RULE_FIELDS)
+}
+
+async function ensurePricingRuleFeeColumns(env: Env) {
+  const info = await env.DB.prepare('PRAGMA table_info(energy_pricing_rule)').all<AnyRecord>()
+  const existing = new Set((info.results || []).map((row) => String(row.name)))
+  for (const [column, definition] of Object.entries(PRICING_RULE_FEE_COLUMNS)) {
+    if (!existing.has(column)) {
+      try {
+        await env.DB.prepare(`ALTER TABLE energy_pricing_rule ADD COLUMN ${column} ${definition}`).run()
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        if (!message.toLowerCase().includes('duplicate column')) {
+          throw error
+        }
+      }
+    }
+  }
 }
 
 async function chargeSessionApi(request: Request, url: URL, env: Env, path: string) {

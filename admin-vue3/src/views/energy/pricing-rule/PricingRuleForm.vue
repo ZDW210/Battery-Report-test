@@ -70,6 +70,75 @@
             />
           </el-form-item>
         </el-col>
+        <el-col :span="24">
+          <el-divider content-position="left">固定费用参数</el-divider>
+        </el-col>
+        <el-col :span="12">
+          <el-form-item label="场地费" prop="siteFee">
+            <el-input-number
+              v-model="formData.siteFee"
+              :min="0"
+              :precision="2"
+              class="!w-1/1"
+              controls-position="right"
+            />
+          </el-form-item>
+        </el-col>
+        <el-col :span="12">
+          <el-form-item label="运维费" prop="maintenanceFee">
+            <el-input-number
+              v-model="formData.maintenanceFee"
+              :min="0"
+              :precision="2"
+              class="!w-1/1"
+              controls-position="right"
+            />
+          </el-form-item>
+        </el-col>
+        <el-col :span="12">
+          <el-form-item label="通信费" prop="communicationFee">
+            <el-input-number
+              v-model="formData.communicationFee"
+              :min="0"
+              :precision="2"
+              class="!w-1/1"
+              controls-position="right"
+            />
+          </el-form-item>
+        </el-col>
+        <el-col :span="12">
+          <el-form-item label="平台服务费" prop="platformServiceFee">
+            <el-input-number
+              v-model="formData.platformServiceFee"
+              :min="0"
+              :precision="2"
+              class="!w-1/1"
+              controls-position="right"
+            />
+          </el-form-item>
+        </el-col>
+        <el-col :span="12">
+          <el-form-item label="电池折旧成本" prop="batteryDepreciationCost">
+            <el-input-number
+              v-model="formData.batteryDepreciationCost"
+              :min="0"
+              :precision="2"
+              class="!w-1/1"
+              controls-position="right"
+            />
+          </el-form-item>
+        </el-col>
+        <el-col :span="12">
+          <el-form-item label="其他固定费用" prop="otherFixedFee">
+            <el-input-number
+              v-model="formData.otherFixedFee"
+              :min="0"
+              :precision="2"
+              class="!w-1/1"
+              controls-position="right"
+            />
+          </el-form-item>
+        </el-col>
         <el-col :span="12">
           <el-form-item label="生效开始" prop="effectiveStart">
             <el-date-picker
@@ -151,6 +220,12 @@ const formData = ref<EnergyPricingRuleVO>({
   deviceId: undefined,
   timeRate: 0,
   energyRate: 0,
+  siteFee: 0,
+  maintenanceFee: 0,
+  communicationFee: 0,
+  platformServiceFee: 0,
+  batteryDepreciationCost: 0,
+  otherFixedFee: 0,
   effectiveStart: undefined,
   effectiveEnd: undefined,
   status: 0,
@@ -246,6 +321,12 @@ const resetForm = () => {
     deviceId: undefined,
     timeRate: 0,
     energyRate: 0,
+    siteFee: 0,
+    maintenanceFee: 0,
+    communicationFee: 0,
+    platformServiceFee: 0,
+    batteryDepreciationCost: 0,
+    otherFixedFee: 0,
     effectiveStart: undefined,
     effectiveEnd: undefined,
     status: 0,

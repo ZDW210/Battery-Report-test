@@ -1202,7 +1202,28 @@ const averageSellRate = computed(() => (monthlySoldEnergy.value > 0 ? monthlyRev
 const averageBuyRate = computed(() => averageNumber(applicablePricingRules.value.map((item) => normalizeNumber(item.energyRate))))
 const averageBuyRateText = computed(() => averageBuyRate.value > 0 ? `${averageBuyRate.value.toFixed(2)} 元/kWh` : '待录入')
 const purchaseCost = computed(() => Number((monthlyPurchasedEnergy.value * averageBuyRate.value).toFixed(2)))
+const uniqueApplicablePricingRules = computed(() => uniqueRowsById(applicablePricingRules.value))
+const siteFee = computed(() => sumPricingRuleField('siteFee'))
+const maintenanceFee = computed(() => sumPricingRuleField('maintenanceFee'))
+const communicationFee = computed(() => sumPricingRuleField('communicationFee'))
+const platformServiceFee = computed(() => sumPricingRuleField('platformServiceFee'))
+const batteryDepreciationCost = computed(() => sumPricingRuleField('batteryDepreciationCost'))
+const otherFixedFee = computed(() => sumPricingRuleField('otherFixedFee'))
+const fixedOperatingCost = computed(() => {
+  return Number(
+    (
+      siteFee.value +
+      maintenanceFee.value +
+      communicationFee.value +
+      platformServiceFee.value +
+      otherFixedFee.value
+    ).toFixed(2)
+  )
+})
 const knownProfit = computed(() => Number((monthlyRevenue.value - purchaseCost.value).toFixed(2)))
+const netProfit = computed(() => {
+  return Number((knownProfit.value - fixedOperatingCost.value - batteryDepreciationCost.value).toFixed(2))
+})
 const batteryEfficiencyText = computed(() => {
   if (!monthlyPurchasedEnergy.value) return '--'
   if (monthlySoldEnergy.value > monthlyPurchasedEnergy.value) return '待补充购电量'
@@ -1234,7 +1255,7 @@ const billTopCards = computed(() => [
   {
     label: '毛利润测算',
     value: finalProfitText.value,
-    hint: '售电收入减购电成本，其他费用待录入',
+    hint: '售电收入减购电成本和固定费用',
     icon: 'ep:trophy',
     color: '#f59e0b'
   }
@@ -1283,15 +1304,17 @@ const revenueRows = computed(() => [
 const profitRows = computed(() => [
   { label: '售电收入', value: formatCurrency(monthlyRevenue.value) },
   { label: '购电成本', value: averageBuyRate.value > 0 ? formatCurrency(purchaseCost.value) : '待录入' },
-  { label: '场地费', value: '待录入' },
-  { label: '运维费', value: '待录入' },
-  { label: '通信费', value: '待录入' },
-  { label: '平台服务费', value: '待录入' }
+  { label: '场地费', value: formatPricingFee(siteFee.value) },
+  { label: '运维费', value: formatPricingFee(maintenanceFee.value) },
+  { label: '通信费', value: formatPricingFee(communicationFee.value) },
+  { label: '平台服务费', value: formatPricingFee(platformServiceFee.value) },
+  { label: '电池折旧成本', value: formatPricingFee(batteryDepreciationCost.value) },
+  { label: '其他固定费用', value: formatPricingFee(otherFixedFee.value) }
 ])
 
 const finalProfitText = computed(() => {
   if (averageBuyRate.value <= 0) return '待录入成本'
-  return formatCurrency(knownProfit.value)
+  return formatCurrency(netProfit.value)
 })
 
 const batteryRows = computed(() => [
@@ -1300,8 +1323,8 @@ const batteryRows = computed(() => [
   { label: '循环次数', value: '待录入容量' },
   { label: '当月任务次数', value: `${billSessions.value.length} 次` },
   { label: '电池效率', value: batteryEfficiencyText.value },
-  { label: '电池折旧成本', value: '待录入' },
-  { label: '折旧费用', value: '待录入' }
+  { label: '电池折旧成本', value: formatPricingFee(batteryDepreciationCost.value) },
+  { label: '折旧费用', value: formatPricingFee(batteryDepreciationCost.value) }
 ])
 
 const energyPieOptions = computed<EChartsOption>(() => ({
@@ -1945,6 +1968,22 @@ const calculateEpiBoundary = (rows: EnergyTelemetryVO[], boundary: 'start' | 'en
   return hasValue ? Number(total.toFixed(2)) : null
 }
 
+const uniqueRowsById = <T extends { id?: number }>(rows: T[]) => {
+  const map = new Map<string | number, T>()
+  rows.forEach((row, index) => {
+    map.set(row.id ?? `row-${index}`, row)
+  })
+  return Array.from(map.values())
+}
+
+const sumPricingRuleField = (field: keyof EnergyPricingRuleVO) => {
+  return Number(
+    uniqueApplicablePricingRules.value
+      .reduce((sum, rule) => sum + Number(rule[field] || 0), 0)
+      .toFixed(2)
+  )
+}
+
 const sumBy = <T extends Record<string, any>>(rows: T[], key: keyof T) => {
   return rows.reduce((sum, item) => sum + Number(item[key] || 0), 0)
 }
@@ -1965,6 +2004,9 @@ const numberText = (value: number) => {
 const formatKwh = (value: number) => `${numberText(value)} kWh`
 const formatNullableKwh = (value: number | null) => (value === null ? '--' : formatKwh(value))
 const formatCurrency = (value: number) => `¥${numberText(value)}`
+const formatPricingFee = (value: number) => {
+  return uniqueApplicablePricingRules.value.length > 0 ? formatCurrency(value) : '待录入'
+}
 
 const exportRawData = () => {
   const headers = [

@@ -114,6 +114,13 @@
       <el-descriptions-item label="范围名称">{{ getScopeName(matchedRule) }}</el-descriptions-item>
       <el-descriptions-item label="时间单价">{{ matchedRule.timeRate }}</el-descriptions-item>
       <el-descriptions-item label="电量单价">{{ matchedRule.energyRate }}</el-descriptions-item>
+      <el-descriptions-item label="固定费用合计">{{ formatCurrency(getFixedFeeTotal(matchedRule)) }}</el-descriptions-item>
+      <el-descriptions-item label="场地费">{{ formatCurrency(matchedRule.siteFee) }}</el-descriptions-item>
+      <el-descriptions-item label="运维费">{{ formatCurrency(matchedRule.maintenanceFee) }}</el-descriptions-item>
+      <el-descriptions-item label="通信费">{{ formatCurrency(matchedRule.communicationFee) }}</el-descriptions-item>
+      <el-descriptions-item label="平台服务费">{{ formatCurrency(matchedRule.platformServiceFee) }}</el-descriptions-item>
+      <el-descriptions-item label="电池折旧成本">{{ formatCurrency(matchedRule.batteryDepreciationCost) }}</el-descriptions-item>
+      <el-descriptions-item label="其他固定费用">{{ formatCurrency(matchedRule.otherFixedFee) }}</el-descriptions-item>
       <el-descriptions-item label="生效开始">
         {{ formatDateText(matchedRule.effectiveStart) }}
       </el-descriptions-item>
@@ -137,6 +144,27 @@
       </el-table-column>
       <el-table-column align="right" label="时间单价" width="120" prop="timeRate" />
       <el-table-column align="right" label="电量单价" width="120" prop="energyRate" />
+      <el-table-column align="right" label="固定费用合计" width="130">
+        <template #default="{ row }">{{ formatCurrency(getFixedFeeTotal(row)) }}</template>
+      </el-table-column>
+      <el-table-column align="right" label="场地费" width="110">
+        <template #default="{ row }">{{ formatCurrency(row.siteFee) }}</template>
+      </el-table-column>
+      <el-table-column align="right" label="运维费" width="110">
+        <template #default="{ row }">{{ formatCurrency(row.maintenanceFee) }}</template>
+      </el-table-column>
+      <el-table-column align="right" label="通信费" width="110">
+        <template #default="{ row }">{{ formatCurrency(row.communicationFee) }}</template>
+      </el-table-column>
+      <el-table-column align="right" label="平台服务费" width="120">
+        <template #default="{ row }">{{ formatCurrency(row.platformServiceFee) }}</template>
+      </el-table-column>
+      <el-table-column align="right" label="电池折旧成本" width="130">
+        <template #default="{ row }">{{ formatCurrency(row.batteryDepreciationCost) }}</template>
+      </el-table-column>
+      <el-table-column align="right" label="其他固定费用" width="130">
+        <template #default="{ row }">{{ formatCurrency(row.otherFixedFee) }}</template>
+      </el-table-column>
       <el-table-column align="center" label="生效开始" width="180" prop="effectiveStart">
         <template #default="{ row }">{{ formatDateText(row.effectiveStart) }}</template>
       </el-table-column>
@@ -309,6 +337,22 @@ const getScopeName = (row: EnergyPricingRuleVO) => {
   if (row.deviceId) return `${row.deviceName || '-'} / ${row.deviceNo || '-'}`
   if (row.projectId) return row.projectName || '-'
   return row.customerName || '-'
+}
+
+const getFixedFeeTotal = (row: EnergyPricingRuleVO) => {
+  return [
+    row.siteFee,
+    row.maintenanceFee,
+    row.communicationFee,
+    row.platformServiceFee,
+    row.batteryDepreciationCost,
+    row.otherFixedFee
+  ].reduce((sum, value) => sum + Number(value || 0), 0)
+}
+
+const formatCurrency = (value?: number) => {
+  const amount = Number(value || 0)
+  return amount > 0 ? `¥${amount.toFixed(2)}` : '¥0.00'
 }
 
 const formatDateText = (value?: string | Date) => {
