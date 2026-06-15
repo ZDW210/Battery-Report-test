@@ -168,174 +168,185 @@
       </el-tab-pane>
 
       <el-tab-pane label="设备监控面板" name="monitor">
-        <section class="monitor-workbench">
-          <aside class="monitor-sidebar">
-            <div class="monitor-sidebar__switch">
-              <strong>{{ monitorStationName }}</strong>
-              <el-button type="primary" round @click="loadAll">切换</el-button>
+        <section class="bill-report-panel monitor-report-panel">
+          <div class="bill-report-panel__header">
+            <div>
+              <h2>设备监控面板</h2>
+              <span>按客户、场站或电表筛选设备状态，点击详情查看电表实时数据、历史曲线和报警信息。</span>
             </div>
-            <button class="monitor-sidebar__collapse" type="button">收起</button>
-            <div class="monitor-sidebar__avatar">
-              <Icon icon="ep:office-building" :size="58" />
-            </div>
-            <div class="monitor-sidebar__identity">
-              <strong>{{ monitorCustomerName }}</strong>
-              <span>{{ monitorProjectName }}</span>
-            </div>
-            <div class="monitor-sidebar__status">
-              <button
-                v-for="item in monitorStatusFilters"
-                :key="item.label"
-                type="button"
-                :class="['monitor-status-cell', `is-${item.tone}`]"
-                @click="setStatusFilter(item.value)"
-              >
-                <span>{{ item.label }}</span>
-                <strong>{{ item.count }}</strong>
-              </button>
-            </div>
-            <div class="monitor-sidebar__metrics">
-              <div v-for="item in sidebarMetrics" :key="item.label" class="monitor-metric-card">
-                <Icon :icon="item.icon" :size="38" />
-                <div>
-                  <span>{{ item.label }}</span>
-                  <strong>{{ item.value }}</strong>
-                </div>
-              </div>
-            </div>
-          </aside>
+            <el-button type="primary" :loading="loading" @click="loadAll">
+              <Icon class="mr-5px" icon="ep:refresh" />
+              刷新监控
+            </el-button>
+          </div>
 
-          <main class="monitor-main">
-            <div class="monitor-toolbar">
-              <div class="monitor-toolbar__status">
+          <el-form :inline="true" class="telemetry-form bill-report__filters monitor-report__filters" label-width="84px">
+            <el-form-item label="状态">
+              <div class="monitor-report__status-filter">
+                <el-button :type="statusFilter === undefined ? 'primary' : 'default'" @click="statusFilter = undefined">
+                  全部 {{ baseFilteredDevices.length }}
+                </el-button>
                 <el-button
                   v-for="item in monitorStatusFilters"
                   :key="item.label"
-                  :class="[`is-${item.tone}`, { 'is-selected': statusFilter === item.value }]"
+                  :type="statusFilter === item.value ? 'primary' : 'default'"
                   @click="setStatusFilter(item.value)"
                 >
-                  {{ item.label }}
+                  {{ item.label }} {{ item.count }}
                 </el-button>
               </div>
-              <div class="monitor-toolbar__filters">
-                <el-select v-model="nodeTypeFilter" clearable placeholder="节点类型" class="!w-150px">
-                  <el-option label="客户" value="customer" />
-                  <el-option label="项目" value="project" />
-                  <el-option label="设备" value="device" />
-                </el-select>
-                <el-select v-model="nodeFilter" clearable filterable placeholder="节点" class="!w-170px">
-                  <el-option
-                    v-for="item in nodeOptions"
-                    :key="item.value"
-                    :label="item.label"
-                    :value="item.value"
-                  />
-                </el-select>
-                <el-select v-model="energyTypeFilter" clearable placeholder="能源类型" class="!w-160px">
-                  <el-option label="电表" value="meter" />
-                </el-select>
-                <el-input
-                  v-model="keyword"
-                  clearable
-                  placeholder="网关识别号/仪表型"
-                  class="!w-220px"
-                >
-                  <template #prefix>
-                    <Icon icon="ep:search" />
-                  </template>
-                </el-input>
-                <el-button
-                  :type="monitorViewMode === 'grid' ? 'primary' : 'default'"
-                  @click="monitorViewMode = 'grid'"
-                >
-                  <Icon class="mr-5px" icon="ep:grid" />
-                  阵列模式
-                </el-button>
-                <el-button
-                  :type="monitorViewMode === 'table' ? 'primary' : 'default'"
-                  @click="monitorViewMode = 'table'"
-                >
-                  <Icon class="mr-5px" icon="ep:list" />
-                  表格模式
-                </el-button>
+            </el-form-item>
+            <el-form-item label="节点类型">
+              <el-select v-model="nodeTypeFilter" clearable placeholder="请选择节点类型" class="!w-150px">
+                <el-option label="客户" value="customer" />
+                <el-option label="项目" value="project" />
+                <el-option label="设备" value="device" />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="节点">
+              <el-select v-model="nodeFilter" clearable filterable placeholder="请选择节点" class="!w-180px">
+                <el-option
+                  v-for="item in nodeOptions"
+                  :key="item.value"
+                  :label="item.label"
+                  :value="item.value"
+                />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="能源类型">
+              <el-select v-model="energyTypeFilter" clearable placeholder="能源类型" class="!w-150px">
+                <el-option label="电表" value="meter" />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="关键字">
+              <el-input v-model="keyword" clearable placeholder="网关识别号/仪表型号" class="!w-220px">
+                <template #prefix>
+                  <Icon icon="ep:search" />
+                </template>
+              </el-input>
+            </el-form-item>
+          </el-form>
+
+          <div class="bill-report">
+            <div class="bill-report__scope-summary">
+              <strong>{{ monitorStationName }}</strong>
+              <span>
+                {{ monitorCustomerName }} / {{ monitorProjectName }}，当前显示 {{ filteredDevices.length }} 块电表
+              </span>
+            </div>
+
+            <div class="bill-report__kpis monitor-report__kpis">
+              <div v-for="item in statCards" :key="item.label" class="bill-report__kpi monitor-report__kpi">
+                <div>
+                  <span>{{ item.label }}</span>
+                  <strong>{{ item.value }}</strong>
+                  <small>按当前筛选范围统计</small>
+                </div>
+                <Icon :icon="item.icon" :size="42" :style="{ color: item.color }" />
               </div>
             </div>
 
-            <el-skeleton :loading="loading" animated>
-              <el-empty v-if="filteredDevices.length === 0" description="暂无电表数据" />
-              <div v-else-if="monitorViewMode === 'grid'" class="meter-grid">
-                <button
-                  v-for="device in filteredDevices"
-                  :key="device.id || device.deviceNo"
-                  type="button"
-                  class="meter-card"
-                  :class="{ 'is-active': device.id === selectedDeviceId }"
-                  @click="selectDevice(device)"
-                >
-                  <span :class="['meter-card__status', getDeviceStatusClass(device.status)]">
-                    {{ getStatusText(device.status) }}
-                  </span>
-                  <span class="meter-card__name">{{ device.deviceName || device.deviceNo || '--' }}</span>
-                  <div class="meter-card__body">
-                    <div class="meter-card__icon">
-                      <Icon icon="ep:odometer" :size="34" />
-                    </div>
-                    <dl>
-                      <div>
-                        <dt>网关识别号：</dt>
-                        <dd>{{ device.gatewaySn || '--' }}</dd>
-                      </div>
-                      <div>
-                        <dt>仪表地址：</dt>
-                        <dd>{{ device.meterSn || device.meterNo || '--' }}</dd>
-                      </div>
-                      <div>
-                        <dt>仪表型号：</dt>
-                        <dd>{{ device.deviceNo || 'ADW300-IOT' }}</dd>
-                      </div>
-                    </dl>
-                  </div>
-                  <el-button class="meter-card__detail" @click.stop="openRealtimeDetail(device)">详情</el-button>
-                </button>
+            <section class="bill-report__section monitor-report__section">
+              <div class="monitor-report__section-head">
+                <div>
+                  <h3>电表设备列表</h3>
+                  <span>卡片模式适合快速查看，表格模式适合核对网关、仪表编号和最近采集时间。</span>
+                </div>
+                <div class="monitor-report__view-switch">
+                  <el-button
+                    :type="monitorViewMode === 'grid' ? 'primary' : 'default'"
+                    @click="monitorViewMode = 'grid'"
+                  >
+                    <Icon class="mr-5px" icon="ep:grid" />
+                    卡片
+                  </el-button>
+                  <el-button
+                    :type="monitorViewMode === 'table' ? 'primary' : 'default'"
+                    @click="monitorViewMode = 'table'"
+                  >
+                    <Icon class="mr-5px" icon="ep:list" />
+                    表格
+                  </el-button>
+                </div>
               </div>
-              <el-table
-                v-else
-                :data="filteredDevices"
-                :show-overflow-tooltip="true"
-                :stripe="true"
-                class="monitor-table"
-              >
-                <el-table-column align="center" label="设备名称" min-width="180">
-                  <template #default="{ row }">{{ row.deviceName || row.deviceNo || '--' }}</template>
-                </el-table-column>
-                <el-table-column align="center" label="状态" width="100">
-                  <template #default="{ row }">
-                    <el-tag :type="getStatusType(row.status)" effect="light">{{ getStatusText(row.status) }}</el-tag>
-                  </template>
-                </el-table-column>
-                <el-table-column align="center" label="网关识别号" min-width="180" prop="gatewaySn" />
-                <el-table-column align="center" label="仪表地址" min-width="180">
-                  <template #default="{ row }">{{ row.meterSn || row.meterNo || '--' }}</template>
-                </el-table-column>
-                <el-table-column align="right" label="总有功功率(kW)" width="150">
-                  <template #default="{ row }">{{ formatCellValue(row.lastPower) }}</template>
-                </el-table-column>
-                <el-table-column align="center" label="最近采集" width="180">
-                  <template #default="{ row }">{{ formatDateTime(row.lastReadingTime) }}</template>
-                </el-table-column>
-                <el-table-column align="center" fixed="right" label="操作" width="100">
-                  <template #default="{ row }">
-                    <el-button link type="primary" @click="openRealtimeDetail(row)">详情</el-button>
-                  </template>
-                </el-table-column>
-              </el-table>
-            </el-skeleton>
-            <div class="monitor-pagination">
-              <span>共 {{ filteredDevices.length }} 条</span>
-              <span>24条/页</span>
-              <strong>1</strong>
-            </div>
-          </main>
+
+              <el-skeleton :loading="loading" animated>
+                <el-empty v-if="filteredDevices.length === 0" description="暂无电表数据" />
+                <div v-else-if="monitorViewMode === 'grid'" class="meter-grid monitor-report__meter-grid">
+                  <button
+                    v-for="device in filteredDevices"
+                    :key="device.id || device.deviceNo"
+                    type="button"
+                    class="meter-card"
+                    :class="{ 'is-active': device.id === selectedDeviceId }"
+                    @click="selectDevice(device)"
+                  >
+                    <span :class="['meter-card__status', getDeviceStatusClass(device.status)]">
+                      {{ getStatusText(device.status) }}
+                    </span>
+                    <span class="meter-card__name">{{ device.deviceName || device.deviceNo || '--' }}</span>
+                    <div class="meter-card__body">
+                      <div class="meter-card__icon">
+                        <Icon icon="ep:odometer" :size="34" />
+                      </div>
+                      <dl>
+                        <div>
+                          <dt>网关识别号：</dt>
+                          <dd>{{ device.gatewaySn || '--' }}</dd>
+                        </div>
+                        <div>
+                          <dt>仪表地址：</dt>
+                          <dd>{{ device.meterSn || device.meterNo || '--' }}</dd>
+                        </div>
+                        <div>
+                          <dt>仪表型号：</dt>
+                          <dd>{{ device.deviceNo || 'ADW300-IOT' }}</dd>
+                        </div>
+                      </dl>
+                    </div>
+                    <el-button class="meter-card__detail" @click.stop="openRealtimeDetail(device)">详情</el-button>
+                  </button>
+                </div>
+                <el-table
+                  v-else
+                  :data="filteredDevices"
+                  :show-overflow-tooltip="true"
+                  :stripe="true"
+                  class="monitor-table"
+                >
+                  <el-table-column align="center" label="设备名称" min-width="180">
+                    <template #default="{ row }">{{ row.deviceName || row.deviceNo || '--' }}</template>
+                  </el-table-column>
+                  <el-table-column align="center" label="状态" width="100">
+                    <template #default="{ row }">
+                      <el-tag :type="getStatusType(row.status)" effect="light">{{ getStatusText(row.status) }}</el-tag>
+                    </template>
+                  </el-table-column>
+                  <el-table-column align="center" label="网关识别号" min-width="180" prop="gatewaySn" />
+                  <el-table-column align="center" label="仪表地址" min-width="180">
+                    <template #default="{ row }">{{ row.meterSn || row.meterNo || '--' }}</template>
+                  </el-table-column>
+                  <el-table-column align="right" label="总有功功率(kW)" width="150">
+                    <template #default="{ row }">{{ formatCellValue(row.lastPower) }}</template>
+                  </el-table-column>
+                  <el-table-column align="center" label="最近采集" width="180">
+                    <template #default="{ row }">{{ formatDateTime(row.lastReadingTime) }}</template>
+                  </el-table-column>
+                  <el-table-column align="center" fixed="right" label="操作" width="100">
+                    <template #default="{ row }">
+                      <el-button link type="primary" @click="openRealtimeDetail(row)">详情</el-button>
+                    </template>
+                  </el-table-column>
+                </el-table>
+              </el-skeleton>
+
+              <div class="monitor-pagination monitor-report__pagination">
+                <span>共 {{ filteredDevices.length }} 条</span>
+                <span>当前页展示全部筛选结果</span>
+                <strong>1</strong>
+              </div>
+            </section>
+          </div>
         </section>
       </el-tab-pane>
       <el-tab-pane label="数据查看" name="trend">
@@ -2429,6 +2440,79 @@ onMounted(() => {
   }
 }
 
+.monitor-report-panel {
+  .bill-report-panel__header {
+    margin-bottom: 12px;
+  }
+}
+
+.monitor-report {
+  &__filters {
+    :deep(.el-form-item) {
+      margin-bottom: 12px;
+    }
+  }
+
+  &__status-filter,
+  &__view-switch {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+
+    .el-button {
+      height: 32px;
+      margin-left: 0;
+      border-radius: 6px;
+      font-weight: 700;
+    }
+  }
+
+  &__kpis {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  &__kpi {
+    min-height: 104px;
+
+    strong {
+      font-size: 26px;
+      line-height: 32px;
+    }
+  }
+
+  &__section {
+    margin-top: 12px;
+  }
+
+  &__section-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 14px;
+
+    h3 {
+      margin-bottom: 4px;
+    }
+
+    span {
+      color: #64748b;
+      font-size: 13px;
+      line-height: 20px;
+    }
+  }
+
+  &__meter-grid {
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  }
+
+  &__pagination {
+    margin-top: 14px;
+    padding-top: 12px;
+    border-top: 1px solid #edf2f7;
+  }
+}
+
 .energy-telemetry__stat {
   display: flex;
   align-items: center;
@@ -2792,19 +2876,22 @@ onMounted(() => {
   display: grid;
   gap: 10px;
   width: 100%;
-  min-height: 122px;
-  padding: 14px 58px 12px 18px;
+  min-height: 132px;
+  padding: 16px 64px 14px 18px;
   text-align: left;
   cursor: pointer;
-  background: #f3f8f8;
-  border: 1px solid #edf2f4;
-  border-radius: 2px;
+  background:
+    radial-gradient(circle at 100% 100%, rgba(56, 189, 248, 0.1), transparent 34%),
+    #ffffff;
+  border: 1px solid #e5edf6;
+  border-radius: 8px;
+  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.05);
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
 
   &:hover,
   &.is-active {
-    border-color: #0bb5b1;
-    box-shadow: 0 6px 14px rgb(15 23 42 / 8%);
+    border-color: #2088d8;
+    box-shadow: 0 10px 24px rgb(15 23 42 / 10%);
   }
 
   &__name {
@@ -2829,6 +2916,7 @@ onMounted(() => {
     line-height: 24px;
     text-align: center;
     background: #9fa1a4;
+    border-radius: 999px;
 
     &.is-online {
       background: #0bb5b1;
@@ -2856,7 +2944,7 @@ onMounted(() => {
     justify-content: center;
     width: 40px;
     height: 48px;
-    color: #0bb5b1;
+    color: #2088d8;
   }
 
   dl {
@@ -2896,12 +2984,12 @@ onMounted(() => {
     min-width: 44px;
     height: 30px;
     padding: 0 8px;
-    color: #1f2937;
+    color: #2088d8;
     font-size: 14px;
     font-weight: 700;
     background: #ffffff;
-    border-color: #d8dde3;
-    border-radius: 2px;
+    border-color: #b8d8f7;
+    border-radius: 6px;
   }
 }
 
