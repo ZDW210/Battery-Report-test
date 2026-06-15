@@ -22,12 +22,12 @@ const ENERGY_MENUS = [
   menu(1006, 1000, '扫码刷卡记录', 'account-event', 'energy/account-event/index', 'EnergyAccountEvent', 'ep:connection', 6),
   menu(1007, 1000, '报警信息', 'alarm', 'energy/alarm/index', 'EnergyAlarm', 'ep:warning', 7),
   menu(1008, 1000, '客户管理', 'customer', 'energy/customer/index', 'EnergyCustomer', 'ep:office-building', 8),
-  menu(1009, 1000, '项目管理', 'project', 'energy/project/index', 'EnergyProject', 'ep:location', 9),
-  menu(1010, 1000, '用户授权', 'user-scope', 'energy/userScope/index', 'EnergyUserScope', 'ep:key', 10),
-  menu(1011, 1000, 'EIOT 同步日志', 'eiot-log', 'energy/eiotLog/index', 'EnergyEiotLog', 'ep:document', 11),
-  menu(1012, 1000, '计费规则', 'pricing-rule', 'energy/pricing-rule/index', 'EnergyPricingRule', 'ep:money', 12),
-  menu(1013, 1000, '充放电任务', 'charge-session', 'energy/charge-session/index', 'EnergyChargeSession', 'ep:switch-button', 13),
-  menu(1014, 1000, '客户账号权限', 'customer-account', 'energy/customerAccount/index', 'EnergyCustomerAccount', 'ep:lock', 14)
+  menu(1014, 1000, '客户账号权限', 'customer-account', 'energy/customerAccount/index', 'EnergyCustomerAccount', 'ep:lock', 9),
+  menu(1009, 1000, '项目管理', 'project', 'energy/project/index', 'EnergyProject', 'ep:location', 10),
+  menu(1010, 1000, '用户授权', 'user-scope', 'energy/userScope/index', 'EnergyUserScope', 'ep:key', 11),
+  menu(1011, 1000, 'EIOT 同步日志', 'eiot-log', 'energy/eiotLog/index', 'EnergyEiotLog', 'ep:document', 12),
+  menu(1012, 1000, '计费规则', 'pricing-rule', 'energy/pricing-rule/index', 'EnergyPricingRule', 'ep:money', 13),
+  menu(1013, 1000, '充放电任务', 'charge-session', 'energy/charge-session/index', 'EnergyChargeSession', 'ep:switch-button', 14)
 ]
 
 export default {
@@ -145,7 +145,7 @@ async function permissionInfo(request: Request, env: Env) {
   const menus = buildMenuTree(ENERGY_MENUS.filter((item) => menuIds.includes(item.id) || item.parentId === 0))
 
   return ok({
-    permissions: permissionsForMenus(menuIds),
+    permissions: account ? permissionsForMenus(menuIds) : ['*:*:*'],
     roles: account ? ['customer_owner'] : ['admin'],
     user: {
       id: user.id,
