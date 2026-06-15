@@ -511,10 +511,15 @@ async function chargeSessionApi(request: Request, url: URL, env: Env, path: stri
 
 async function telemetryApi(request: Request, url: URL, env: Env, path: string) {
   if (path === '/energy/telemetry/chart') {
+    const { start, end } = collectTimeRange(url)
     const rows = await env.DB.prepare(
-      'SELECT * FROM energy_telemetry WHERE (? IS NULL OR device_id = ?) ORDER BY collect_time ASC LIMIT 288'
+      `SELECT * FROM energy_telemetry
+       WHERE (? IS NULL OR device_id = ?)
+       AND (? IS NULL OR collect_time >= ?)
+       AND (? IS NULL OR collect_time <= ?)
+       ORDER BY collect_time ASC LIMIT ?`
     )
-      .bind(url.searchParams.get('deviceId'), url.searchParams.get('deviceId'))
+      .bind(url.searchParams.get('deviceId'), url.searchParams.get('deviceId'), start, start, end, end, num(url.searchParams.get('limit'), 288))
       .all<AnyRecord>()
     return ok(camelRows(rows.results))
   }
@@ -736,6 +741,20 @@ function exact(url: URL, where: string[], args: any[], column: string, key: stri
     where.push(`${column} = ?`)
     args.push(value)
   }
+}
+
+function collectTimeRange(url: URL) {
+  const start =
+    url.searchParams.get('collectTime[0]') ||
+    url.searchParams.get('collectTime.0') ||
+    url.searchParams.getAll('collectTime')[0] ||
+    null
+  const end =
+    url.searchParams.get('collectTime[1]') ||
+    url.searchParams.get('collectTime.1') ||
+    url.searchParams.getAll('collectTime')[1] ||
+    null
+  return { start, end }
 }
 
 function camelRows(rows: AnyRecord[]) {

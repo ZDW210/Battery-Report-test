@@ -140,12 +140,12 @@
       </el-col>
     </el-row>
 
-    <el-card shadow="never" class="energy-dashboard__data-panel">
+    <el-card shadow="never" class="energy-dashboard__data-panel energy-dashboard__bill-panel">
       <template #header>
         <div class="energy-dashboard__card-header">
           <div>
-            <span>数据面板</span>
-            <span class="energy-dashboard__subtext ml-8px">按接收到的电表遥测数据绘制曲线</span>
+            <span>数据面板 · 用电量报表</span>
+            <span class="energy-dashboard__subtext ml-8px">参数来自电表遥测、充放电任务和计费规则</span>
           </div>
           <el-button link type="primary" @click="go('/energy/telemetry')">查看详细数据</el-button>
         </div>
@@ -171,50 +171,101 @@
             </el-option>
           </el-select>
         </el-form-item>
-        <el-form-item label="时间">
+        <el-form-item label="账单月">
           <el-date-picker
-            v-model="dataQuery.collectTime"
-            type="datetimerange"
-            value-format="YYYY-MM-DD HH:mm:ss"
-            start-placeholder="开始时间"
-            end-placeholder="结束时间"
-            class="!w-390px"
+            v-model="dataQuery.billMonth"
+            type="month"
+            value-format="YYYY-MM"
+            placeholder="选择账单月份"
+            class="!w-180px"
             @change="loadDataPanel"
           />
-        </el-form-item>
-        <el-form-item label="类型">
-          <el-radio-group v-model="dataQuery.metricGroup">
-            <el-radio-button
-              v-for="group in dataMetricGroups"
-              :key="group.value"
-              :label="group.value"
-            >
-              {{ group.label }}
-            </el-radio-button>
-          </el-radio-group>
         </el-form-item>
         <el-form-item>
           <el-button type="primary" :loading="dataPanelLoading" @click="loadDataPanel">
             <Icon class="mr-5px" icon="ep:refresh" />
-            刷新曲线
+            刷新报表
           </el-button>
         </el-form-item>
       </el-form>
 
-      <div class="energy-dashboard__data-summary">
-        <div v-for="item in dataPanelSummary" :key="item.label">
-          <span>{{ item.label }}</span>
-          <strong>{{ item.value }}</strong>
+      <el-empty v-if="!dataQuery.deviceId" description="请先选择电表" />
+      <div v-else v-loading="dataPanelLoading" class="energy-dashboard__bill">
+        <div class="energy-dashboard__bill-kpis">
+          <div v-for="item in billTopCards" :key="item.label" class="energy-dashboard__bill-kpi">
+            <div>
+              <span>{{ item.label }}</span>
+              <strong>{{ item.value }}</strong>
+            </div>
+            <Icon :icon="item.icon" :size="42" :style="{ color: item.color }" />
+          </div>
+        </div>
+
+        <div class="energy-dashboard__bill-grid">
+          <section class="energy-dashboard__bill-section energy-dashboard__bill-section--tall">
+            <h3>① 电量统计（核心）</h3>
+            <div class="energy-dashboard__bill-list">
+              <div v-for="item in energyStatRows" :key="item.label">
+                <span>{{ item.label }}</span>
+                <strong>{{ item.value }}</strong>
+              </div>
+            </div>
+            <Echart :options="energyPieOptions" height="210px" />
+          </section>
+
+          <section class="energy-dashboard__bill-section">
+            <h3>② 电费成本</h3>
+            <el-table :data="costRows" size="small" :show-header="true">
+              <el-table-column label="时段" prop="period" min-width="90" />
+              <el-table-column label="电量(kWh)" prop="energy" align="right" width="110" />
+              <el-table-column label="单价(元)" prop="rate" align="right" width="100" />
+              <el-table-column label="金额" prop="amount" align="right" width="110" />
+            </el-table>
+            <div class="energy-dashboard__bill-total">
+              <div><span>总购电量</span><strong>{{ formatKwh(monthlyPurchasedEnergy) }}</strong></div>
+              <div><span>平均购电单价</span><strong>{{ averageBuyRateText }}</strong></div>
+              <div><span>购电成本</span><strong>{{ formatCurrency(purchaseCost) }}</strong></div>
+            </div>
+          </section>
+
+          <section class="energy-dashboard__bill-section">
+            <h3>③ 充电收益</h3>
+            <div class="energy-dashboard__bill-split">
+              <div class="energy-dashboard__bill-list">
+                <div v-for="item in revenueRows" :key="item.label">
+                  <span>{{ item.label }}</span>
+                  <strong>{{ item.value }}</strong>
+                </div>
+              </div>
+              <Echart :options="revenueBarOptions" height="210px" />
+            </div>
+          </section>
+
+          <section class="energy-dashboard__bill-section">
+            <h3>④ 利润分析</h3>
+            <p class="energy-dashboard__formula">收益公式：利润 = 售电收入 - 购电成本 - 运营成本</p>
+            <div class="energy-dashboard__profit-list">
+              <div v-for="item in profitRows" :key="item.label">
+                <span>{{ item.label }}</span>
+                <strong>{{ item.value }}</strong>
+              </div>
+            </div>
+            <div class="energy-dashboard__final-profit">最终利润：{{ finalProfitText }}</div>
+          </section>
+
+          <section class="energy-dashboard__bill-section">
+            <h3>⑤ 电池收益分析</h3>
+            <div class="energy-dashboard__battery-grid">
+              <div v-for="item in batteryRows" :key="item.label">
+                <span>{{ item.label }}</span>
+                <strong>{{ item.value }}</strong>
+              </div>
+            </div>
+            <div class="energy-dashboard__soc-title">电量曲线（EPI）</div>
+            <Echart :options="energyLineOptions" height="210px" />
+          </section>
         </div>
       </div>
-
-      <el-empty v-if="!dataQuery.deviceId" description="请先选择电表" />
-      <Echart
-        v-else
-        v-loading="dataPanelLoading"
-        :options="dataPanelChartOptions"
-        height="340px"
-      />
     </el-card>
   </div>
 </template>
@@ -223,9 +274,13 @@
 import { Echart } from '@/components/Echart'
 import { EnergyAlarmApi } from '@/api/energy/alarm'
 import type { EnergyAlarmVO } from '@/api/energy/alarm'
+import { EnergyChargeSessionApi } from '@/api/energy/chargeSession'
+import type { EnergyChargeSessionVO } from '@/api/energy/chargeSession'
 import { EnergyCustomerApi } from '@/api/energy/customer'
 import { EnergyDeviceApi } from '@/api/energy/device'
 import type { EnergyDeviceVO } from '@/api/energy/device'
+import { EnergyPricingRuleApi } from '@/api/energy/pricingRule'
+import type { EnergyPricingRuleVO } from '@/api/energy/pricingRule'
 import { EnergyProjectApi } from '@/api/energy/project'
 import { EnergyTelemetryApi } from '@/api/energy/telemetry'
 import type { EnergyTelemetryVO } from '@/api/energy/telemetry'
@@ -236,73 +291,35 @@ import { useRouter } from 'vue-router'
 
 defineOptions({ name: 'EnergyDashboard' })
 
-type MetricKey = 'pa' | 'pb' | 'pc' | 'p' | 'ua' | 'ub' | 'uc' | 'ia' | 'ib' | 'ic' | 'pf' | 'epi'
-type MetricGroupValue = 'activePower' | 'phaseVoltage' | 'phaseCurrent' | 'powerFactor' | 'energy'
-type MetricField = { key: MetricKey; label: string; unit: string }
-
 const router = useRouter()
 const message = useMessage()
-const today = dayjs().format('YYYY-MM-DD')
 
 const loading = ref(true)
 const dataPanelLoading = ref(false)
 const devices = ref<EnergyDeviceVO[]>([])
 const latestAlarms = ref<EnergyAlarmVO[]>([])
 const dataPanelRows = ref<EnergyTelemetryVO[]>([])
+const chargeSessionRows = ref<EnergyChargeSessionVO[]>([])
+const pricingRuleRows = ref<EnergyPricingRuleVO[]>([])
 const deviceTotal = ref(0)
 const customerTotal = ref(0)
 const projectTotal = ref(0)
 const activeAlarmTotal = ref(0)
 
-const dataMetricGroups: Array<{ value: MetricGroupValue; label: string; fields: MetricField[] }> = [
-  {
-    value: 'activePower',
-    label: '有功功率',
-    fields: [
-      { key: 'pa', label: 'A相有功功率', unit: 'kW' },
-      { key: 'pb', label: 'B相有功功率', unit: 'kW' },
-      { key: 'pc', label: 'C相有功功率', unit: 'kW' },
-      { key: 'p', label: '总有功功率', unit: 'kW' }
-    ]
-  },
-  {
-    value: 'phaseVoltage',
-    label: '相电压',
-    fields: [
-      { key: 'ua', label: 'A相电压', unit: 'V' },
-      { key: 'ub', label: 'B相电压', unit: 'V' },
-      { key: 'uc', label: 'C相电压', unit: 'V' }
-    ]
-  },
-  {
-    value: 'phaseCurrent',
-    label: '相电流',
-    fields: [
-      { key: 'ia', label: 'A相电流', unit: 'A' },
-      { key: 'ib', label: 'B相电流', unit: 'A' },
-      { key: 'ic', label: 'C相电流', unit: 'A' }
-    ]
-  },
-  {
-    value: 'powerFactor',
-    label: '功率因数',
-    fields: [{ key: 'pf', label: '总功率因数', unit: '' }]
-  },
-  {
-    value: 'energy',
-    label: '有功电能',
-    fields: [{ key: 'epi', label: '正向总有功电能', unit: 'kWh' }]
-  }
-]
-
 const dataQuery = reactive<{
   deviceId?: number
-  collectTime: string[]
-  metricGroup: MetricGroupValue
+  billMonth: string
 }>({
   deviceId: undefined,
-  collectTime: [`${today} 00:00:00`, `${today} 23:59:59`],
-  metricGroup: 'activePower'
+  billMonth: dayjs().format('YYYY-MM')
+})
+
+const billRange = computed(() => {
+  const month = dayjs(dataQuery.billMonth || dayjs().format('YYYY-MM'))
+  return {
+    start: month.startOf('month').format('YYYY-MM-DD HH:mm:ss'),
+    end: month.endOf('month').format('YYYY-MM-DD HH:mm:ss')
+  }
 })
 
 const totalPower = computed(() => {
@@ -330,46 +347,182 @@ const powerRank = computed(() => {
     .slice(0, 8)
 })
 
-const activeDataMetricGroup = computed(() => {
-  return dataMetricGroups.find((item) => item.value === dataQuery.metricGroup) || dataMetricGroups[0]
-})
-
-const latestDataPanelRow = computed(() => {
-  return dataPanelRows.value
+const sortedBillTelemetry = computed(() => {
+  return [...dataPanelRows.value]
     .filter((item) => item.collectTime)
-    .sort((a, b) => dayjs(b.collectTime as string).valueOf() - dayjs(a.collectTime as string).valueOf())[0]
+    .sort((a, b) => dayjs(a.collectTime as string).valueOf() - dayjs(b.collectTime as string).valueOf())
 })
 
-const dataPanelSummary = computed(() => {
-  const latest = latestDataPanelRow.value
-  const fields = activeDataMetricGroup.value.fields
-  const latestValue = latest ? normalizeNumber(latest[fields[0].key]) : null
+const startEpi = computed(() => firstNumber(sortedBillTelemetry.value.map((item) => normalizeNumber(item.epi))))
+const endEpi = computed(() => lastNumber(sortedBillTelemetry.value.map((item) => normalizeNumber(item.epi))))
+const epiDelta = computed(() => {
+  if (startEpi.value === null || endEpi.value === null) return 0
+  return Math.max(0, Number((endEpi.value - startEpi.value).toFixed(2)))
+})
+
+const billSessions = computed(() => {
+  const start = dayjs(billRange.value.start).valueOf()
+  const end = dayjs(billRange.value.end).valueOf()
+  return chargeSessionRows.value.filter((item) => {
+    const time = dayjs(item.startTime || item.createTime).valueOf()
+    return Number(item.deviceId) === Number(dataQuery.deviceId) && time >= start && time <= end
+  })
+})
+
+const selectedDevice = computed(() => devices.value.find((item) => Number(item.id) === Number(dataQuery.deviceId)))
+const applicablePricingRules = computed(() => {
+  const device = selectedDevice.value
+  return pricingRuleRows.value.filter((rule) => {
+    if (Number(rule.status) !== 0) return false
+    if (rule.deviceId) return Number(rule.deviceId) === Number(dataQuery.deviceId)
+    if (rule.projectId && device?.projectId) return Number(rule.projectId) === Number(device.projectId)
+    if (rule.customerId && device?.customerId) return Number(rule.customerId) === Number(device.customerId)
+    return !rule.deviceId && !rule.projectId && !rule.customerId
+  })
+})
+const chargeSessions = computed(() => billSessions.value.filter((item) => Number(item.sessionType) === 2))
+const dischargeSessions = computed(() => billSessions.value.filter((item) => Number(item.sessionType) === 1))
+
+const sessionChargeEnergy = computed(() => sumBy(chargeSessions.value, 'totalEnergy'))
+const sessionDischargeEnergy = computed(() => sumBy(dischargeSessions.value, 'totalEnergy'))
+const monthlyPurchasedEnergy = computed(() => Number((sessionChargeEnergy.value || epiDelta.value).toFixed(2)))
+const monthlySoldEnergy = computed(() => Number(sessionDischargeEnergy.value.toFixed(2)))
+const monthlyRevenue = computed(() => Number(sumBy(dischargeSessions.value, 'totalFee').toFixed(2)))
+const averageSellRate = computed(() => (monthlySoldEnergy.value > 0 ? monthlyRevenue.value / monthlySoldEnergy.value : 0))
+const averageBuyRate = computed(() => average(applicablePricingRules.value.map((item) => normalizeNumber(item.energyRate) || undefined)))
+const averageBuyRateText = computed(() => averageBuyRate.value > 0 ? `${averageBuyRate.value.toFixed(2)} 元/kWh` : '待录入')
+const purchaseCost = computed(() => Number((monthlyPurchasedEnergy.value * averageBuyRate.value).toFixed(2)))
+const knownProfit = computed(() => Number((monthlyRevenue.value - purchaseCost.value).toFixed(2)))
+const batteryEfficiencyText = computed(() => {
+  if (!monthlyPurchasedEnergy.value) return '--'
+  if (monthlySoldEnergy.value > monthlyPurchasedEnergy.value) return '待补充购电量'
+  return formatPercent(monthlySoldEnergy.value, monthlyPurchasedEnergy.value)
+})
+
+const billTopCards = computed(() => [
+  { label: '本月购电', value: formatKwh(monthlyPurchasedEnergy.value), icon: 'ep:connection', color: '#2088d8' },
+  { label: '本月售电', value: formatKwh(monthlySoldEnergy.value), icon: 'ep:truck', color: '#0ea5a4' },
+  { label: '本月收益', value: formatCurrency(monthlyRevenue.value), icon: 'ep:money', color: '#16a34a' },
+  { label: '本月利润', value: finalProfitText.value, icon: 'ep:trophy', color: '#f59e0b' }
+])
+
+const energyStatRows = computed(() => [
+  { label: '期初电量', value: formatNullableKwh(startEpi.value) },
+  { label: '期末电量', value: formatNullableKwh(endEpi.value) },
+  { label: '本期充电量', value: formatKwh(monthlyPurchasedEnergy.value) },
+  { label: '本期放电量', value: formatKwh(monthlySoldEnergy.value) },
+  { label: '自耗电量', value: formatKwh(Math.max(0, monthlyPurchasedEnergy.value - monthlySoldEnergy.value)) },
+  { label: '充放电效率', value: batteryEfficiencyText.value },
+  { label: '损耗电量', value: formatKwh(Math.max(0, monthlyPurchasedEnergy.value - monthlySoldEnergy.value)) },
+  { label: '峰电量', value: '待录入分时' },
+  { label: '平电量', value: '待录入分时' },
+  { label: '谷电量', value: '待录入分时' },
+  { label: '深谷电量', value: '待录入分时' }
+])
+
+const costRows = computed(() => {
+  if (averageBuyRate.value <= 0) {
+    return [
+      { period: '统一', energy: formatKwh(monthlyPurchasedEnergy.value), rate: '待录入', amount: '待录入' },
+      { period: '峰/平/谷', energy: '待录入', rate: '待录入', amount: '待录入' }
+    ]
+  }
   return [
-    { label: '采集点数', value: dataPanelRows.value.length },
-    { label: '最新时间', value: formatDateText(latest?.collectTime) },
     {
-      label: fields[0]?.label || '最新值',
-      value: formatMetricValue(latestValue, fields[0]?.unit)
+      period: '统一',
+      energy: numberText(monthlyPurchasedEnergy.value),
+      rate: averageBuyRate.value.toFixed(2),
+      amount: numberText(purchaseCost.value)
     },
-    { label: '报文状态', value: latest?.state || '-' }
+    { period: '峰/平/谷', energy: '待录入', rate: '待录入', amount: '待录入' }
   ]
 })
 
-const dataPanelChartOptions = computed<EChartsOption>(() => {
-  const fields = activeDataMetricGroup.value.fields
-  const sortedRows = [...dataPanelRows.value]
-    .filter((item) => item.collectTime)
-    .sort((a, b) => dayjs(a.collectTime as string).valueOf() - dayjs(b.collectTime as string).valueOf())
+const revenueRows = computed(() => [
+  { label: '服务车辆数', value: '待接入车辆' },
+  { label: '充电订单数', value: billSessions.value.length },
+  { label: '售电量', value: formatKwh(monthlySoldEnergy.value) },
+  { label: '平均售电价', value: averageSellRate.value > 0 ? `${averageSellRate.value.toFixed(2)} 元/kWh` : '待录入' },
+  { label: '售电收入', value: formatCurrency(monthlyRevenue.value) }
+])
 
-  return buildLineOptions({
-    xData: sortedRows.map((item) => formatAxisTime(item.collectTime)),
-    series: fields.map((field) => ({
-      name: field.label,
-      data: sortedRows.map((item) => normalizeNumber(item[field.key]))
-    })),
-    yName: fields[0]?.unit || ''
-  })
+const profitRows = computed(() => [
+  { label: '售电收入', value: formatCurrency(monthlyRevenue.value) },
+  { label: '购电成本', value: averageBuyRate.value > 0 ? formatCurrency(purchaseCost.value) : '待录入' },
+  { label: '场地费', value: '待录入' },
+  { label: '运维费', value: '待录入' },
+  { label: '通信费', value: '待录入' },
+  { label: '平台服务费', value: '待录入' }
+])
+
+const finalProfitText = computed(() => {
+  if (averageBuyRate.value <= 0) return '待录入成本'
+  return `${formatCurrency(knownProfit.value)}`
 })
+
+const batteryRows = computed(() => [
+  { label: '充电量', value: formatKwh(monthlyPurchasedEnergy.value) },
+  { label: '放电量', value: formatKwh(monthlySoldEnergy.value) },
+  { label: '循环次数', value: '待录入容量' },
+  { label: '当月任务次数', value: `${billSessions.value.length} 次` },
+  { label: '电池效率', value: batteryEfficiencyText.value },
+  { label: '电池折旧成本', value: '待录入' },
+  { label: '折旧费用', value: '待录入' }
+])
+
+const energyPieOptions = computed<EChartsOption>(() => ({
+  color: ['#2088d8', '#14b8a6', '#8bdc65'],
+  tooltip: { trigger: 'item' },
+  legend: { bottom: 0 },
+  series: [
+    {
+      type: 'pie',
+      radius: ['42%', '68%'],
+      center: ['50%', '44%'],
+      data: [
+        { name: '充电量', value: monthlyPurchasedEnergy.value },
+        { name: '放电量', value: monthlySoldEnergy.value },
+        { name: '损耗/自耗', value: Math.max(0, monthlyPurchasedEnergy.value - monthlySoldEnergy.value) }
+      ]
+    }
+  ]
+}))
+
+const revenueBarOptions = computed<EChartsOption>(() => {
+  const days = Array.from({ length: 7 }).map((_, index) => dayjs(billRange.value.end).subtract(6 - index, 'day'))
+  const energy = days.map((day) => sumDaily(dischargeSessions.value, day, 'totalEnergy'))
+  const revenue = days.map((day) => sumDaily(dischargeSessions.value, day, 'totalFee'))
+  return {
+    color: ['#2088d8', '#22c55e'],
+    tooltip: { trigger: 'axis' },
+    legend: { top: 0 },
+    grid: { left: 36, right: 16, top: 36, bottom: 28 },
+    xAxis: { type: 'category', data: days.map((day) => day.format('MM-DD')) },
+    yAxis: { type: 'value' },
+    series: [
+      { name: '售电量', type: 'bar', data: energy },
+      { name: '收入', type: 'bar', data: revenue }
+    ]
+  }
+})
+
+const energyLineOptions = computed<EChartsOption>(() => ({
+  color: ['#2088d8'],
+  tooltip: { trigger: 'axis' },
+  grid: { left: 44, right: 16, top: 24, bottom: 32 },
+  xAxis: { type: 'category', data: sortedBillTelemetry.value.map((item) => formatAxisTime(item.collectTime)) },
+  yAxis: { type: 'value', name: 'kWh' },
+  series: [
+    {
+      name: 'EPI',
+      type: 'line',
+      smooth: true,
+      showSymbol: false,
+      areaStyle: { opacity: 0.16 },
+      data: sortedBillTelemetry.value.map((item) => normalizeNumber(item.epi))
+    }
+  ]
+}))
 
 const statCards = computed(() => [
   {
@@ -472,19 +625,30 @@ const loadDashboard = async () => {
 }
 
 const loadDataPanel = async () => {
-  if (!dataQuery.deviceId || !dataQuery.collectTime?.[0] || !dataQuery.collectTime?.[1]) {
+  if (!dataQuery.deviceId || !dataQuery.billMonth) {
     dataPanelRows.value = []
+    chargeSessionRows.value = []
+    pricingRuleRows.value = []
     return
   }
   dataPanelLoading.value = true
   try {
-    dataPanelRows.value = await EnergyTelemetryApi.getTelemetryChart({
-      deviceId: dataQuery.deviceId,
-      collectTime: dataQuery.collectTime,
-      limit: 1200
-    })
+    const [telemetryRows, chargeSessions, pricingRules] = await Promise.all([
+      EnergyTelemetryApi.getTelemetryChart({
+        deviceId: dataQuery.deviceId,
+        collectTime: [billRange.value.start, billRange.value.end],
+        limit: 1200
+      }),
+      EnergyChargeSessionApi.getChargeSessionPage({ pageNo: 1, pageSize: 1000, deviceId: dataQuery.deviceId }),
+      EnergyPricingRuleApi.getPricingRulePage({ pageNo: 1, pageSize: 1000, deviceId: dataQuery.deviceId })
+    ])
+    dataPanelRows.value = telemetryRows || []
+    chargeSessionRows.value = chargeSessions?.list || []
+    pricingRuleRows.value = pricingRules?.list || []
   } catch (error) {
     dataPanelRows.value = []
+    chargeSessionRows.value = []
+    pricingRuleRows.value = []
     message.error('数据面板加载失败，请检查遥测数据接口')
   } finally {
     dataPanelLoading.value = false
@@ -523,38 +687,33 @@ const normalizeNumber = (value: unknown): number | null => {
   return Number.isFinite(numberValue) ? numberValue : null
 }
 
-const formatMetricValue = (value: number | null, unit?: string) => {
-  if (value === null) {
-    return '-'
-  }
-  const text = Number.isInteger(value) ? String(value) : value.toFixed(2)
-  return unit ? `${text} ${unit}` : text
+const firstNumber = (values: Array<number | null>) => values.find((value) => value !== null) ?? null
+const lastNumber = (values: Array<number | null>) => [...values].reverse().find((value) => value !== null) ?? null
+
+const sumBy = <T extends Record<string, any>>(rows: T[], key: keyof T) => {
+  return rows.reduce((sum, item) => sum + Number(item[key] || 0), 0)
 }
 
-const buildLineOptions = ({
-  xData,
-  series,
-  yName
-}: {
-  xData: string[]
-  series: Array<{ name: string; data: Array<number | null> }>
-  yName: string
-}): EChartsOption => ({
-  color: ['#0ea5a4', '#2563eb', '#f59e0b', '#7c3aed', '#dc2626'],
-  tooltip: { trigger: 'axis' },
-  legend: { top: 0 },
-  grid: { left: 52, right: 24, top: 48, bottom: 36 },
-  xAxis: { type: 'category', data: xData, boundaryGap: false },
-  yAxis: { type: 'value', name: yName },
-  series: series.map((item) => ({
-    name: item.name,
-    type: 'line',
-    smooth: true,
-    showSymbol: false,
-    connectNulls: false,
-    data: item.data
-  }))
-})
+const sumDaily = (rows: EnergyChargeSessionVO[], day: dayjs.Dayjs, key: keyof EnergyChargeSessionVO) => {
+  return Number(
+    rows
+      .filter((item) => dayjs(item.startTime || item.createTime).isSame(day, 'day'))
+      .reduce((sum, item) => sum + Number(item[key] || 0), 0)
+      .toFixed(2)
+  )
+}
+
+const numberText = (value: number) => {
+  return Number.isInteger(value) ? String(value) : value.toFixed(2)
+}
+
+const formatKwh = (value: number) => `${numberText(value)} kWh`
+const formatNullableKwh = (value: number | null) => (value === null ? '--' : formatKwh(value))
+const formatCurrency = (value: number) => `¥${numberText(value)}`
+const formatPercent = (numerator: number, denominator: number) => {
+  if (!denominator) return '--'
+  return `${((numerator / denominator) * 100).toFixed(1)}%`
+}
 
 const getAlarmLevelText = (level?: number) => {
   const levelMap: Record<number, string> = {
@@ -779,6 +938,221 @@ onMounted(() => {
     }
   }
 
+  &__bill-panel {
+    :deep(.el-card__body) {
+      background:
+        radial-gradient(circle at 12% 0, rgba(56, 189, 248, 0.1), transparent 28%),
+        radial-gradient(circle at 92% 8%, rgba(34, 197, 94, 0.12), transparent 24%),
+        #f8fbff;
+    }
+  }
+
+  &__bill-kpis {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+
+  &__bill-kpi {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    min-height: 116px;
+    padding: 18px 20px;
+    overflow: hidden;
+    background:
+      radial-gradient(circle at 100% 100%, rgba(34, 197, 94, 0.16), transparent 38%),
+      #ffffff;
+    border: 1px solid #e5edf6;
+    border-radius: 8px;
+    box-shadow: 0 8px 22px rgba(15, 23, 42, 0.06);
+
+    span,
+    strong {
+      display: block;
+    }
+
+    span {
+      color: #111827;
+      font-size: 18px;
+      font-weight: 700;
+    }
+
+    strong {
+      margin-top: 14px;
+      color: #000000;
+      font-size: 32px;
+      font-weight: 800;
+      line-height: 38px;
+      white-space: nowrap;
+    }
+  }
+
+  &__bill-grid {
+    display: grid;
+    grid-template-columns: 1fr 1.06fr 1.06fr;
+    gap: 12px;
+  }
+
+  &__bill-section {
+    min-width: 0;
+    padding: 14px;
+    background: #ffffff;
+    border: 1px solid #e5edf6;
+    border-radius: 8px;
+    box-shadow: 0 8px 22px rgba(15, 23, 42, 0.05);
+
+    h3 {
+      margin: 0 0 12px;
+      color: #111827;
+      font-size: 18px;
+      font-weight: 800;
+    }
+
+    :deep(.el-table th.el-table__cell) {
+      color: #1f2937;
+      background: #eaf4ff;
+      font-weight: 700;
+    }
+  }
+
+  &__bill-section--tall {
+    grid-row: span 2;
+  }
+
+  &__bill-list,
+  &__profit-list {
+    display: grid;
+    gap: 0;
+
+    div {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      min-height: 34px;
+      padding: 7px 10px;
+      border-bottom: 1px solid #edf2f7;
+
+      &:first-child {
+        background: #eaf4ff;
+      }
+    }
+
+    span {
+      color: #1f2937;
+      font-weight: 600;
+    }
+
+    strong {
+      color: #111827;
+      font-weight: 700;
+      text-align: right;
+      white-space: nowrap;
+    }
+  }
+
+  &__bill-total {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    margin-top: 10px;
+    overflow: hidden;
+    background: #eaf4ff;
+    border-radius: 6px;
+
+    div {
+      padding: 12px;
+      text-align: center;
+      border-right: 1px solid #d8e7f5;
+
+      &:last-child {
+        border-right: 0;
+      }
+    }
+
+    span,
+    strong {
+      display: block;
+    }
+
+    span {
+      color: #475569;
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    strong {
+      margin-top: 6px;
+      color: #0f172a;
+      font-size: 18px;
+      font-weight: 800;
+    }
+  }
+
+  &__bill-split {
+    display: grid;
+    grid-template-columns: minmax(180px, 0.85fr) minmax(240px, 1.15fr);
+    gap: 12px;
+    align-items: stretch;
+  }
+
+  &__formula {
+    margin: -4px 0 10px;
+    color: #111827;
+    font-weight: 700;
+  }
+
+  &__final-profit {
+    margin-top: 10px;
+    padding: 12px;
+    color: #000000;
+    background: #eaf4ff;
+    border-radius: 6px;
+    font-size: 26px;
+    font-weight: 900;
+    text-align: center;
+  }
+
+  &__battery-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
+    margin-bottom: 12px;
+
+    div {
+      min-height: 66px;
+      padding: 10px;
+      background: #eaf4ff;
+      border-radius: 6px;
+    }
+
+    span,
+    strong {
+      display: block;
+    }
+
+    span {
+      color: #475569;
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    strong {
+      margin-top: 6px;
+      color: #0f172a;
+      font-size: 18px;
+      font-weight: 800;
+    }
+  }
+
+  &__soc-title {
+    margin-bottom: 6px;
+    color: #111827;
+    font-size: 15px;
+    font-weight: 700;
+  }
+
   &__alarm {
     display: flex;
     align-items: center;
@@ -833,7 +1207,12 @@ onMounted(() => {
 
     &__load,
     &__soc-grid,
-    &__data-summary {
+    &__data-summary,
+    &__bill-kpis,
+    &__bill-grid,
+    &__bill-total,
+    &__bill-split,
+    &__battery-grid {
       grid-template-columns: 1fr;
     }
 
