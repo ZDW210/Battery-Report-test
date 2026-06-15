@@ -75,6 +75,40 @@ const remainingRouter: AppRouteRecordRaw[] = [
     ]
   },
   {
+    path: '/report',
+    component: Layout,
+    name: 'ReportCenter',
+    meta: {
+      hidden: true
+    },
+    children: [
+      {
+        path: 'export-records',
+        component: () => import('@/views/report/ExportRecords.vue'),
+        name: 'ReportExportRecords',
+        meta: {
+          canTo: true,
+          hidden: true,
+          noTagsView: false,
+          icon: 'ep:document',
+          title: '导出记录'
+        }
+      },
+      {
+        path: 'download-center',
+        component: () => import('@/views/report/DownloadCenter.vue'),
+        name: 'ReportDownloadCenter',
+        meta: {
+          canTo: true,
+          hidden: true,
+          noTagsView: false,
+          icon: 'ep:download',
+          title: '下载中心'
+        }
+      }
+    ]
+  },
+  {
     path: '/dict',
     component: Layout,
     name: 'dict',

@@ -31,8 +31,16 @@ import { BasicInfo, ProfileUser, ResetPwd, UserSocial } from './components'
 
 const { t } = useI18n()
 defineOptions({ name: 'Profile' })
-const activeName = ref('basicInfo')
+const route = useRoute()
+const activeName = ref(String(route.query.tab || 'basicInfo'))
 const profileUserRef = ref()
+
+watch(
+  () => route.query.tab,
+  (tab) => {
+    activeName.value = String(tab || 'basicInfo')
+  }
+)
 
 // 处理基本信息更新成功
 const handleBasicInfoSuccess = async () => {

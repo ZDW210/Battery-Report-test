@@ -1,0 +1,10 @@
+<svg width="96" height="96" viewBox="0 0 96 96" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="96" height="96" rx="48" fill="#F8FAFC"/>
+  <rect x="6" y="6" width="84" height="84" rx="42" fill="#FFFFFF" stroke="#E2E8F0" stroke-width="2"/>
+  <path d="M19 28H53V37H42V69H30V37H19V28Z" fill="#0E8EAD"/>
+  <path d="M52 28H64L72 56L80 28H92L78 69H66L52 28Z" fill="#0E8EAD"/>
+  <path d="M42 45H50V53H42V45Z" fill="#22C55E"/>
+  <path d="M42 58H50V66H42V58Z" fill="#22C55E"/>
+  <text x="21" y="77" fill="#0F172A" font-family="Arial, sans-serif" font-size="11" font-weight="700">Vest</text>
+  <circle cx="74" cy="72" r="8" fill="#22C55E" stroke="#FFFFFF" stroke-width="3"/>
+</svg>

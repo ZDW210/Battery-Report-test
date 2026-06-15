@@ -618,6 +618,7 @@ import type { EnergyTelemetryDailyStatVO, EnergyTelemetryVO } from '@/api/energy
 import { EnergyAlarmApi } from '@/api/energy/alarm'
 import type { EnergyAlarmVO } from '@/api/energy/alarm'
 import { DICT_TYPE } from '@/utils/dict'
+import { archiveReport } from '@/utils/reportArchive'
 import type { EChartsOption } from 'echarts'
 import dayjs from 'dayjs'
 
@@ -1414,6 +1415,7 @@ const downloadCsv = (
     )
   ].join('\n')
   const blob = new Blob([`\uFEFF${content}`], { type: 'text/csv;charset=utf-8;' })
+  void archiveReport(filename, blob, '实时监控导出').catch(() => undefined)
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
   link.href = url

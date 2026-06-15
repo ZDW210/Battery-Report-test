@@ -1,6 +1,9 @@
+import { archiveReport } from '@/utils/reportArchive'
+
 const download0 = (data: Blob, fileName: string, mineType: string) => {
   // 创建 blob
   const blob = new Blob([data], { type: mineType })
+  void archiveReport(fileName, blob).catch(() => undefined)
   // 创建 href 超链接，点击进行下载
   window.URL = window.URL || window.webkitURL
   const href = URL.createObjectURL(blob)
