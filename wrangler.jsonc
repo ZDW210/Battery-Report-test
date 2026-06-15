@@ -11,7 +11,7 @@
     {
       "binding": "DB",
       "database_name": "energy-storage-platform",
-      "database_id": "REPLACE_WITH_D1_DATABASE_ID"
+      "database_id": "c92bf402-281b-4b47-8ce8-c686bcff1a39"
     }
   ],
   "r2_buckets": [
