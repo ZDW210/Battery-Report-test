@@ -65,6 +65,9 @@ async function handleAdminApi(request: Request, env: Env, ctx: ExecutionContext)
     const user = await requireUser(request, env)
     if (!user) return fail('未登录或登录已过期', 401, 401)
 
+    const systemCompatResponse = await systemCompatApi(request, url, env, path, user)
+    if (systemCompatResponse) return systemCompatResponse
+
     if (path === '/energy/customer-account/page' && request.method === 'GET') return customerAccountPage(url, env)
     if (path === '/energy/customer-account/get' && request.method === 'GET') return customerAccountGet(url, env)
     if (path === '/energy/customer-account/create' && request.method === 'POST') return createCustomerAccount(request, env)
@@ -172,6 +175,192 @@ async function refreshToken(request: Request, env: Env) {
     .bind(accessToken, expiresTime, refresh)
     .run()
   return ok({ accessToken, refreshToken: refresh, userId: session.user_id, userType: 2, clientId: 'worker-admin', expiresTime })
+}
+
+async function systemCompatApi(request: Request, url: URL, env: Env, path: string, user: AnyRecord) {
+  if (path === '/system/dict-data/simple-list' && request.method === 'GET') return ok(systemDictData())
+  if (path === '/system/dict-data/type' && request.method === 'GET') {
+    const type = url.searchParams.get('type')
+    return ok(systemDictData().filter((item) => item.dictType === type))
+  }
+  if (path === '/system/dict-data/page' && request.method === 'GET') return ok(pageList(systemDictData(), url))
+  if (path === '/system/dict-data/get' && request.method === 'GET') {
+    const id = Number(url.searchParams.get('id'))
+    return ok(systemDictData().find((item) => item.id === id) || null)
+  }
+  if (path === '/system/dict-type/simple-list' && request.method === 'GET') return ok(systemDictTypes())
+  if (path === '/system/dict-type/page' && request.method === 'GET') return ok(pageList(systemDictTypes(), url))
+  if (path === '/system/dict-type/get' && request.method === 'GET') {
+    const id = Number(url.searchParams.get('id'))
+    return ok(systemDictTypes().find((item) => item.id === id) || null)
+  }
+
+  if (path === '/system/notify-message/get-unread-count' && request.method === 'GET') return ok(0)
+  if (path === '/system/notify-message/get-unread-list' && request.method === 'GET') return ok([])
+  if ((path === '/system/notify-message/page' || path === '/system/notify-message/my-page') && request.method === 'GET') {
+    return ok({ list: [], total: 0 })
+  }
+  if ((path === '/system/notify-message/update-read' || path === '/system/notify-message/update-all-read') && request.method === 'PUT') {
+    return ok(true)
+  }
+
+  if (path === '/system/user/profile/get' && request.method === 'GET') return ok(profile(user))
+  if (path === '/system/user/profile/update' && request.method === 'PUT') {
+    const body = await readJson(request)
+    await env.DB.prepare('UPDATE system_user SET nickname = ?, mobile = ?, update_time = ? WHERE id = ?')
+      .bind(body.nickname || user.nickname || user.username, body.mobile || user.mobile || '', nowText(), user.id)
+      .run()
+    return ok(true)
+  }
+  if (path === '/system/user/profile/update-password' && request.method === 'PUT') {
+    const body = await readJson(request)
+    if (!(await verifyPassword(String(body.oldPassword || ''), String(user.password_hash || '')))) return fail('旧密码不正确', 400)
+    await env.DB.prepare('UPDATE system_user SET password_hash = ?, update_time = ? WHERE id = ?')
+      .bind(await hashPassword(String(body.newPassword || '')), nowText(), user.id)
+      .run()
+    return ok(true)
+  }
+  if (path === '/system/user/simple-list' && request.method === 'GET') return systemUserSimpleList(env)
+  if (path === '/system/user/list' && request.method === 'GET') return systemUserSimpleList(env)
+  if (path === '/system/user/page' && request.method === 'GET') return systemUserPage(url, env)
+  if (path === '/system/user/get' && request.method === 'GET') {
+    const row = await env.DB.prepare('SELECT id, username, nickname, mobile, status, user_type, create_time FROM system_user WHERE id = ?')
+      .bind(url.searchParams.get('id'))
+      .first<AnyRecord>()
+    return ok(row ? camel(row) : null)
+  }
+
+  if (path === '/system/dept/simple-list' || path === '/system/dept/list') return ok([])
+  if (path === '/system/post/simple-list') return ok([])
+  if (path === '/system/post/page') return ok({ list: [], total: 0 })
+  if (path === '/system/role/simple-list') return ok([{ id: 1, name: '管理员', code: 'admin', sort: 1, status: 0 }])
+  if (path === '/system/role/page') return ok({ list: [{ id: 1, name: '管理员', code: 'admin', sort: 1, status: 0 }], total: 1 })
+  if (path === '/system/menu/simple-list' || path === '/system/menu/list') return ok(ENERGY_MENUS)
+  if (path === '/system/tenant/simple-list') return ok([{ id: 1, name: '默认租户' }])
+  if (path === '/system/tenant-package/simple-list') return ok([])
+  if (path === '/system/area/tree') return ok([])
+  if (path === '/system/social-user/get-bind-list') return ok([])
+  if (path === '/infra/config/get-value-by-key') return ok(null)
+  if (path === '/infra/redis/get-monitor-info') return ok(null)
+
+  return null
+}
+
+function pageList(rows: AnyRecord[], url: URL) {
+  const pageNo = num(url.searchParams.get('pageNo'), 1)
+  const pageSize = num(url.searchParams.get('pageSize'), 10)
+  const start = (pageNo - 1) * pageSize
+  return { list: rows.slice(start, start + pageSize), total: rows.length }
+}
+
+function profile(user: AnyRecord) {
+  return {
+    id: user.id,
+    username: user.username,
+    nickname: user.nickname || user.username,
+    dept: { id: 0, name: '移动储能平台' },
+    roles: [{ id: 1, name: '管理员' }],
+    posts: [],
+    email: '',
+    mobile: user.mobile || '',
+    sex: 0,
+    avatar: '',
+    status: user.status ?? 0,
+    remark: '',
+    loginIp: '',
+    loginDate: user.update_time || user.create_time || '',
+    createTime: user.create_time || ''
+  }
+}
+
+async function systemUserSimpleList(env: Env) {
+  const rows = await env.DB.prepare('SELECT id, username, nickname, mobile, status, user_type, create_time FROM system_user ORDER BY id ASC LIMIT 200').all<AnyRecord>()
+  return ok(camelRows(rows.results))
+}
+
+async function systemUserPage(url: URL, env: Env) {
+  const pageNo = num(url.searchParams.get('pageNo'), 1)
+  const pageSize = num(url.searchParams.get('pageSize'), 10)
+  const total = await scalar(env, 'SELECT COUNT(*) FROM system_user', [])
+  const rows = await env.DB.prepare('SELECT id, username, nickname, mobile, status, user_type, create_time FROM system_user ORDER BY id ASC LIMIT ? OFFSET ?')
+    .bind(pageSize, (pageNo - 1) * pageSize)
+    .all<AnyRecord>()
+  return ok({ list: camelRows(rows.results), total })
+}
+
+function systemDictTypes() {
+  return Array.from(new Set(systemDictData().map((item) => item.dictType))).map((type, index) => ({
+    id: index + 1,
+    name: dictTypeName(type),
+    type,
+    status: 0,
+    remark: '',
+    createTime: '2026-06-15 00:00:00'
+  }))
+}
+
+function systemDictData() {
+  let id = 1
+  const row = (dictType: string, label: string, value: string, sort: number, colorType = 'default') => ({
+    id: id++,
+    sort,
+    label,
+    value,
+    dictType,
+    status: 0,
+    colorType,
+    cssClass: '',
+    remark: '',
+    createTime: '2026-06-15 00:00:00'
+  })
+  return [
+    row('common_status', '启用', '0', 1, 'success'),
+    row('common_status', '禁用', '1', 2, 'danger'),
+    row('user_type', '管理端用户', '2', 1, 'primary'),
+    row('energy_device_status', '在线', '0', 1, 'success'),
+    row('energy_device_status', '离线', '1', 2, 'info'),
+    row('energy_device_status', '故障', '2', 3, 'danger'),
+    row('energy_device_status', '维护', '3', 4, 'warning'),
+    row('energy_device_type', '储能柜', '1', 1, 'primary'),
+    row('energy_device_type', '电表', '2', 2, 'success'),
+    row('energy_device_type', '网关', '3', 3, 'info'),
+    row('energy_run_mode', '待机', '1', 1, 'info'),
+    row('energy_run_mode', '充电', '2', 2, 'success'),
+    row('energy_run_mode', '放电', '3', 3, 'warning'),
+    row('energy_run_mode', '故障', '4', 4, 'danger'),
+    row('energy_alarm_level', '一般', '1', 1, 'warning'),
+    row('energy_alarm_level', '紧急', '2', 2, 'danger'),
+    row('energy_alarm_level', '严重', '3', 3, 'danger'),
+    row('energy_alarm_status', '未处理', '0', 1, 'danger'),
+    row('energy_alarm_status', '已确认', '1', 2, 'warning'),
+    row('energy_alarm_status', '已关闭', '2', 3, 'success'),
+    row('energy_session_type', '放电', '1', 1, 'warning'),
+    row('energy_session_type', '充电', '2', 2, 'success'),
+    row('energy_session_status', '进行中', '1', 1, 'primary'),
+    row('energy_session_status', '已结束', '2', 2, 'info'),
+    row('energy_session_status', '已结算', '3', 3, 'success'),
+    row('energy_session_status', '异常', '4', 4, 'danger'),
+    row('energy_dispatch_status', '待执行', '0', 1, 'info'),
+    row('energy_dispatch_status', '执行中', '1', 2, 'primary'),
+    row('energy_dispatch_status', '已完成', '2', 3, 'success'),
+    row('energy_dispatch_status', '已取消', '3', 4, 'info')
+  ]
+}
+
+function dictTypeName(type: string) {
+  const names: Record<string, string> = {
+    common_status: '通用状态',
+    user_type: '用户类型',
+    energy_device_status: '移动储能设备状态',
+    energy_device_type: '移动储能设备类型',
+    energy_run_mode: '移动储能运行模式',
+    energy_alarm_level: '移动储能告警等级',
+    energy_alarm_status: '移动储能告警状态',
+    energy_session_type: '移动储能会话类型',
+    energy_session_status: '移动储能会话状态',
+    energy_dispatch_status: '移动储能调度状态'
+  }
+  return names[type] || type
 }
 
 async function customerAccountPage(url: URL, env: Env) {

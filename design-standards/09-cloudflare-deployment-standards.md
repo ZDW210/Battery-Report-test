@@ -49,3 +49,28 @@ Cloudflare 部署相关内容统一放在 `cloudflare-worker-package/` 内：
 - `README.md`
 - `docs/cloudflare-worker-d1-r2.md`
 - 本标准文件
+
+## Worker 管理端兼容接口
+
+Cloudflare Worker 版管理端虽然已瘦身为移动储能业务后台，但 Vue3 管理端仍会在全局布局、字典组件、通知组件、个人中心和部分表单选择器中请求 RuoYi 系统基础接口。
+
+Worker 必须保留以下轻量兼容接口，避免页面进入任意业务板块时反复弹出 404：
+
+- `/admin-api/system/dict-data/simple-list`
+- `/admin-api/system/dict-data/type`
+- `/admin-api/system/dict-data/page`
+- `/admin-api/system/dict-type/simple-list`
+- `/admin-api/system/notify-message/get-unread-count`
+- `/admin-api/system/notify-message/get-unread-list`
+- `/admin-api/system/notify-message/page`
+- `/admin-api/system/notify-message/my-page`
+- `/admin-api/system/user/profile/get`
+- `/admin-api/system/user/profile/update`
+- `/admin-api/system/user/profile/update-password`
+- `/admin-api/system/user/simple-list`
+- `/admin-api/system/role/simple-list`
+- `/admin-api/system/dept/simple-list`
+- `/admin-api/system/post/simple-list`
+- `/admin-api/system/menu/simple-list`
+
+兼容接口只用于支撑当前管理端框架稳定运行：字典返回移动储能当前真实页面需要的枚举，通知可返回空数据，个人资料和用户下拉优先读取 `system_user`。不得因为兼容接口重新恢复已移除的大型演示模块。
