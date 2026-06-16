@@ -8,8 +8,7 @@
   },
   "assets": {
     "binding": "ASSETS",
-    "directory": "admin-vue3/dist-worker",
-    "run_worker_first": true
+    "directory": "admin-vue3/dist-worker"
   },
   "d1_databases": [
     {
