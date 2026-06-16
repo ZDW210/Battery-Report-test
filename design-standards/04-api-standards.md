@@ -279,3 +279,10 @@ POST /infra-api/energy/eiot/alarm
 - `GET /admin-api/energy/device/page` 和 `GET /admin-api/energy/device/simple-list` 必须关联 `energy_customer`、`energy_project` 返回 `customerName`、`projectName`。
 - 首页运行负载、设备管理列表、数据面板电表选择器都以设备接口返回的关联名称为准，不得只返回 `customerId/projectId` 后让前端二次查询。
 - 设备分页过滤继续支持 `deviceName`、`deviceNo`、`deviceType`、`gatewaySn`、`meterSn`、`meterNo`、`status`，简表接口至少支持 `customerId`、`projectId`、`status` 过滤。
+
+## 2026-06-16 计费规则范围匹配补充
+
+- `GET /admin-api/energy/pricing-rule/page` 必须关联返回 `customerName`、`projectName`、`deviceName`、`deviceNo`，计费规则列表不得只显示范围 ID 或 `-`。
+- 计费规则新增/修改时必须保证 `customerId`、`projectId`、`deviceId` 三者只能有一个有效值；切换范围保存时必须清空旧范围字段。
+- `GET /admin-api/energy/pricing-rule/match` 必须先读取设备所属客户和项目，再按设备级 > 项目级 > 客户级匹配启用且在生效期内的规则。
+- 数据面板、充放电任务和计费试算使用项目场站汇总时，必须能命中项目级计费规则，不允许只匹配设备级规则。

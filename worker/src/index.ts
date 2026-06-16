@@ -669,17 +669,135 @@ async function alarmApi(request: Request, url: URL, env: Env, path: string) {
 
 async function pricingRuleApi(request: Request, url: URL, env: Env, path: string) {
   await ensurePricingRuleFeeColumns(env)
+  if (path === '/energy/pricing-rule/page' && request.method === 'GET') return pricingRulePage(url, env)
   if (path === '/energy/pricing-rule/match') {
-    const row = await env.DB.prepare(
-      `SELECT * FROM energy_pricing_rule
-       WHERE status = 0 AND (? IS NULL OR device_id = ?)
-       ORDER BY device_id DESC, id DESC LIMIT 1`
-    )
-      .bind(url.searchParams.get('deviceId'), url.searchParams.get('deviceId'))
-      .first<AnyRecord>()
-    return ok(row ? camel(row) : null)
+    return matchPricingRule(url, env)
   }
+  if (path === '/energy/pricing-rule/create' && request.method === 'POST') return createPricingRule(request, env)
+  if (path === '/energy/pricing-rule/update' && request.method === 'PUT') return updatePricingRule(request, env)
   return crud(request, url, env, 'energy_pricing_rule', PRICING_RULE_FIELDS)
+}
+
+async function pricingRulePage(url: URL, env: Env) {
+  const pageNo = num(url.searchParams.get('pageNo'), 1)
+  const pageSize = num(url.searchParams.get('pageSize'), 10)
+  const where: string[] = []
+  const args: any[] = []
+  const { start, end } = rangeParam(url, 'effectiveStart')
+
+  exact(url, where, args, 'r.customer_id', 'customerId')
+  exact(url, where, args, 'r.project_id', 'projectId')
+  exact(url, where, args, 'r.device_id', 'deviceId')
+  exact(url, where, args, 'r.status', 'status')
+  if (start) {
+    where.push('r.effective_start >= ?')
+    args.push(start)
+  }
+  if (end) {
+    where.push('r.effective_start <= ?')
+    args.push(end)
+  }
+
+  const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : ''
+  const total = await scalar(
+    env,
+    `SELECT COUNT(*)
+     FROM energy_pricing_rule r
+     LEFT JOIN energy_customer c ON c.id = r.customer_id
+     LEFT JOIN energy_project p ON p.id = r.project_id
+     LEFT JOIN energy_device d ON d.id = r.device_id
+     ${whereSql}`,
+    args
+  )
+  const rows = await env.DB.prepare(
+    `SELECT r.*, c.name AS customer_name, p.name AS project_name, d.device_name, d.device_no
+     FROM energy_pricing_rule r
+     LEFT JOIN energy_customer c ON c.id = r.customer_id
+     LEFT JOIN energy_project p ON p.id = r.project_id
+     LEFT JOIN energy_device d ON d.id = r.device_id
+     ${whereSql}
+     ORDER BY r.id DESC
+     LIMIT ? OFFSET ?`
+  )
+    .bind(...args, pageSize, (pageNo - 1) * pageSize)
+    .all<AnyRecord>()
+
+  return ok({ list: camelRows(rows.results), total })
+}
+
+async function matchPricingRule(url: URL, env: Env) {
+  const deviceId = url.searchParams.get('deviceId')
+  if (!deviceId) return ok(null)
+
+  const device = await env.DB.prepare('SELECT id, customer_id, project_id FROM energy_device WHERE id = ?')
+    .bind(deviceId)
+    .first<AnyRecord>()
+  if (!device) return ok(null)
+
+  const billingTime = cleanText(url.searchParams.get('billingTime')) || nowText()
+  const customerId = device.customer_id || null
+  const projectId = device.project_id || null
+  const row = await env.DB.prepare(
+    `SELECT r.*, c.name AS customer_name, p.name AS project_name, d.device_name, d.device_no
+     FROM energy_pricing_rule r
+     LEFT JOIN energy_customer c ON c.id = r.customer_id
+     LEFT JOIN energy_project p ON p.id = r.project_id
+     LEFT JOIN energy_device d ON d.id = r.device_id
+     WHERE r.status = 0
+       AND (? IS NULL OR r.effective_start IS NULL OR r.effective_start <= ?)
+       AND (? IS NULL OR r.effective_end IS NULL OR r.effective_end >= ?)
+       AND (
+         r.device_id = ?
+         OR (r.device_id IS NULL AND r.project_id = ?)
+         OR (r.device_id IS NULL AND r.project_id IS NULL AND r.customer_id = ?)
+       )
+     ORDER BY
+       CASE
+         WHEN r.device_id = ? THEN 3
+         WHEN r.device_id IS NULL AND r.project_id = ? THEN 2
+         WHEN r.device_id IS NULL AND r.project_id IS NULL AND r.customer_id = ? THEN 1
+         ELSE 0
+       END DESC,
+       r.effective_start DESC,
+       r.id DESC
+     LIMIT 1`
+  )
+    .bind(billingTime, billingTime, billingTime, billingTime, deviceId, projectId, customerId, deviceId, projectId, customerId)
+    .first<AnyRecord>()
+
+  return ok(row ? camel(row) : null)
+}
+
+async function createPricingRule(request: Request, env: Env) {
+  const body = normalizePricingRuleScope(await readJson(request))
+  const validation = validatePricingRuleScope(body)
+  if (validation) return validation
+  return createRowFromBody(body, env, 'energy_pricing_rule', PRICING_RULE_FIELDS)
+}
+
+async function updatePricingRule(request: Request, env: Env) {
+  const body = normalizePricingRuleScope(await readJson(request))
+  const validation = validatePricingRuleScope(body)
+  if (validation) return validation
+  return updateRowFromBody(body, env, 'energy_pricing_rule', PRICING_RULE_FIELDS)
+}
+
+function normalizePricingRuleScope(body: AnyRecord) {
+  const deviceId = positiveId(body.deviceId)
+  const projectId = positiveId(body.projectId)
+  const customerId = positiveId(body.customerId)
+  return {
+    ...body,
+    deviceId,
+    projectId: deviceId ? null : projectId,
+    customerId: deviceId || projectId ? null : customerId
+  }
+}
+
+function validatePricingRuleScope(body: AnyRecord) {
+  const count = [body.customerId, body.projectId, body.deviceId].filter((value) => positiveId(value)).length
+  if (count !== 1) return fail('计费规则必须且只能绑定一个客户、项目或设备', 400)
+  return null
 }
 
 async function ensurePricingRuleFeeColumns(env: Env) {
@@ -1182,6 +1300,11 @@ function numberOrNull(value: unknown) {
   return Number.isFinite(parsed) ? parsed : null
 }
 
+function positiveId(value: unknown) {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null
+}
+
 function averageNumbers(values: unknown[]) {
   const numbers = values.map(numberOrNull).filter((value): value is number => value !== null)
   if (!numbers.length) return null
@@ -1231,15 +1354,19 @@ function exact(url: URL, where: string[], args: any[], column: string, key: stri
 }
 
 function collectTimeRange(url: URL) {
+  return rangeParam(url, 'collectTime')
+}
+
+function rangeParam(url: URL, key: string) {
   const start =
-    url.searchParams.get('collectTime[0]') ||
-    url.searchParams.get('collectTime.0') ||
-    url.searchParams.getAll('collectTime')[0] ||
+    url.searchParams.get(`${key}[0]`) ||
+    url.searchParams.get(`${key}.0`) ||
+    url.searchParams.getAll(key)[0] ||
     null
   const end =
-    url.searchParams.get('collectTime[1]') ||
-    url.searchParams.get('collectTime.1') ||
-    url.searchParams.getAll('collectTime')[1] ||
+    url.searchParams.get(`${key}[1]`) ||
+    url.searchParams.get(`${key}.1`) ||
+    url.searchParams.getAll(key)[1] ||
     null
   return { start, end }
 }
