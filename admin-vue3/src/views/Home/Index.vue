@@ -124,19 +124,6 @@
           </el-skeleton>
         </el-card>
 
-        <el-card shadow="never">
-          <template #header>
-            <div class="energy-dashboard__card-header">
-              <span>业务能力状态</span>
-            </div>
-          </template>
-          <div class="energy-dashboard__capability">
-            <div v-for="item in capabilityItems" :key="item.label">
-              <span>{{ item.label }}</span>
-              <el-tag :type="item.type" effect="light">{{ item.status }}</el-tag>
-            </div>
-          </div>
-        </el-card>
       </el-col>
     </el-row>
 
@@ -435,14 +422,6 @@ const getDeviceStatusType = (status?: number) => {
   if (status === 3) return 'warning'
   return 'info'
 }
-
-const capabilityItems = [
-  { label: '实时监控', status: '已落地', type: 'success' },
-  { label: 'EIOT 同步日志', status: '已落地', type: 'success' },
-  { label: '计费规则', status: '已落地', type: 'success' },
-  { label: '充放电任务', status: '待建模', type: 'info' },
-  { label: '调度任务', status: '待建模', type: 'info' }
-] as const
 
 const loadDashboard = async () => {
   loading.value = true
@@ -808,20 +787,6 @@ onMounted(() => {
     }
   }
 
-  &__capability {
-    display: grid;
-    gap: 10px;
-
-    div {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      min-height: 36px;
-      padding: 8px 10px;
-      background: var(--el-fill-color-lighter);
-      border-radius: 6px;
-    }
-  }
 }
 
 @media (max-width: 768px) {
