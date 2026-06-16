@@ -267,6 +267,33 @@ const averageBuyRate = computed(() => {
 const totalRevenue = computed(() => Number(sumBy(scopedSessions.value.filter((item) => Number(item.sessionType) === 1), 'totalFee').toFixed(2)))
 const averageSellRate = computed(() => (totalDischargeEnergy.value ? Number((totalRevenue.value / totalDischargeEnergy.value).toFixed(4)) : null))
 const applicableRules = computed(() => uniqueRowsById(selectedDevices.value.map(matchRuleForDevice).filter(Boolean) as EnergyPricingRuleVO[]))
+const billHeaderInfo = computed(() => {
+  const primaryDevice = selectedDevices.value[0]
+  const primaryRule = applicableRules.value[0]
+  const customerName = firstText([
+    ...selectedDevices.value.map((device) => device.customerName),
+    ...applicableRules.value.map((rule) => rule.customerName)
+  ])
+  const projectName = firstText([
+    query.scopeType === 'project' ? reportScopeTitle.value : '',
+    primaryDevice?.projectName,
+    primaryRule?.projectName
+  ])
+  return {
+    billStartDate: billRange.value.start.slice(0, 10),
+    billEndDate: billRange.value.end.slice(0, 10),
+    accountNo: '待录入',
+    customerName: customerName || '待录入',
+    usageAddress: projectName || '待录入',
+    electricityCategory: getElectricityCategoryText(primaryRule?.electricityCategory),
+    voltageLevel: getVoltageLevelText(primaryRule?.voltageLevel),
+    serviceUnit: '待录入',
+    marketType: query.scopeType === 'device' ? '单表统计' : query.scopeType === 'project' ? '场站汇总' : '全部电表汇总',
+    printer: 'system',
+    printDate: dayjs().format('YYYY-MM-DD'),
+    reportNo: `ES-${dayjs().format('YYYYMMDDHHmmss')}`
+  }
+})
 
 const feeTotals = computed(() => {
   const energy = totalPurchasedEnergy.value
@@ -410,6 +437,7 @@ const exportBillPdf = async () => {
 }
 
 const buildPrintableBillHtml = () => {
+  const header = billHeaderInfo.value
   const detailRows = deviceRows.value
     .map(
       (row) => `<tr><td>${escapeHtml(row.deviceName)}</td><td>${escapeHtml(row.projectName)}</td><td>${escapeHtml(row.meterNo)}</td><td>${row.startEpiText}</td><td>${row.endEpiText}</td><td>${row.purchasedEnergyText}</td><td>${row.buyRateText}</td><td>${row.purchaseCostText}</td></tr>`
@@ -428,8 +456,27 @@ const buildPrintableBillHtml = () => {
   <style>
     @page { size: A4; margin: 16mm; }
     body { font-family: "Microsoft YaHei", Arial, sans-serif; color: #1f2937; font-size: 12px; }
-    h1 { text-align: center; letter-spacing: 6px; margin: 0 0 14px; font-size: 24px; }
-    .meta { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px 24px; border-top: 2px solid #111827; border-bottom: 1px solid #d1d5db; padding: 10px 0; }
+    .bill-head { color: #0f766e; padding-bottom: 22px; }
+    .brand-row { display: grid; grid-template-columns: 210px 1fr 220px; align-items: start; gap: 22px; }
+    .brand { display: flex; align-items: center; gap: 12px; }
+    .brand-mark { width: 54px; height: 54px; border-radius: 50%; border: 3px solid #0f766e; display: grid; place-items: center; font-weight: 800; font-size: 18px; }
+    .brand-name strong { display: block; color: #075985; font-size: 22px; line-height: 1.15; }
+    .brand-name span { display: block; margin-top: 3px; color: #0f766e; font-size: 11px; letter-spacing: 1px; }
+    .bill-title-main { text-align: center; color: #006b68; }
+    .bill-title-main .company { display: inline-block; min-width: 360px; border-bottom: 2px solid #334155; padding-bottom: 7px; font-size: 18px; letter-spacing: 10px; }
+    .bill-title-main h1 { margin: 8px 0 0; font-size: 22px; letter-spacing: 12px; font-weight: 700; }
+    .hotline { display: flex; justify-content: flex-end; gap: 10px; color: #0f766e; }
+    .hotline-item { min-width: 76px; padding: 6px 9px; border: 1px solid #99f6e4; border-radius: 20px; text-align: center; }
+    .hotline-item span { display: block; font-size: 11px; color: #64748b; }
+    .hotline-item b { font-size: 16px; color: #0f766e; }
+    .bill-info { display: grid; grid-template-columns: 250px 1fr 310px; gap: 30px; margin-top: 46px; color: #111827; }
+    .period { display: grid; grid-template-columns: 76px 1fr; row-gap: 10px; align-items: center; }
+    .period .date { color: #0f766e; letter-spacing: 1px; }
+    .info-grid { display: grid; grid-template-columns: 86px 1fr; gap: 12px 14px; }
+    .info-grid .label, .period .label { color: #9ca3af; text-align: right; letter-spacing: 1px; }
+    .info-grid .value { color: #111827; line-height: 1.55; }
+    .print-row { display: flex; justify-content: flex-end; gap: 34px; margin-top: 36px; color: #64748b; letter-spacing: 1px; }
+    .meta { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px 24px; border-top: 2px solid #0f766e; border-bottom: 1px solid #d1d5db; padding: 10px 0; }
     .cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 14px 0; }
     .card { background: #eef6ff; border: 1px solid #bfdbfe; padding: 10px; text-align: center; }
     .card span { display: block; color: #64748b; }
@@ -445,7 +492,51 @@ const buildPrintableBillHtml = () => {
   </style>
 </head>
 <body>
-  <h1>电 费 账 单</h1>
+  <header class="bill-head">
+    <div class="brand-row">
+      <div class="brand">
+        <div class="brand-mark">ES</div>
+        <div class="brand-name">
+          <strong>移动储能</strong>
+          <span>ENERGY STORAGE</span>
+        </div>
+      </div>
+      <div class="bill-title-main">
+        <div class="company">移动储能运营管理平台</div>
+        <h1>电费账单</h1>
+      </div>
+      <div class="hotline">
+        <div class="hotline-item"><span>客户服务</span><b>待录入</b></div>
+        <div class="hotline-item"><span>监管电话</span><b>待录入</b></div>
+      </div>
+    </div>
+    <div class="bill-info">
+      <div class="period">
+        <div class="label">账单周期</div>
+        <div class="date">${header.billStartDate}</div>
+        <div></div>
+        <div class="label" style="text-align:left;">至</div>
+        <div></div>
+        <div class="date">${header.billEndDate}</div>
+      </div>
+      <div class="info-grid">
+        <div class="label">户号</div><div class="value">${escapeHtml(header.accountNo)}</div>
+        <div class="label">户名</div><div class="value">${escapeHtml(header.customerName)}</div>
+        <div class="label">用电地址</div><div class="value">${escapeHtml(header.usageAddress)}</div>
+      </div>
+      <div class="info-grid">
+        <div class="label">用电类别</div><div class="value">${escapeHtml(header.electricityCategory)}</div>
+        <div class="label">电压等级</div><div class="value">${escapeHtml(header.voltageLevel)}</div>
+        <div class="label">供电服务单位</div><div class="value">${escapeHtml(header.serviceUnit)}</div>
+        <div class="label">市场化属性</div><div class="value">${escapeHtml(header.marketType)}</div>
+      </div>
+    </div>
+    <div class="print-row">
+      <span>打印人：${escapeHtml(header.printer)}</span>
+      <span>账单打印日期：${header.printDate}</span>
+      <span>报表编号：${header.reportNo}</span>
+    </div>
+  </header>
   <div class="meta">
     <div>账单周期：${billRangeText.value}</div>
     <div>统计范围：${escapeHtml(reportScopeTitle.value)}</div>
@@ -503,7 +594,25 @@ const fixedFeeRow = (category: string, amount: number, remark: string) => ({
   amount: amount > 0 ? moneyText(amount) : '¥0',
   remark
 })
+const firstText = (values: Array<unknown>) => values.map((value) => String(value || '').trim()).find(Boolean) || ''
 const deviceLabel = (device?: EnergyDeviceVO) => device ? `${device.deviceName || device.deviceNo || `电表 ${device.id}`} / ${device.meterNo || '-'}` : ''
+const getElectricityCategoryText = (value?: string) => {
+  const options: Record<string, string> = {
+    general_commercial: '一般工商业用电',
+    large_industrial: '大工业用电'
+  }
+  return options[value || ''] || '待录入'
+}
+const getVoltageLevelText = (value?: string) => {
+  const options: Record<string, string> = {
+    under_1kv: '不满1千伏',
+    '10kv': '10千伏',
+    '35kv': '35千伏',
+    '110kv': '110千伏',
+    '220kv_plus': '220千伏及以上'
+  }
+  return options[value || ''] || '待录入'
+}
 const numberOrNull = (value: unknown) => {
   const parsed = Number(value)
   return Number.isFinite(parsed) ? parsed : null
