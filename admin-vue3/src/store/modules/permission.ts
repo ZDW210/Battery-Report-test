@@ -21,7 +21,8 @@ const ENERGY_MENU_CHILDREN = new Set([
   'eiot-log',
   'pricing-rule',
   'charge-session',
-  'customer-account'
+  'customer-account',
+  'report-panel'
 ])
 
 const keepProjectRoute = (route: AppRouteRecordRaw): boolean => {
