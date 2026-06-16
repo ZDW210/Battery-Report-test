@@ -229,7 +229,7 @@ const deviceRows = computed(() => {
     const deviceSessions = scopedSessions.value.filter((item) => Number(item.deviceId) === Number(device.id))
     const chargeEnergy = sumBy(deviceSessions.filter((item) => Number(item.sessionType) === 2), 'totalEnergy')
     const dischargeEnergy = sumBy(deviceSessions.filter((item) => Number(item.sessionType) === 1), 'totalEnergy')
-    const purchasedEnergy = Number((chargeEnergy || epiDelta).toFixed(2))
+    const purchasedEnergy = Number(epiDelta.toFixed(2))
     const rule = matchRuleForDevice(device)
     const buyRate = numberOrNull(rule?.energyRate)
     const purchaseCost = buyRate !== null ? Number((purchasedEnergy * buyRate).toFixed(2)) : null
@@ -325,15 +325,15 @@ const totalBillAmount = computed(() => {
 })
 
 const summaryCards = computed(() => [
-  { label: '本期电量', value: kwhText(totalPurchasedEnergy.value), hint: '优先任务电量，缺失时按 EPI 增量估算' },
+  { label: '本期电量', value: kwhText(totalPurchasedEnergy.value), hint: '按当前范围内电表 EPI 首末差汇总' },
   { label: '本期电费', value: moneyText(totalBillAmount.value), hint: '按现有计费规则可用字段测算' },
   { label: '平均购电单价', value: averageBuyRate.value === null ? '待录入' : `${numText(averageBuyRate.value)} 元/kWh`, hint: '购电成本 / 本期电量' },
   { label: '售电收入', value: moneyText(totalRevenue.value), hint: '来自放电任务费用合计' }
 ])
 
 const overviewRows = computed(() => [
-  { label: '本期电量', value: kwhText(totalPurchasedEnergy.value), remark: '按当前范围内电表汇总' },
-  { label: '充电任务电量', value: kwhText(totalChargeEnergy.value), remark: '来自充放电任务，缺失时不强行补齐' },
+  { label: '本期电量', value: kwhText(totalPurchasedEnergy.value), remark: '按当前范围内每块电表 EPI 首末差汇总' },
+  { label: '充电任务电量', value: kwhText(totalChargeEnergy.value), remark: '来自充放电任务，仅作业务记录参考' },
   { label: '放电任务电量', value: kwhText(totalDischargeEnergy.value), remark: '用于售电收入测算' },
   { label: '平均购电单价', value: averageBuyRate.value === null ? '待录入' : `${numText(averageBuyRate.value)} 元/kWh`, remark: '来自计费规则电量单价' },
   { label: '平均售电单价', value: averageSellRate.value === null ? '待录入' : `${numText(averageSellRate.value)} 元/kWh`, remark: '售电收入 / 放电任务电量' },

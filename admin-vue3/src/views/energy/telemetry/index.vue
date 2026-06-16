@@ -1195,7 +1195,7 @@ const chargeSessions = computed(() => billSessions.value.filter((item) => Number
 const dischargeSessions = computed(() => billSessions.value.filter((item) => Number(item.sessionType) === 1))
 const sessionChargeEnergy = computed(() => sumBy(chargeSessions.value, 'totalEnergy'))
 const sessionDischargeEnergy = computed(() => sumBy(dischargeSessions.value, 'totalEnergy'))
-const monthlyPurchasedEnergy = computed(() => Number((sessionChargeEnergy.value || epiDelta.value).toFixed(2)))
+const monthlyPurchasedEnergy = computed(() => Number(epiDelta.value.toFixed(2)))
 const monthlySoldEnergy = computed(() => Number(sessionDischargeEnergy.value.toFixed(2)))
 const monthlyRevenue = computed(() => Number(sumBy(dischargeSessions.value, 'totalFee').toFixed(2)))
 const averageSellRate = computed(() => (monthlySoldEnergy.value > 0 ? monthlyRevenue.value / monthlySoldEnergy.value : 0))
@@ -1234,7 +1234,7 @@ const billTopCards = computed(() => [
   {
     label: '购电量合计',
     value: formatKwh(monthlyPurchasedEnergy.value),
-    hint: '优先统计充电任务；缺失时按 EPI 增量估算',
+    hint: '按当前范围内电表 EPI 首末差汇总',
     icon: 'ep:connection',
     color: '#2088d8'
   },
@@ -1264,7 +1264,8 @@ const billTopCards = computed(() => [
 const energyStatRows = computed(() => [
   { label: '期初累计电能', value: formatNullableKwh(startEpi.value) },
   { label: '期末累计电能', value: formatNullableKwh(endEpi.value) },
-  { label: '充电量合计', value: formatKwh(monthlyPurchasedEnergy.value) },
+  { label: 'EPI用电量合计', value: formatKwh(monthlyPurchasedEnergy.value) },
+  { label: '充电任务电量', value: formatKwh(sessionChargeEnergy.value) },
   { label: '放电量合计', value: formatKwh(monthlySoldEnergy.value) },
   { label: '未售出/自耗电量', value: formatKwh(Math.max(0, monthlyPurchasedEnergy.value - monthlySoldEnergy.value)) },
   { label: '充放电效率', value: batteryEfficiencyText.value },
@@ -1318,7 +1319,8 @@ const finalProfitText = computed(() => {
 })
 
 const batteryRows = computed(() => [
-  { label: '充电量合计', value: formatKwh(monthlyPurchasedEnergy.value) },
+  { label: 'EPI用电量合计', value: formatKwh(monthlyPurchasedEnergy.value) },
+  { label: '充电任务电量', value: formatKwh(sessionChargeEnergy.value) },
   { label: '放电量合计', value: formatKwh(monthlySoldEnergy.value) },
   { label: '循环次数', value: '待录入容量' },
   { label: '当月任务次数', value: `${billSessions.value.length} 次` },
@@ -1337,7 +1339,7 @@ const energyPieOptions = computed<EChartsOption>(() => ({
       radius: ['42%', '68%'],
       center: ['50%', '44%'],
       data: [
-        { name: '充电量', value: monthlyPurchasedEnergy.value },
+        { name: 'EPI用电量', value: monthlyPurchasedEnergy.value },
         { name: '放电量', value: monthlySoldEnergy.value },
         { name: '损耗/自耗', value: Math.max(0, monthlyPurchasedEnergy.value - monthlySoldEnergy.value) }
       ]
