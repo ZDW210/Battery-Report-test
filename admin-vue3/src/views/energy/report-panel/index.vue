@@ -267,6 +267,11 @@ const averageBuyRate = computed(() => {
 const totalRevenue = computed(() => Number(sumBy(scopedSessions.value.filter((item) => Number(item.sessionType) === 1), 'totalFee').toFixed(2)))
 const averageSellRate = computed(() => (totalDischargeEnergy.value ? Number((totalRevenue.value / totalDischargeEnergy.value).toFixed(4)) : null))
 const applicableRules = computed(() => uniqueRowsById(selectedDevices.value.map(matchRuleForDevice).filter(Boolean) as EnergyPricingRuleVO[]))
+const billableFixedFeeRules = computed(() => {
+  if (totalPurchasedEnergy.value <= 0) return []
+  if (query.scopeType !== 'device') return applicableRules.value
+  return applicableRules.value.filter((rule) => Number.isFinite(Number(rule.deviceId)))
+})
 const billHeaderInfo = computed(() => {
   const primaryDevice = selectedDevices.value[0]
   const primaryRule = applicableRules.value[0]
@@ -303,14 +308,14 @@ const feeTotals = computed(() => {
     transmission: energy * avgRuleField('transmissionDistributionPrice'),
     systemOperation: energy * avgRuleField('systemOperationFee'),
     governmentFund: energy * avgRuleField('governmentFundSurcharge'),
-    siteFee: sumRuleField('siteFee'),
-    maintenanceFee: sumRuleField('maintenanceFee'),
-    communicationFee: sumRuleField('communicationFee'),
-    platformServiceFee: sumRuleField('platformServiceFee'),
-    batteryDepreciationCost: sumRuleField('batteryDepreciationCost'),
-    otherFixedFee: sumRuleField('otherFixedFee'),
-    maxDemandPrice: sumRuleField('maxDemandPrice'),
-    transformerCapacityPrice: sumRuleField('transformerCapacityPrice')
+    siteFee: sumFixedRuleField('siteFee'),
+    maintenanceFee: sumFixedRuleField('maintenanceFee'),
+    communicationFee: sumFixedRuleField('communicationFee'),
+    platformServiceFee: sumFixedRuleField('platformServiceFee'),
+    batteryDepreciationCost: sumFixedRuleField('batteryDepreciationCost'),
+    otherFixedFee: sumFixedRuleField('otherFixedFee'),
+    maxDemandPrice: sumFixedRuleField('maxDemandPrice'),
+    transformerCapacityPrice: sumFixedRuleField('transformerCapacityPrice')
   }
 })
 const totalBillAmount = computed(() => {
@@ -341,14 +346,14 @@ const feeRows = computed(() => [
   feeRow('输配电量电费', totalPurchasedEnergy.value, avgRuleField('transmissionDistributionPrice'), feeTotals.value.transmission, '输配电价 × 本期电量'),
   feeRow('系统运行费', totalPurchasedEnergy.value, avgRuleField('systemOperationFee'), feeTotals.value.systemOperation, '系统运行费折价 × 本期电量'),
   feeRow('政府性基金及附加', totalPurchasedEnergy.value, avgRuleField('governmentFundSurcharge'), feeTotals.value.governmentFund, '基金及附加 × 本期电量'),
-  fixedFeeRow('最大需量费用', feeTotals.value.maxDemandPrice, '当前按规则录入值展示'),
-  fixedFeeRow('变压器容量费用', feeTotals.value.transformerCapacityPrice, '当前按规则录入值展示'),
-  fixedFeeRow('场地费', feeTotals.value.siteFee, '固定费用'),
-  fixedFeeRow('运维费', feeTotals.value.maintenanceFee, '固定费用'),
-  fixedFeeRow('通信费', feeTotals.value.communicationFee, '固定费用'),
-  fixedFeeRow('平台服务费', feeTotals.value.platformServiceFee, '固定费用'),
-  fixedFeeRow('电池折旧成本', feeTotals.value.batteryDepreciationCost, '固定费用'),
-  fixedFeeRow('其他固定费用', feeTotals.value.otherFixedFee, '固定费用'),
+  fixedFeeRow('最大需量费用', feeTotals.value.maxDemandPrice, fixedFeeRemark('当前按规则录入值展示')),
+  fixedFeeRow('变压器容量费用', feeTotals.value.transformerCapacityPrice, fixedFeeRemark('当前按规则录入值展示')),
+  fixedFeeRow('场地费', feeTotals.value.siteFee, fixedFeeRemark('固定费用')),
+  fixedFeeRow('运维费', feeTotals.value.maintenanceFee, fixedFeeRemark('固定费用')),
+  fixedFeeRow('通信费', feeTotals.value.communicationFee, fixedFeeRemark('固定费用')),
+  fixedFeeRow('平台服务费', feeTotals.value.platformServiceFee, fixedFeeRemark('固定费用')),
+  fixedFeeRow('电池折旧成本', feeTotals.value.batteryDepreciationCost, fixedFeeRemark('固定费用')),
+  fixedFeeRow('其他固定费用', feeTotals.value.otherFixedFee, fixedFeeRemark('固定费用')),
   { category: '合计', quantity: kwhText(totalPurchasedEnergy.value), rate: '--', amount: moneyText(totalBillAmount.value), remark: '当前项目可用字段合计' }
 ])
 
@@ -579,7 +584,12 @@ const matchRuleForDevice = (device: EnergyDeviceVO) => {
 
 const scopeWeight = (rule: EnergyPricingRuleVO) => (rule.deviceId ? 3 : rule.projectId ? 2 : rule.customerId ? 1 : 0)
 const avgRuleField = (field: keyof EnergyPricingRuleVO) => average(applicableRules.value.map((rule) => numberOrNull(rule[field]))) || 0
-const sumRuleField = (field: keyof EnergyPricingRuleVO) => Number(applicableRules.value.reduce((sum, rule) => sum + Number(rule[field] || 0), 0).toFixed(2))
+const sumFixedRuleField = (field: keyof EnergyPricingRuleVO) => Number(billableFixedFeeRules.value.reduce((sum, rule) => sum + Number(rule[field] || 0), 0).toFixed(2))
+const fixedFeeRemark = (remark: string) => {
+  if (totalPurchasedEnergy.value <= 0) return '本期电量为 0，固定费用不计入本期电费'
+  if (query.scopeType === 'device' && billableFixedFeeRules.value.length === 0) return '单个电表不重复分摊场地级固定费用'
+  return remark
+}
 const feeRow = (category: string, quantity: number, rate: number, amount: number, remark: string) => ({
   category,
   quantity: kwhText(quantity),
