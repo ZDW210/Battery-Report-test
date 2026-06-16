@@ -81,18 +81,19 @@ const DEVICE_FIELDS = [
 
 const ENERGY_MENUS = [
   menu(1002, 0, '数据面板', '/energy/telemetry', 'energy/telemetry/index', 'EnergyTelemetry', 'ep:trend-charts', 1),
-  menu(1007, 0, '报警信息', '/energy/alarm', 'energy/alarm/index', 'EnergyAlarm', 'ep:warning', 2),
-  menu(1003, 0, '设备管理', '/energy/device', 'energy/device/index', 'EnergyDevice', 'ep:cpu', 3),
-  menu(1009, 0, '项目管理', '/energy/project', 'energy/project/index', 'EnergyProject', 'ep:location', 4),
-  menu(1008, 0, '客户管理', '/energy/customer', 'energy/customer/index', 'EnergyCustomer', 'ep:office-building', 5),
-  menu(1014, 0, '客户账号管理', '/energy/customer-account', 'energy/customerAccount/index', 'EnergyCustomerAccount', 'ep:lock', 6),
-  menu(1004, 0, '车辆管理', '/energy/vehicle', 'energy/vehicle/index', 'EnergyVehicle', 'ep:van', 7),
-  menu(1012, 0, '计费规则', '/energy/pricing-rule', 'energy/pricing-rule/index', 'EnergyPricingRule', 'ep:money', 8),
-  menu(1013, 0, '充放电任务', '/energy/charge-session', 'energy/charge-session/index', 'EnergyChargeSession', 'ep:switch-button', 9),
-  menu(1005, 0, '小程序用户', '/energy/app-user', 'energy/appUser/index', 'EnergyAppUser', 'ep:user', 10),
-  menu(1010, 0, '用户授权', '/energy/user-scope', 'energy/userScope/index', 'EnergyUserScope', 'ep:key', 11),
-  menu(1006, 0, '扫码刷卡记录', '/energy/account-event', 'energy/account-event/index', 'EnergyAccountEvent', 'ep:connection', 12),
-  menu(1011, 0, 'EIOT 同步日志', '/energy/eiot-log', 'energy/eiotLog/index', 'EnergyEiotLog', 'ep:document', 13)
+  menu(1015, 0, '报表面板', '/energy/report-panel', 'energy/report-panel/index', 'EnergyReportPanel', 'ep:document-checked', 2),
+  menu(1007, 0, '报警信息', '/energy/alarm', 'energy/alarm/index', 'EnergyAlarm', 'ep:warning', 3),
+  menu(1003, 0, '设备管理', '/energy/device', 'energy/device/index', 'EnergyDevice', 'ep:cpu', 4),
+  menu(1009, 0, '项目管理', '/energy/project', 'energy/project/index', 'EnergyProject', 'ep:location', 5),
+  menu(1008, 0, '客户管理', '/energy/customer', 'energy/customer/index', 'EnergyCustomer', 'ep:office-building', 6),
+  menu(1014, 0, '客户账号管理', '/energy/customer-account', 'energy/customerAccount/index', 'EnergyCustomerAccount', 'ep:lock', 7),
+  menu(1004, 0, '车辆管理', '/energy/vehicle', 'energy/vehicle/index', 'EnergyVehicle', 'ep:van', 8),
+  menu(1012, 0, '计费规则', '/energy/pricing-rule', 'energy/pricing-rule/index', 'EnergyPricingRule', 'ep:money', 9),
+  menu(1013, 0, '充放电任务', '/energy/charge-session', 'energy/charge-session/index', 'EnergyChargeSession', 'ep:switch-button', 10),
+  menu(1005, 0, '小程序用户', '/energy/app-user', 'energy/appUser/index', 'EnergyAppUser', 'ep:user', 11),
+  menu(1010, 0, '用户授权', '/energy/user-scope', 'energy/userScope/index', 'EnergyUserScope', 'ep:key', 12),
+  menu(1006, 0, '扫码刷卡记录', '/energy/account-event', 'energy/account-event/index', 'EnergyAccountEvent', 'ep:connection', 13),
+  menu(1011, 0, 'EIOT 同步日志', '/energy/eiot-log', 'energy/eiotLog/index', 'EnergyEiotLog', 'ep:document', 14)
 ]
 
 export default {
