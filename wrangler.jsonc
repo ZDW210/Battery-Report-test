@@ -17,7 +17,7 @@
   "r2_buckets": [
     {
       "binding": "BUCKET",
-      "bucket_name": "energy-storage-platform-files"
+      "bucket_name": "baobiao-eiot-archive"
     }
   ],
   "vars": {

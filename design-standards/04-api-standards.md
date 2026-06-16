@@ -264,3 +264,12 @@ POST /infra-api/energy/eiot/alarm
 - `energy_app_user.mini_admin_enabled` 是小程序管理端入口权限字段，默认 false；后台开启后才允许客户在小程序“我的”页看到“管理”入口。
 - `/app-api/energy/auth/wechat-login` 和 `/app-api/energy/auth/profile` 必须返回当前用户 `role` 和 `miniAdminEnabled`，其中司机端为 `role=driver`，已开放小程序管理权限为 `role=manager`。
 - 后端不得因为 `miniAdminEnabled=true` 放开租户全量数据；管理页内所有设备、订单、报表、导出仍按当前 App 用户授权范围查询。
+# 2026-06-16 安科瑞 EIOT Worker 推送接入补充
+
+- Cloudflare Worker 必须开放 `POST /eiot/meter` 和 `POST /eiot/alarm`，也允许 `POST /eiot` 按报文结构自动识别：数组为仪表实时数据，对象且包含 `list[]` 为报警消息。
+- 安科瑞 EIOT 标准中 HTTP 推送地址由接收方提供，要求 `method=POST`、`Content-Type=application/json`；本项目同时兼容历史设计入口 `POST /infra-api/energy/eiot/realtime` 和 `POST /infra-api/energy/eiot/alarm`。
+- EIOT 推送接口收到请求后必须立即返回 HTTP 200；R2 归档、D1 写入、设备状态刷新和同步日志写入必须放入后台任务处理，任何写入失败不得影响 EIOT 本次 HTTP 响应。
+- 实时报文必须遍历数组逐条写入 `energy_telemetry`，高频查询字段继续单独保存 `gatewaySn`、`meterSn`、`meterNo`、`timestamp`、`state`、`Pa/Pb/Pc/P`、`Ua/Ub/Uc`、`Ia/Ib/Ic`、`PF`、`EPI`，完整单条报文同步保存到 `dataJson`。
+- 报警报文必须遍历 `list[]` 写入 `energy_alarm`，保留 `alarmNo`、`code`、`level`、中文标题、中文内容、发生时间、`gatewaySn`、`meterSn`、`meterNo`、`timestamp` 和 `dataJson`。
+- 原始完整请求体必须归档到 R2，key 使用 `eiot/{type}/{timestamp}-{gatewaySn}-{uuid}.json`，D1 只保存 `payloadUrl`。
+- 设备匹配必须优先使用 `meterNo`，其次使用 `gatewaySn + meterSn`，不得把 `meterNo` 按下划线拆分。

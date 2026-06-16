@@ -11,6 +11,13 @@ type AnyRecord = Record<string, any>
 
 const ADMIN_PREFIX = '/admin-api'
 const DAILY_FIELDS = new Set(['pa', 'pb', 'pc', 'ua', 'ub', 'uc', 'ia', 'ib', 'ic', 'p', 'pf', 'epi'])
+const EIOT_PUSH_PATHS = new Set([
+  '/eiot',
+  '/eiot/meter',
+  '/eiot/alarm',
+  '/infra-api/energy/eiot/realtime',
+  '/infra-api/energy/eiot/alarm'
+])
 const PRICING_RULE_FIELDS = [
   'customerId',
   'projectId',
@@ -94,6 +101,10 @@ export default {
 
     if (request.method === 'OPTIONS') return cors(new Response(null, { status: 204 }))
 
+    if (EIOT_PUSH_PATHS.has(url.pathname) && request.method === 'POST') {
+      return handleEiotPush(request, env, ctx, url.pathname)
+    }
+
     if (url.pathname.startsWith(`${ADMIN_PREFIX}/`)) {
       return cors(await handleAdminApi(request, env, ctx))
     }
@@ -105,6 +116,63 @@ export default {
     indexUrl.pathname = '/index.html'
     indexUrl.search = ''
     return env.ASSETS.fetch(new Request(indexUrl, request))
+  }
+}
+
+function handleEiotPush(request: Request, env: Env, ctx: ExecutionContext, path: string) {
+  const receivedAt = Date.now()
+  ctx.waitUntil(processEiotPush(request.clone(), env, path, receivedAt))
+  return ok({ accepted: true, receivedAt: new Date(receivedAt).toISOString() })
+}
+
+async function processEiotPush(request: Request, env: Env, path: string, receivedAt: number) {
+  let rawBody = ''
+  let payload: unknown = null
+  let pushType = path === '/eiot/alarm' ? 'alarm' : path === '/eiot/meter' ? 'meter' : 'unknown'
+  let payloadUrl = ''
+  let gatewaySn = ''
+  let meterSn = ''
+  const requestId = crypto.randomUUID()
+
+  try {
+    rawBody = await request.text()
+    payload = rawBody ? JSON.parse(rawBody) : null
+    pushType = pushType === 'unknown' ? detectEiotPushType(payload) : pushType
+    const summary = getEiotPayloadSummary(payload)
+    gatewaySn = summary.gatewaySn
+    meterSn = summary.meterSn
+    payloadUrl = await archiveEiotPayload(env, pushType, rawBody, summary, receivedAt)
+    await ensureEiotReceiveColumns(env)
+
+    if (pushType === 'meter') {
+      await saveEiotMeterPayload(env, payload, payloadUrl)
+    } else if (pushType === 'alarm') {
+      await saveEiotAlarmPayload(env, payload, payloadUrl)
+    } else {
+      throw new Error('Unsupported EIOT payload type')
+    }
+
+    await writeEiotSyncLog(env, {
+      syncType: pushType,
+      requestId,
+      gatewaySn,
+      meterSn,
+      payloadUrl,
+      status: 0,
+      errorMsg: ''
+    })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    console.error('EIOT push failed', message)
+    await writeEiotSyncLog(env, {
+      syncType: pushType,
+      requestId,
+      gatewaySn,
+      meterSn,
+      payloadUrl,
+      status: 1,
+      errorMsg: message.slice(0, 500)
+    })
   }
 }
 
@@ -621,6 +689,212 @@ async function telemetryApi(request: Request, url: URL, env: Env, path: string) 
   return crud(request, url, env, 'energy_telemetry', ['deviceId', 'gatewaySn', 'meterSn', 'meterNo', 'collectTime', 'timestamp', 'source', 'state', 'pa', 'pb', 'pc', 'ua', 'ub', 'uc', 'ia', 'ib', 'ic', 'p', 'pf', 'epi'])
 }
 
+function detectEiotPushType(payload: unknown) {
+  if (Array.isArray(payload)) return 'meter'
+  if (payload && typeof payload === 'object' && Array.isArray((payload as AnyRecord).list)) return 'alarm'
+  return 'unknown'
+}
+
+function getEiotPayloadSummary(payload: unknown) {
+  const first = Array.isArray(payload) ? payload[0] : payload
+  const row = first && typeof first === 'object' ? (first as AnyRecord) : {}
+  return {
+    gatewaySn: cleanText(row.gatewaySn),
+    meterSn: cleanText(row.meterSn),
+    meterNo: cleanText(row.meterNo),
+    timestamp: Number(row.timestamp || 0)
+  }
+}
+
+async function archiveEiotPayload(env: Env, type: string, rawBody: string, summary: AnyRecord, receivedAt: number) {
+  const timestamp = Number(summary.timestamp || 0) || Math.floor(receivedAt / 1000)
+  const gatewaySn = sanitizeKeyPart(summary.gatewaySn || 'unknown-gateway')
+  const key = `eiot/${type}/${timestamp}-${gatewaySn}-${crypto.randomUUID()}.json`
+  await env.BUCKET.put(key, rawBody || '', {
+    httpMetadata: { contentType: 'application/json; charset=utf-8' }
+  })
+  return `/admin-api/infra/file/get/${encodeURIComponent(key)}`
+}
+
+async function ensureEiotReceiveColumns(env: Env) {
+  await ensureColumns(env, 'energy_telemetry', {
+    data_json: 'TEXT',
+    payload_url: 'TEXT'
+  })
+  await ensureColumns(env, 'energy_alarm', {
+    gateway_sn: 'TEXT',
+    meter_sn: 'TEXT',
+    meter_no: 'TEXT',
+    timestamp: 'INTEGER',
+    data_json: 'TEXT',
+    payload_url: 'TEXT'
+  })
+  await env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_energy_telemetry_gateway_meter_time ON energy_telemetry(gateway_sn, meter_sn, collect_time)').run()
+  await env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_energy_alarm_gateway_meter_time ON energy_alarm(gateway_sn, meter_sn, occur_time)').run()
+}
+
+async function ensureColumns(env: Env, table: string, columns: Record<string, string>) {
+  const info = await env.DB.prepare(`PRAGMA table_info(${table})`).all<AnyRecord>()
+  const existing = new Set((info.results || []).map((row) => String(row.name)))
+  for (const [column, definition] of Object.entries(columns)) {
+    if (existing.has(column)) continue
+    try {
+      await env.DB.prepare(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`).run()
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      if (!message.toLowerCase().includes('duplicate column')) throw error
+    }
+  }
+}
+
+async function saveEiotMeterPayload(env: Env, payload: unknown, payloadUrl: string) {
+  const rows = Array.isArray(payload) ? payload : payload && typeof payload === 'object' ? [payload] : []
+  if (!rows.length) throw new Error('Meter payload must be a non-empty array or object')
+
+  for (const item of rows) {
+    const row = item && typeof item === 'object' ? (item as AnyRecord) : {}
+    const gatewaySn = cleanText(row.gatewaySn)
+    const meterSn = cleanText(row.meterSn)
+    const meterNo = cleanText(row.meterNo)
+    const timestamp = numberOrNull(row.timestamp)
+    const collectTime = cleanText(row.createTime || row.CreateTime) || textFromUnix(timestamp)
+    const device = await findDeviceByMeter(env, meterNo, gatewaySn, meterSn)
+    const deviceId = device?.id ? Number(device.id) : null
+
+    await env.DB.prepare(
+      `INSERT INTO energy_telemetry(
+        device_id, gateway_sn, meter_sn, meter_no, collect_time, timestamp, source, state,
+        pa, pb, pc, ua, ub, uc, ia, ib, ic, p, pf, epi, data_json, payload_url, create_time
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+      .bind(
+        deviceId,
+        gatewaySn || null,
+        meterSn || null,
+        meterNo || null,
+        collectTime || nowText(),
+        timestamp,
+        cleanText(row.source) || null,
+        cleanText(row.state) || null,
+        numberOrNull(row.Pa),
+        numberOrNull(row.Pb),
+        numberOrNull(row.Pc),
+        numberOrNull(row.Ua),
+        numberOrNull(row.Ub),
+        numberOrNull(row.Uc),
+        numberOrNull(row.Ia),
+        numberOrNull(row.Ib),
+        numberOrNull(row.Ic),
+        numberOrNull(row.P),
+        numberOrNull(row.PF),
+        numberOrNull(row.EPI),
+        JSON.stringify(row),
+        payloadUrl,
+        nowText()
+      )
+      .run()
+
+    if (deviceId) {
+      await updateDeviceLatestFromTelemetry(env, deviceId, row, collectTime || nowText())
+    }
+  }
+}
+
+async function saveEiotAlarmPayload(env: Env, payload: unknown, payloadUrl: string) {
+  const body = payload && typeof payload === 'object' ? (payload as AnyRecord) : {}
+  const list = Array.isArray(body.list) ? body.list : []
+  if (!list.length) throw new Error('Alarm payload must contain list[]')
+
+  const gatewaySn = cleanText(body.gatewaySn)
+  const meterSn = cleanText(body.meterSn)
+  const meterNo = cleanText(body.meterNo)
+  const timestamp = numberOrNull(body.timestamp)
+  const occurTime = cleanText(body.createTime || body.CreateTime) || textFromUnix(timestamp) || nowText()
+  const device = await findDeviceByMeter(env, meterNo, gatewaySn, meterSn)
+  const deviceId = device?.id ? Number(device.id) : null
+
+  for (const item of list) {
+    const alarm = item && typeof item === 'object' ? (item as AnyRecord) : {}
+    await env.DB.prepare(
+      `INSERT INTO energy_alarm(
+        alarm_no, device_id, code, level, title, content, status, occur_time,
+        gateway_sn, meter_sn, meter_no, timestamp, data_json, payload_url, create_time
+      ) VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+      .bind(
+        cleanText(alarm.alarmNo) || `AL${Date.now()}${Math.floor(Math.random() * 1000)}`,
+        deviceId,
+        cleanText(alarm.code) || null,
+        numberOrNull(alarm.level),
+        localizedText(alarm.title),
+        localizedText(alarm.message),
+        occurTime,
+        gatewaySn || null,
+        meterSn || null,
+        meterNo || null,
+        timestamp,
+        JSON.stringify({ ...body, list: [alarm] }),
+        payloadUrl,
+        nowText()
+      )
+      .run()
+  }
+}
+
+async function findDeviceByMeter(env: Env, meterNo: string, gatewaySn: string, meterSn: string) {
+  if (!meterNo && (!gatewaySn || !meterSn)) return null
+  return env.DB.prepare(
+    `SELECT id, status FROM energy_device
+     WHERE (? <> '' AND meter_no = ?)
+        OR (? <> '' AND ? <> '' AND gateway_sn = ? AND meter_sn = ?)
+     ORDER BY CASE WHEN meter_no = ? THEN 0 ELSE 1 END
+     LIMIT 1`
+  )
+    .bind(meterNo, meterNo, gatewaySn, meterSn, gatewaySn, meterSn, meterNo)
+    .first<AnyRecord>()
+}
+
+async function updateDeviceLatestFromTelemetry(env: Env, deviceId: number, row: AnyRecord, collectTime: string) {
+  const state = cleanText(row.state)
+  const status = state === 'ONLINE' ? 0 : state === 'OFFLINE' ? 1 : null
+  const voltage = averageNumbers([row.Ua, row.Ub, row.Uc])
+  const current = averageNumbers([row.Ia, row.Ib, row.Ic])
+  await env.DB.prepare(
+    `UPDATE energy_device
+     SET status = COALESCE(?, status),
+         last_power = COALESCE(?, last_power),
+         last_voltage = COALESCE(?, last_voltage),
+         last_current = COALESCE(?, last_current),
+         last_reading_time = ?,
+         update_time = ?
+     WHERE id = ?`
+  )
+    .bind(status, numberOrNull(row.P), voltage, current, collectTime, nowText(), deviceId)
+    .run()
+}
+
+async function writeEiotSyncLog(env: Env, log: AnyRecord) {
+  try {
+    await env.DB.prepare(
+      `INSERT INTO energy_eiot_sync_log(sync_type, request_id, gateway_sn, meter_sn, payload_url, status, error_msg, create_time)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+      .bind(
+        log.syncType || 'unknown',
+        log.requestId || crypto.randomUUID(),
+        log.gatewaySn || null,
+        log.meterSn || null,
+        log.payloadUrl || null,
+        Number(log.status || 0),
+        log.errorMsg || '',
+        nowText()
+      )
+      .run()
+  } catch (error) {
+    console.error('EIOT sync log failed', error)
+  }
+}
+
 async function crud(request: Request, url: URL, env: Env, table: string, fields: string[]) {
   const action = url.pathname.split('/').pop()
   if (action === 'page') return page(url, env, table)
@@ -834,6 +1108,38 @@ function num(value: string | null, fallback: number) {
 
 function cleanText(value: unknown) {
   return typeof value === 'string' ? value.trim() : ''
+}
+
+function numberOrNull(value: unknown) {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+function averageNumbers(values: unknown[]) {
+  const numbers = values.map(numberOrNull).filter((value): value is number => value !== null)
+  if (!numbers.length) return null
+  return numbers.reduce((sum, value) => sum + value, 0) / numbers.length
+}
+
+function textFromUnix(value: unknown) {
+  const timestamp = numberOrNull(value)
+  if (!timestamp) return ''
+  const milliseconds = timestamp > 100000000000 ? timestamp : timestamp * 1000
+  return new Date(milliseconds).toISOString().replace('T', ' ').slice(0, 19)
+}
+
+function localizedText(value: unknown) {
+  if (!value) return ''
+  if (typeof value === 'string') return value
+  if (typeof value === 'object') {
+    const record = value as AnyRecord
+    return cleanText(record.zh_CN || record.en_US || Object.values(record)[0])
+  }
+  return String(value)
+}
+
+function sanitizeKeyPart(value: unknown) {
+  return cleanText(value).replace(/[^a-zA-Z0-9_.-]/g, '_').slice(0, 80) || 'unknown'
 }
 
 async function scalar(env: Env, sql: string, args: any[]) {

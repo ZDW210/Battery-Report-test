@@ -97,3 +97,9 @@ current/design/sql/mysql
 - `energy_menu.sql`：菜单和权限
 
 设计脚本中的演示 ID 暂使用 `190000000000` 号段。真正落库前，需要结合目标 RuoYi 数据库已有 ID 和表结构进行核对。
+# 2026-06-16 安科瑞 EIOT 入站数据字段补充
+
+- `energy_telemetry` 必须保留实时曲线高频字段，同时新增 `data_json` 和 `payload_url`，用于保存单条仪表报文 JSON 和 R2 原始请求体归档地址。
+- `energy_alarm` 必须支持 EIOT 报警来源字段：`gateway_sn`、`meter_sn`、`meter_no`、`timestamp`、`data_json`、`payload_url`。
+- D1 生产环境允许 Worker 在启动接收 EIOT 报文时执行幂等补列和 `CREATE INDEX IF NOT EXISTS`，但后续整理迁移脚本时必须把这些字段同步回正式 migrations。
+- 遥测和报警的原始完整请求体不得只存在 D1；必须归档到 R2，D1 仅保存结构化查询字段、单条报文摘要 JSON 和 R2 地址。
