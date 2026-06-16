@@ -575,6 +575,8 @@ async function resetCustomerPassword(request: Request, env: Env) {
 }
 
 async function deviceApi(request: Request, url: URL, env: Env, path: string) {
+  if (path === '/energy/device/page' && request.method === 'GET') return devicePage(url, env)
+  if (path === '/energy/device/simple-list' && request.method === 'GET') return deviceSimpleList(url, env)
   if (path === '/energy/device/control' && request.method === 'POST') {
     const body = await readJson(request)
     return ok({ controlLogId: Date.now(), success: true, message: `已记录 ${body.method || 'CONTROL'} 指令，等待设备网关执行` })
@@ -592,6 +594,71 @@ async function deviceApi(request: Request, url: URL, env: Env, path: string) {
     return updateRowFromBody(body, env, 'energy_device', DEVICE_FIELDS)
   }
   return crud(request, url, env, 'energy_device', DEVICE_FIELDS)
+}
+
+async function devicePage(url: URL, env: Env) {
+  const pageNo = num(url.searchParams.get('pageNo'), 1)
+  const pageSize = num(url.searchParams.get('pageSize'), 10)
+  const where: string[] = []
+  const args: any[] = []
+
+  like(url, where, args, 'd.device_name', 'deviceName')
+  like(url, where, args, 'd.device_no', 'deviceNo')
+  like(url, where, args, 'd.gateway_sn', 'gatewaySn')
+  like(url, where, args, 'd.meter_sn', 'meterSn')
+  like(url, where, args, 'd.meter_no', 'meterNo')
+  exact(url, where, args, 'd.device_type', 'deviceType')
+  exact(url, where, args, 'd.status', 'status')
+  exact(url, where, args, 'd.customer_id', 'customerId')
+  exact(url, where, args, 'd.project_id', 'projectId')
+
+  const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : ''
+  const total = await scalar(
+    env,
+    `SELECT COUNT(*)
+     FROM energy_device d
+     LEFT JOIN energy_customer c ON c.id = d.customer_id
+     LEFT JOIN energy_project p ON p.id = d.project_id
+     ${whereSql}`,
+    args
+  )
+  const rows = await env.DB.prepare(
+    `SELECT d.*, c.name AS customer_name, p.name AS project_name
+     FROM energy_device d
+     LEFT JOIN energy_customer c ON c.id = d.customer_id
+     LEFT JOIN energy_project p ON p.id = d.project_id
+     ${whereSql}
+     ORDER BY d.id DESC
+     LIMIT ? OFFSET ?`
+  )
+    .bind(...args, pageSize, (pageNo - 1) * pageSize)
+    .all<AnyRecord>()
+
+  return ok({ list: camelRows(rows.results), total })
+}
+
+async function deviceSimpleList(url: URL, env: Env) {
+  const where: string[] = []
+  const args: any[] = []
+
+  exact(url, where, args, 'd.customer_id', 'customerId')
+  exact(url, where, args, 'd.project_id', 'projectId')
+  exact(url, where, args, 'd.status', 'status')
+
+  const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : ''
+  const rows = await env.DB.prepare(
+    `SELECT d.*, c.name AS customer_name, p.name AS project_name
+     FROM energy_device d
+     LEFT JOIN energy_customer c ON c.id = d.customer_id
+     LEFT JOIN energy_project p ON p.id = d.project_id
+     ${whereSql}
+     ORDER BY d.id DESC
+     LIMIT 200`
+  )
+    .bind(...args)
+    .all<AnyRecord>()
+
+  return ok(camelRows(rows.results))
 }
 
 async function alarmApi(request: Request, url: URL, env: Env, path: string) {

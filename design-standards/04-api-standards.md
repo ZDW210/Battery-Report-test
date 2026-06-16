@@ -273,3 +273,9 @@ POST /infra-api/energy/eiot/alarm
 - 报警报文必须遍历 `list[]` 写入 `energy_alarm`，保留 `alarmNo`、`code`、`level`、中文标题、中文内容、发生时间、`gatewaySn`、`meterSn`、`meterNo`、`timestamp` 和 `dataJson`。
 - 原始完整请求体必须归档到 R2，key 使用 `eiot/{type}/{timestamp}-{gatewaySn}-{uuid}.json`，D1 只保存 `payloadUrl`。
 - 设备匹配必须优先使用 `meterNo`，其次使用 `gatewaySn + meterSn`，不得把 `meterNo` 按下划线拆分。
+
+## 2026-06-16 设备台账关联字段补充
+
+- `GET /admin-api/energy/device/page` 和 `GET /admin-api/energy/device/simple-list` 必须关联 `energy_customer`、`energy_project` 返回 `customerName`、`projectName`。
+- 首页运行负载、设备管理列表、数据面板电表选择器都以设备接口返回的关联名称为准，不得只返回 `customerId/projectId` 后让前端二次查询。
+- 设备分页过滤继续支持 `deviceName`、`deviceNo`、`deviceType`、`gatewaySn`、`meterSn`、`meterNo`、`status`，简表接口至少支持 `customerId`、`projectId`、`status` 过滤。
