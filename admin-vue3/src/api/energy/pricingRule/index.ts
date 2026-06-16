@@ -9,6 +9,21 @@ export interface EnergyPricingRuleVO {
   deviceId?: number
   deviceName?: string
   deviceNo?: string
+  electricityCategory?: string
+  pricingMode?: string
+  voltageLevel?: string
+  agentPurchasePrice?: number
+  lineLossPrice?: number
+  transmissionDistributionPrice?: number
+  systemOperationFee?: number
+  governmentFundSurcharge?: number
+  sharpPeakRate?: number
+  peakRate?: number
+  flatRate?: number
+  valleyRate?: number
+  deepValleyRate?: number
+  maxDemandPrice?: number
+  transformerCapacityPrice?: number
   timeRate?: number
   energyRate?: number
   siteFee?: number

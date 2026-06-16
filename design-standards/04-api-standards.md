@@ -83,6 +83,7 @@ GET    /export
 - 每条规则必须且只能绑定一个计费范围：客户、项目或设备。
 - 保存前必须校验计费范围对象存在，并校验结束时间不早于开始时间。
 - 保存请求体时间字段使用 `yyyy-MM-dd HH:mm:ss` 字符串，由 Service 层显式解析。
+- 保存请求体必须支持上海工商业电价表类字段：`electricityCategory`、`pricingMode`、`voltageLevel`、`agentPurchasePrice`、`lineLossPrice`、`transmissionDistributionPrice`、`systemOperationFee`、`governmentFundSurcharge`、`sharpPeakRate`、`peakRate`、`flatRate`、`valleyRate`、`deepValleyRate`、`maxDemandPrice`、`transformerCapacityPrice`。
 - 保存请求体必须支持固定费用字段：`siteFee`、`maintenanceFee`、`communicationFee`、`platformServiceFee`、`batteryDepreciationCost`、`otherFixedFee`；这些字段由运营人员手动维护，用于数据面板利润测算。
 - 分页响应必须聚合返回客户名称、项目名称、设备名称和设备编码，避免前端再做多次明细查询。
 - 生效规则匹配接口使用 `GET /admin-api/energy/pricing-rule/match`，参数为 `deviceId` 和可选 `billingTime`。

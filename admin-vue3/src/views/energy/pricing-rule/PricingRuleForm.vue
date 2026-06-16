@@ -1,11 +1,11 @@
 <template>
-  <Dialog v-model="dialogVisible" :title="dialogTitle" width="760px">
+  <Dialog v-model="dialogVisible" :title="dialogTitle" width="1040px">
     <el-form
       ref="formRef"
       v-loading="formLoading"
       :model="formData"
       :rules="formRules"
-      label-width="104px"
+      label-width="132px"
     >
       <el-row :gutter="16">
         <el-col :span="24">
@@ -48,6 +48,95 @@
             </el-select>
           </el-form-item>
         </el-col>
+        <el-col :span="24">
+          <el-divider content-position="left">电价表基础信息</el-divider>
+        </el-col>
+        <el-col :span="8">
+          <el-form-item label="用电分类" prop="electricityCategory">
+            <el-select v-model="formData.electricityCategory" class="!w-1/1">
+              <el-option
+                v-for="item in electricityCategoryOptions"
+                :key="item.value"
+                :label="item.label"
+                :value="item.value"
+              />
+            </el-select>
+          </el-form-item>
+        </el-col>
+        <el-col :span="8">
+          <el-form-item label="计价方式" prop="pricingMode">
+            <el-select v-model="formData.pricingMode" class="!w-1/1">
+              <el-option
+                v-for="item in pricingModeOptions"
+                :key="item.value"
+                :label="item.label"
+                :value="item.value"
+              />
+            </el-select>
+          </el-form-item>
+        </el-col>
+        <el-col :span="8">
+          <el-form-item label="电压等级" prop="voltageLevel">
+            <el-select v-model="formData.voltageLevel" class="!w-1/1">
+              <el-option
+                v-for="item in voltageLevelOptions"
+                :key="item.value"
+                :label="item.label"
+                :value="item.value"
+              />
+            </el-select>
+          </el-form-item>
+        </el-col>
+        <el-col :span="24">
+          <el-divider content-position="left">
+            <span class="mr-12px">电价组成（元/千瓦时）</span>
+            <el-button link type="primary" @click="applyShanghaiJuneExample">
+              套用上海 2026 年 6 月示例
+            </el-button>
+          </el-divider>
+        </el-col>
+        <el-col v-for="field in priceComponentFields" :key="field.prop" :span="8">
+          <el-form-item :label="field.label" :prop="field.prop">
+            <el-input-number
+              v-model="formData[field.prop]"
+              :min="0"
+              :precision="6"
+              class="!w-1/1"
+              controls-position="right"
+            />
+          </el-form-item>
+        </el-col>
+        <el-col :span="24">
+          <el-divider content-position="left">分时电度电价（元/千瓦时）</el-divider>
+        </el-col>
+        <el-col v-for="field in timeOfUsePriceFields" :key="field.prop" :span="8">
+          <el-form-item :label="field.label" :prop="field.prop">
+            <el-input-number
+              v-model="formData[field.prop]"
+              :min="0"
+              :precision="6"
+              class="!w-1/1"
+              controls-position="right"
+            />
+          </el-form-item>
+        </el-col>
+        <el-col :span="24">
+          <el-divider content-position="left">容量/需量用电价格</el-divider>
+        </el-col>
+        <el-col v-for="field in capacityPriceFields" :key="field.prop" :span="12">
+          <el-form-item :label="field.label" :prop="field.prop">
+            <el-input-number
+              v-model="formData[field.prop]"
+              :min="0"
+              :precision="2"
+              class="!w-1/1"
+              controls-position="right"
+            />
+          </el-form-item>
+        </el-col>
+        <el-col :span="24">
+          <el-divider content-position="left">运营结算参数</el-divider>
+        </el-col>
         <el-col :span="12">
           <el-form-item label="时间单价" prop="timeRate">
             <el-input-number
@@ -60,11 +149,11 @@
           </el-form-item>
         </el-col>
         <el-col :span="12">
-          <el-form-item label="电量单价" prop="energyRate">
+          <el-form-item label="结算电量单价" prop="energyRate">
             <el-input-number
               v-model="formData.energyRate"
               :min="0"
-              :precision="4"
+              :precision="6"
               class="!w-1/1"
               controls-position="right"
             />
@@ -202,6 +291,7 @@ import { DICT_TYPE, getIntDictOptions } from '@/utils/dict'
 defineOptions({ name: 'EnergyPricingRuleForm' })
 
 type ScopeType = 'customer' | 'project' | 'device'
+type PricingField = keyof EnergyPricingRuleVO
 
 const { t } = useI18n()
 const message = useMessage()
@@ -213,11 +303,77 @@ const scopeType = ref<ScopeType>('customer')
 const customerList = ref<EnergyCustomerVO[]>([])
 const projectList = ref<EnergyProjectVO[]>([])
 const deviceList = ref<EnergyDeviceVO[]>([])
+const electricityCategoryOptions = [
+  { label: '一般工商业用电', value: 'general_commercial' },
+  { label: '大工业用电', value: 'large_industrial' }
+]
+const pricingModeOptions = [
+  { label: '单一制', value: 'single' },
+  { label: '两部制', value: 'two_part' }
+]
+const voltageLevelOptions = [
+  { label: '不满1千伏', value: 'under_1kv' },
+  { label: '10千伏', value: '10kv' },
+  { label: '35千伏', value: '35kv' },
+  { label: '110千伏', value: '110kv' },
+  { label: '220千伏及以上', value: '220kv_plus' }
+]
+const priceComponentFields: Array<{ label: string; prop: PricingField }> = [
+  { label: '代理购电价格', prop: 'agentPurchasePrice' },
+  { label: '线损电价', prop: 'lineLossPrice' },
+  { label: '电度输配电价', prop: 'transmissionDistributionPrice' },
+  { label: '系统运行费折价', prop: 'systemOperationFee' },
+  { label: '政府基金及附加', prop: 'governmentFundSurcharge' }
+]
+const timeOfUsePriceFields: Array<{ label: string; prop: PricingField }> = [
+  { label: '尖峰时段', prop: 'sharpPeakRate' },
+  { label: '高峰时段', prop: 'peakRate' },
+  { label: '平时段', prop: 'flatRate' },
+  { label: '低谷时段', prop: 'valleyRate' },
+  { label: '深谷时段', prop: 'deepValleyRate' }
+]
+const capacityPriceFields: Array<{ label: string; prop: PricingField }> = [
+  { label: '最大需量（元/千瓦·月）', prop: 'maxDemandPrice' },
+  { label: '变压器容量（元/千伏安·月）', prop: 'transformerCapacityPrice' }
+]
+const shanghaiJuneExample: Partial<EnergyPricingRuleVO> = {
+  electricityCategory: 'general_commercial',
+  pricingMode: 'two_part',
+  voltageLevel: 'under_1kv',
+  agentPurchasePrice: 0.43508,
+  lineLossPrice: 0.011863,
+  transmissionDistributionPrice: 0.1456,
+  systemOperationFee: 0.040718,
+  governmentFundSurcharge: 0.029115,
+  sharpPeakRate: 0,
+  peakRate: 1.010784,
+  flatRate: 0.662376,
+  valleyRate: 0.372036,
+  deepValleyRate: 0,
+  maxDemandPrice: 40.8,
+  transformerCapacityPrice: 25.5,
+  energyRate: 0.662376
+}
 const formData = ref<EnergyPricingRuleVO>({
   id: undefined,
   customerId: undefined,
   projectId: undefined,
   deviceId: undefined,
+  electricityCategory: 'general_commercial',
+  pricingMode: 'two_part',
+  voltageLevel: 'under_1kv',
+  agentPurchasePrice: 0,
+  lineLossPrice: 0,
+  transmissionDistributionPrice: 0,
+  systemOperationFee: 0,
+  governmentFundSurcharge: 0,
+  sharpPeakRate: 0,
+  peakRate: 0,
+  flatRate: 0,
+  valleyRate: 0,
+  deepValleyRate: 0,
+  maxDemandPrice: 0,
+  transformerCapacityPrice: 0,
   timeRate: 0,
   energyRate: 0,
   siteFee: 0,
@@ -241,6 +397,13 @@ const formRules = reactive({
   status: [{ required: true, message: '状态不能为空', trigger: 'change' }]
 })
 const formRef = ref()
+
+const applyShanghaiJuneExample = () => {
+  formData.value = {
+    ...formData.value,
+    ...shanghaiJuneExample
+  }
+}
 
 const open = async (type: string, id?: number) => {
   dialogVisible.value = true
@@ -319,6 +482,21 @@ const resetForm = () => {
     customerId: undefined,
     projectId: undefined,
     deviceId: undefined,
+    electricityCategory: 'general_commercial',
+    pricingMode: 'two_part',
+    voltageLevel: 'under_1kv',
+    agentPurchasePrice: 0,
+    lineLossPrice: 0,
+    transmissionDistributionPrice: 0,
+    systemOperationFee: 0,
+    governmentFundSurcharge: 0,
+    sharpPeakRate: 0,
+    peakRate: 0,
+    flatRate: 0,
+    valleyRate: 0,
+    deepValleyRate: 0,
+    maxDemandPrice: 0,
+    transformerCapacityPrice: 0,
     timeRate: 0,
     energyRate: 0,
     siteFee: 0,

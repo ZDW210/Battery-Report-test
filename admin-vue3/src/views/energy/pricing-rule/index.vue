@@ -112,8 +112,16 @@
     >
       <el-descriptions-item label="命中范围">{{ getScopeTypeText(matchedRule) }}</el-descriptions-item>
       <el-descriptions-item label="范围名称">{{ getScopeName(matchedRule) }}</el-descriptions-item>
+      <el-descriptions-item label="用电分类">{{ getElectricityCategoryText(matchedRule.electricityCategory) }}</el-descriptions-item>
+      <el-descriptions-item label="电压等级">{{ getVoltageLevelText(matchedRule.voltageLevel) }}</el-descriptions-item>
       <el-descriptions-item label="时间单价">{{ matchedRule.timeRate }}</el-descriptions-item>
       <el-descriptions-item label="电量单价">{{ matchedRule.energyRate }}</el-descriptions-item>
+      <el-descriptions-item label="高峰电价">{{ formatRate(matchedRule.peakRate) }}</el-descriptions-item>
+      <el-descriptions-item label="平时电价">{{ formatRate(matchedRule.flatRate) }}</el-descriptions-item>
+      <el-descriptions-item label="低谷电价">{{ formatRate(matchedRule.valleyRate) }}</el-descriptions-item>
+      <el-descriptions-item label="政府基金附加">{{ formatRate(matchedRule.governmentFundSurcharge) }}</el-descriptions-item>
+      <el-descriptions-item label="最大需量">{{ formatCurrency(matchedRule.maxDemandPrice) }}</el-descriptions-item>
+      <el-descriptions-item label="变压器容量">{{ formatCurrency(matchedRule.transformerCapacityPrice) }}</el-descriptions-item>
       <el-descriptions-item label="固定费用合计">{{ formatCurrency(getFixedFeeTotal(matchedRule)) }}</el-descriptions-item>
       <el-descriptions-item label="场地费">{{ formatCurrency(matchedRule.siteFee) }}</el-descriptions-item>
       <el-descriptions-item label="运维费">{{ formatCurrency(matchedRule.maintenanceFee) }}</el-descriptions-item>
@@ -142,8 +150,32 @@
           <span>{{ getScopeName(row) }}</span>
         </template>
       </el-table-column>
+      <el-table-column align="center" label="用电分类" width="140">
+        <template #default="{ row }">{{ getElectricityCategoryText(row.electricityCategory) }}</template>
+      </el-table-column>
+      <el-table-column align="center" label="计价方式" width="100">
+        <template #default="{ row }">{{ getPricingModeText(row.pricingMode) }}</template>
+      </el-table-column>
+      <el-table-column align="center" label="电压等级" width="120">
+        <template #default="{ row }">{{ getVoltageLevelText(row.voltageLevel) }}</template>
+      </el-table-column>
       <el-table-column align="right" label="时间单价" width="120" prop="timeRate" />
-      <el-table-column align="right" label="电量单价" width="120" prop="energyRate" />
+      <el-table-column align="right" label="结算电量单价" width="130" prop="energyRate" />
+      <el-table-column align="right" label="高峰电价" width="110">
+        <template #default="{ row }">{{ formatRate(row.peakRate) }}</template>
+      </el-table-column>
+      <el-table-column align="right" label="平时电价" width="110">
+        <template #default="{ row }">{{ formatRate(row.flatRate) }}</template>
+      </el-table-column>
+      <el-table-column align="right" label="低谷电价" width="110">
+        <template #default="{ row }">{{ formatRate(row.valleyRate) }}</template>
+      </el-table-column>
+      <el-table-column align="right" label="最大需量" width="110">
+        <template #default="{ row }">{{ formatCurrency(row.maxDemandPrice) }}</template>
+      </el-table-column>
+      <el-table-column align="right" label="变压器容量" width="120">
+        <template #default="{ row }">{{ formatCurrency(row.transformerCapacityPrice) }}</template>
+      </el-table-column>
       <el-table-column align="right" label="固定费用合计" width="130">
         <template #default="{ row }">{{ formatCurrency(getFixedFeeTotal(row)) }}</template>
       </el-table-column>
@@ -339,6 +371,33 @@ const getScopeName = (row: EnergyPricingRuleVO) => {
   return row.customerName || '-'
 }
 
+const getElectricityCategoryText = (value?: string) => {
+  const options: Record<string, string> = {
+    general_commercial: '一般工商业',
+    large_industrial: '大工业'
+  }
+  return options[value || ''] || '-'
+}
+
+const getPricingModeText = (value?: string) => {
+  const options: Record<string, string> = {
+    single: '单一制',
+    two_part: '两部制'
+  }
+  return options[value || ''] || '-'
+}
+
+const getVoltageLevelText = (value?: string) => {
+  const options: Record<string, string> = {
+    under_1kv: '不满1千伏',
+    '10kv': '10千伏',
+    '35kv': '35千伏',
+    '110kv': '110千伏',
+    '220kv_plus': '220千伏及以上'
+  }
+  return options[value || ''] || '-'
+}
+
 const getFixedFeeTotal = (row: EnergyPricingRuleVO) => {
   return [
     row.siteFee,
@@ -353,6 +412,11 @@ const getFixedFeeTotal = (row: EnergyPricingRuleVO) => {
 const formatCurrency = (value?: number) => {
   const amount = Number(value || 0)
   return amount > 0 ? `¥${amount.toFixed(2)}` : '¥0.00'
+}
+
+const formatRate = (value?: number) => {
+  const amount = Number(value || 0)
+  return amount > 0 ? amount.toFixed(6) : '0.000000'
 }
 
 const formatDateText = (value?: string | Date) => {
