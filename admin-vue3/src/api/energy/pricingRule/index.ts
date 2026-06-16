@@ -22,6 +22,7 @@ export interface EnergyPricingRuleVO {
   flatRate?: number
   valleyRate?: number
   deepValleyRate?: number
+  touPeriods?: string
   maxDemandPrice?: number
   transformerCapacityPrice?: number
   timeRate?: number

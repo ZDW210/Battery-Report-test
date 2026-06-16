@@ -121,6 +121,36 @@
           </el-form-item>
         </el-col>
         <el-col :span="24">
+          <el-divider content-position="left">
+            <span class="mr-12px">分时时段配置</span>
+            <el-button link type="primary" @click="resetTouPeriodsToDefault">套用默认时段</el-button>
+            <el-button link type="primary" @click="addTouPeriod">新增时段</el-button>
+          </el-divider>
+          <div class="tou-period-list">
+            <div v-for="(item, index) in touPeriodRows" :key="index" class="tou-period-row">
+              <el-select v-model="item.type" class="tou-period-row__type" placeholder="时段类型">
+                <el-option v-for="option in touPeriodTypeOptions" :key="option.value" :label="option.label" :value="option.value" />
+              </el-select>
+              <el-time-picker
+                v-model="item.start"
+                class="tou-period-row__time"
+                format="HH:mm"
+                placeholder="开始"
+                value-format="HH:mm"
+              />
+              <span class="tou-period-row__separator">至</span>
+              <el-time-picker
+                v-model="item.end"
+                class="tou-period-row__time"
+                format="HH:mm"
+                placeholder="结束"
+                value-format="HH:mm"
+              />
+              <el-button link type="danger" @click="removeTouPeriod(index)">删除</el-button>
+            </div>
+          </div>
+        </el-col>
+        <el-col :span="24">
           <el-divider content-position="left">容量/需量用电价格</el-divider>
         </el-col>
         <el-col v-for="field in capacityPriceFields" :key="field.prop" :span="12">
@@ -292,6 +322,12 @@ defineOptions({ name: 'EnergyPricingRuleForm' })
 
 type ScopeType = 'customer' | 'project' | 'device'
 type PricingField = keyof EnergyPricingRuleVO
+type TouPeriodType = 'sharpPeak' | 'peak' | 'flat' | 'valley' | 'deepValley'
+type TouPeriodRow = {
+  type: TouPeriodType
+  start: string
+  end: string
+}
 
 const { t } = useI18n()
 const message = useMessage()
@@ -303,6 +339,7 @@ const scopeType = ref<ScopeType>('customer')
 const customerList = ref<EnergyCustomerVO[]>([])
 const projectList = ref<EnergyProjectVO[]>([])
 const deviceList = ref<EnergyDeviceVO[]>([])
+const touPeriodRows = ref<TouPeriodRow[]>([])
 const electricityCategoryOptions = [
   { label: '一般工商业用电', value: 'general_commercial' },
   { label: '大工业用电', value: 'large_industrial' }
@@ -332,6 +369,19 @@ const timeOfUsePriceFields: Array<{ label: string; prop: PricingField }> = [
   { label: '低谷时段', prop: 'valleyRate' },
   { label: '深谷时段', prop: 'deepValleyRate' }
 ]
+const touPeriodTypeOptions: Array<{ label: string; value: TouPeriodType }> = [
+  { label: '尖峰', value: 'sharpPeak' },
+  { label: '高峰', value: 'peak' },
+  { label: '平时', value: 'flat' },
+  { label: '低谷', value: 'valley' },
+  { label: '深谷', value: 'deepValley' }
+]
+const defaultTouPeriods: TouPeriodRow[] = [
+  { type: 'peak', start: '08:00', end: '11:00' },
+  { type: 'flat', start: '11:00', end: '18:00' },
+  { type: 'peak', start: '18:00', end: '21:00' },
+  { type: 'valley', start: '21:00', end: '08:00' }
+]
 const capacityPriceFields: Array<{ label: string; prop: PricingField }> = [
   { label: '最大需量（元/千瓦·月）', prop: 'maxDemandPrice' },
   { label: '变压器容量（元/千伏安·月）', prop: 'transformerCapacityPrice' }
@@ -350,6 +400,7 @@ const shanghaiJuneExample: Partial<EnergyPricingRuleVO> = {
   flatRate: 0.662376,
   valleyRate: 0.372036,
   deepValleyRate: 0,
+  touPeriods: JSON.stringify(defaultTouPeriods),
   maxDemandPrice: 40.8,
   transformerCapacityPrice: 25.5,
   energyRate: 0.662376
@@ -372,6 +423,7 @@ const formData = ref<EnergyPricingRuleVO>({
   flatRate: 0,
   valleyRate: 0,
   deepValleyRate: 0,
+  touPeriods: JSON.stringify(defaultTouPeriods),
   maxDemandPrice: 0,
   transformerCapacityPrice: 0,
   timeRate: 0,
@@ -403,6 +455,7 @@ const applyShanghaiJuneExample = () => {
     ...formData.value,
     ...shanghaiJuneExample
   }
+  touPeriodRows.value = parseTouPeriods(formData.value.touPeriods)
 }
 
 const open = async (type: string, id?: number) => {
@@ -415,6 +468,7 @@ const open = async (type: string, id?: number) => {
     formLoading.value = true
     try {
       formData.value = await EnergyPricingRuleApi.getPricingRule(id)
+      touPeriodRows.value = parseTouPeriods(formData.value.touPeriods)
       scopeType.value = getScopeType(formData.value)
     } finally {
       formLoading.value = false
@@ -428,7 +482,10 @@ const submitForm = async () => {
   await formRef.value.validate()
   formLoading.value = true
   try {
-    const data = normalizeScope(formData.value)
+    const data = normalizeScope({
+      ...formData.value,
+      touPeriods: JSON.stringify(normalizeTouPeriods(touPeriodRows.value))
+    })
     if (formType.value === 'create') {
       await EnergyPricingRuleApi.createPricingRule(data)
       message.success(t('common.createSuccess'))
@@ -495,6 +552,7 @@ const resetForm = () => {
     flatRate: 0,
     valleyRate: 0,
     deepValleyRate: 0,
+    touPeriods: JSON.stringify(defaultTouPeriods),
     maxDemandPrice: 0,
     transformerCapacityPrice: 0,
     timeRate: 0,
@@ -510,6 +568,64 @@ const resetForm = () => {
     status: 0,
     remark: undefined
   }
+  touPeriodRows.value = defaultTouPeriods.map((item) => ({ ...item }))
   formRef.value?.resetFields()
 }
+
+const addTouPeriod = () => {
+  touPeriodRows.value.push({ type: 'flat', start: '00:00', end: '00:00' })
+}
+
+const removeTouPeriod = (index: number) => {
+  touPeriodRows.value.splice(index, 1)
+}
+
+const resetTouPeriodsToDefault = () => {
+  touPeriodRows.value = defaultTouPeriods.map((item) => ({ ...item }))
+}
+
+const normalizeTouPeriods = (rows: TouPeriodRow[]) => {
+  return rows
+    .filter((item) => item.type && item.start && item.end)
+    .map((item) => ({ type: item.type, start: item.start, end: item.end }))
+}
+
+const parseTouPeriods = (value?: string) => {
+  try {
+    const parsed = JSON.parse(value || '[]')
+    if (!Array.isArray(parsed) || parsed.length === 0) return defaultTouPeriods.map((item) => ({ ...item }))
+    return parsed
+      .filter((item) => item?.type && item?.start && item?.end)
+      .map((item) => ({ type: item.type, start: item.start, end: item.end })) as TouPeriodRow[]
+  } catch {
+    return defaultTouPeriods.map((item) => ({ ...item }))
+  }
+}
 </script>
+
+<style lang="scss" scoped>
+.tou-period-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 2px 0 10px;
+}
+
+.tou-period-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+
+  &__type {
+    width: 140px;
+  }
+
+  &__time {
+    width: 132px;
+  }
+
+  &__separator {
+    color: #64748b;
+  }
+}
+</style>

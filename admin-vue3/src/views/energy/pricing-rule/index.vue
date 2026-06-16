@@ -119,6 +119,7 @@
       <el-descriptions-item label="高峰电价">{{ formatRate(matchedRule.peakRate) }}</el-descriptions-item>
       <el-descriptions-item label="平时电价">{{ formatRate(matchedRule.flatRate) }}</el-descriptions-item>
       <el-descriptions-item label="低谷电价">{{ formatRate(matchedRule.valleyRate) }}</el-descriptions-item>
+      <el-descriptions-item label="分时时段" :span="3">{{ formatTouPeriods(matchedRule.touPeriods) }}</el-descriptions-item>
       <el-descriptions-item label="政府基金附加">{{ formatRate(matchedRule.governmentFundSurcharge) }}</el-descriptions-item>
       <el-descriptions-item label="最大需量">{{ formatCurrency(matchedRule.maxDemandPrice) }}</el-descriptions-item>
       <el-descriptions-item label="变压器容量">{{ formatCurrency(matchedRule.transformerCapacityPrice) }}</el-descriptions-item>
@@ -169,6 +170,9 @@
       </el-table-column>
       <el-table-column align="right" label="低谷电价" width="110">
         <template #default="{ row }">{{ formatRate(row.valleyRate) }}</template>
+      </el-table-column>
+      <el-table-column label="分时时段" min-width="260">
+        <template #default="{ row }">{{ formatTouPeriods(row.touPeriods) }}</template>
       </el-table-column>
       <el-table-column align="right" label="最大需量" width="110">
         <template #default="{ row }">{{ formatCurrency(row.maxDemandPrice) }}</template>
@@ -417,6 +421,23 @@ const formatCurrency = (value?: number) => {
 const formatRate = (value?: number) => {
   const amount = Number(value || 0)
   return amount > 0 ? amount.toFixed(6) : '0.000000'
+}
+
+const formatTouPeriods = (value?: string) => {
+  const labels: Record<string, string> = {
+    sharpPeak: '尖峰',
+    peak: '高峰',
+    flat: '平时',
+    valley: '低谷',
+    deepValley: '深谷'
+  }
+  try {
+    const rows = JSON.parse(value || '[]')
+    if (!Array.isArray(rows) || rows.length === 0) return '待配置'
+    return rows.map((item) => `${labels[item.type] || item.type} ${item.start}-${item.end}`).join('；')
+  } catch {
+    return '待配置'
+  }
 }
 
 const formatDateText = (value?: string | Date) => {
