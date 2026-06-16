@@ -3,6 +3,9 @@
   "name": "baobiao",
   "main": "worker/src/index.ts",
   "compatibility_date": "2026-06-15",
+  "build": {
+    "command": "npm run build"
+  },
   "assets": {
     "binding": "ASSETS",
     "directory": "admin-vue3/dist-worker"

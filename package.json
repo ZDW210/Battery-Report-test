@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "build": "npx --yes pnpm@10 --dir admin-vue3 install --frozen-lockfile && npx --yes pnpm@10 --dir admin-vue3 exec vite build --mode worker",
-    "deploy": "npm run build && wrangler deploy",
+    "deploy": "wrangler deploy",
+    "upload": "wrangler versions upload",
     "dev": "wrangler dev"
   },
   "devDependencies": {

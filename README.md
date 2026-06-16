@@ -27,10 +27,10 @@ Cloudflare Workers 连接 GitHub 后，建议这样设置：
 
 ```text
 Build command: 留空
-Deploy command: bun run deploy
+Deploy command: npx wrangler versions upload
 ```
 
-不能只填 `npx wrangler deploy`。如果只执行 Wrangler 部署，管理端 Vue3 页面不会被构建进去。当前 `wrangler.jsonc` 的 Assets 目录直接指向 `admin-vue3/dist-worker`，所以没有构建时部署会失败，避免再次发布空页面。
+`wrangler.jsonc` 已配置 `build.command = "npm run build"`。Cloudflare 执行 `npx wrangler versions upload` 时，Wrangler 会先构建管理端 Vue3，生成 `admin-vue3/dist-worker`，再上传 Worker 和静态资源。不要删除这个 build 配置，否则会再次出现 `admin-vue3/dist-worker` 不存在的错误。
 
 ## 初始化 D1
 
