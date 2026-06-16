@@ -72,7 +72,6 @@ export default ({command, mode}: ConfigEnv): UserConfig => {
             ]
         },
         build: {
-            modulePreload: false,
             minify: 'terser',
             outDir: env.VITE_OUT_DIR || 'dist',
             sourcemap: env.VITE_SOURCEMAP === 'true' ? 'inline' : false,
@@ -85,24 +84,14 @@ export default ({command, mode}: ConfigEnv): UserConfig => {
             },
             rollupOptions: {
                 output: {
-                    manualChunks(id) {
-                        if (!id.includes('node_modules')) return undefined
-                        if (/[\\/]node_modules[\\/](vue|@vue|vue-router|pinia|@vueuse)[\\/]/.test(id)) return 'vue-vendor'
-                        if (/[\\/]node_modules[\\/]echarts[\\/]/.test(id)) return 'echarts'
-                        if (/[\\/]node_modules[\\/]@form-create[\\/]designer[\\/]/.test(id)) return 'form-designer'
-                        if (/[\\/]node_modules[\\/]@form-create[\\/]element-ui[\\/]/.test(id)) return 'form-create'
-                        if (/[\\/]node_modules[\\/]@wangeditor-next[\\/]/.test(id)) return 'editor'
-                        if (/[\\/]node_modules[\\/](markdown-it|highlight\.js)[\\/]/.test(id)) return 'markdown'
-                        if (/[\\/]node_modules[\\/](cropperjs)[\\/]/.test(id)) return 'cropper'
-                        if (/[\\/]node_modules[\\/](qrcode)[\\/]/.test(id)) return 'qrcode'
-                        if (/[\\/]node_modules[\\/]@zxcvbn-ts[\\/]/.test(id)) return 'password-strength'
-                        if (/[\\/]node_modules[\\/](xlsx|jspdf|html2canvas)[\\/]/.test(id)) return 'report-export'
-                        if (/[\\/]node_modules[\\/]@iconify[\\/]/.test(id)) return 'iconify'
-                        if (/[\\/]node_modules[\\/](element-plus|@element-plus)[\\/]/.test(id)) return 'element-plus'
-                        if (/[\\/]node_modules[\\/](axios|qs|dayjs|lodash-es|crypto-js|nprogress|web-storage-cache|mitt|vue-dompurify-html|vue3-print-nb)[\\/]/.test(id)) return 'app-vendor'
-                        return 'vendor'
+                    codeSplitting: {
+                        groups: [
+                            { name: 'echarts', test: /node_modules[\\/]echarts[\\/]/ }, // 将 echarts 单独打包，参考 https://gitee.com/yudaocode/yudao-ui-admin-vue3/issues/IAB1SX 讨论
+                            { name: 'form-create', test: /node_modules[\\/]@form-create[\\/]element-ui[\\/]/ }, // 参考 https://github.com/yudaocode/yudao-ui-admin-vue3/issues/148 讨论
+                            { name: 'form-designer', test: /node_modules[\\/]@form-create[\\/]designer[\\/]/ }
+                        ]
                     }
-                }
+                },
             },
         },
         optimizeDeps: {include, exclude}

@@ -1,4 +1,3 @@
-import { h } from 'vue'
 import type { Component } from 'vue'
 import {
   ElCascader,
@@ -21,13 +20,9 @@ import {
   ElDivider
 } from 'element-plus'
 import { InputPassword } from '@/components/InputPassword'
+import { Editor } from '@/components/Editor'
 import { UploadImg, UploadImgs, UploadFile } from '@/components/UploadFile'
 import { ComponentName } from '@/types/components'
-
-const EditorPlaceholder = {
-  name: 'EditorPlaceholder',
-  render: () => h(ElInput, { type: 'textarea', rows: 6 })
-}
 
 const componentMap: Recordable<Component, ComponentName> = {
   Radio: ElRadioGroup,
@@ -51,7 +46,7 @@ const componentMap: Recordable<Component, ComponentName> = {
   TreeSelect: ElTreeSelect,
   RadioButton: ElRadioGroup,
   InputPassword: InputPassword,
-  Editor: EditorPlaceholder,
+  Editor: Editor,
   UploadImg: UploadImg,
   UploadImgs: UploadImgs,
   UploadFile: UploadFile

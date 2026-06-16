@@ -116,30 +116,13 @@ export default {
     }
 
     const assetResponse = await env.ASSETS.fetch(request)
-    if (assetResponse.status !== 404) return withAssetCacheHeaders(assetResponse, url.pathname)
+    if (assetResponse.status !== 404) return assetResponse
 
     const indexUrl = new URL(request.url)
     indexUrl.pathname = '/index.html'
     indexUrl.search = ''
-    return withAssetCacheHeaders(await env.ASSETS.fetch(new Request(indexUrl, request)), '/index.html')
+    return env.ASSETS.fetch(new Request(indexUrl, request))
   }
-}
-
-function withAssetCacheHeaders(response: Response, pathname: string) {
-  const headers = new Headers(response.headers)
-  if (pathname.startsWith('/assets/')) {
-    headers.set('Cache-Control', 'public, max-age=31536000, immutable')
-  } else if (/\.(?:js|css|svg|png|jpe?g|webp|gif|ico|woff2?|ttf)$/i.test(pathname)) {
-    headers.set('Cache-Control', 'public, max-age=86400')
-  } else {
-    headers.set('Cache-Control', 'no-cache')
-  }
-  headers.set('Vary', 'Accept-Encoding')
-  return new Response(response.body, {
-    status: response.status,
-    statusText: response.statusText,
-    headers
-  })
 }
 
 function handleEiotPush(request: Request, env: Env, ctx: ExecutionContext, path: string) {

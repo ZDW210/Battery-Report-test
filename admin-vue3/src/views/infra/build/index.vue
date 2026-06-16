@@ -29,9 +29,7 @@
   </Dialog>
 </template>
 <script lang="ts" setup>
-import { getCurrentInstance } from 'vue'
 import { useFormCreateDesigner } from '@/components/FormCreate'
-import { setupFormCreate } from '@/plugins/formCreate'
 import { useClipboard } from '@vueuse/core'
 import { isString } from '@/utils/is'
 
@@ -42,11 +40,6 @@ import json from 'highlight.js/lib/languages/json'
 import formCreate from '@form-create/element-ui'
 
 defineOptions({ name: 'InfraBuild' })
-
-const currentInstance = getCurrentInstance()
-if (currentInstance) {
-  setupFormCreate(currentInstance.appContext.app)
-}
 
 const { t } = useI18n() // 国际化
 const message = useMessage() // 消息
