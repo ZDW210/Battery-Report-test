@@ -1,0 +1,9 @@
+ALTER TABLE energy_telemetry ADD COLUMN epij REAL;
+ALTER TABLE energy_telemetry ADD COLUMN epif REAL;
+ALTER TABLE energy_telemetry ADD COLUMN epip REAL;
+ALTER TABLE energy_telemetry ADD COLUMN epig REAL;
+ALTER TABLE energy_telemetry ADD COLUMN epe REAL;
+ALTER TABLE energy_telemetry ADD COLUMN epej REAL;
+ALTER TABLE energy_telemetry ADD COLUMN epef REAL;
+ALTER TABLE energy_telemetry ADD COLUMN epep REAL;
+ALTER TABLE energy_telemetry ADD COLUMN epeg REAL;

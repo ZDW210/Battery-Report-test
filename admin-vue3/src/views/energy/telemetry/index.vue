@@ -112,7 +112,7 @@
               </section>
 
               <section class="bill-report__section">
-                <h3>② 购电成本</h3>
+                <h3>② 充电总成本</h3>
                 <el-table :data="costRows" size="small">
                   <el-table-column label="时段" prop="period" min-width="90" />
                   <el-table-column label="电量(kWh)" prop="energy" align="right" width="110" />
@@ -120,14 +120,14 @@
                   <el-table-column label="金额" prop="amount" align="right" width="110" />
                 </el-table>
                 <div class="bill-report__total">
-                  <div><span>总购电量</span><strong>{{ formatKwh(monthlyPurchasedEnergy) }}</strong></div>
-                  <div><span>平均购电单价</span><strong>{{ averageBuyRateText }}</strong></div>
-                  <div><span>购电成本</span><strong>{{ averageBuyRate > 0 ? formatCurrency(purchaseCost) : '待录入' }}</strong></div>
+                  <div><span>总充入电量</span><strong>{{ formatKwh(monthlyPurchasedEnergy) }}</strong></div>
+                  <div><span>正向分项校验</span><strong>{{ chargeConsistencyText }}</strong></div>
+                  <div><span>充电总成本</span><strong>{{ formatCurrency(chargeTotalCost) }}</strong></div>
                 </div>
               </section>
 
               <section class="bill-report__section">
-                <h3>③ 售电收入</h3>
+                <h3>③ 放电等效电费</h3>
                 <div class="bill-report__split">
                   <div class="bill-report__list">
                     <div v-for="item in revenueRows" :key="item.label">
@@ -140,15 +140,15 @@
               </section>
 
               <section class="bill-report__section">
-                <h3>④ 利润测算</h3>
-                <p class="bill-report__formula">毛利润 = 售电收入 - 购电成本；场地费、运维费等录入后再计入净利润。</p>
+                <h3>④ 节约成本</h3>
+                <p class="bill-report__formula">节约成本 = 放电等效电费 - 充电总成本；按正向/反向有功电能分时时段测算。</p>
                 <div class="bill-report__profit">
                   <div v-for="item in profitRows" :key="item.label">
                     <span>{{ item.label }}</span>
                     <strong>{{ item.value }}</strong>
                   </div>
                 </div>
-                <div class="bill-report__final">最终利润：{{ finalProfitText }}</div>
+                <div class="bill-report__final">节约成本：{{ finalProfitText }}</div>
               </section>
 
               <section class="bill-report__section">
@@ -802,6 +802,9 @@ type DailyRow = {
   minTime?: string | Date
   avg: number | null
 }
+type TouKey = 'sharpPeak' | 'peak' | 'flat' | 'valley' | 'deepValley'
+type TouEnergy = Record<TouKey, number>
+type TouSource = 'epi' | 'epe'
 
 const message = useMessage()
 const today = dayjs().format('YYYY-MM-DD')
@@ -1191,17 +1194,30 @@ const applicablePricingRules = computed(() => {
   })
 })
 
+const touRates = computed<TouEnergy>(() => ({
+  sharpPeak: averageNumber(applicablePricingRules.value.map((item) => normalizeNumber(item.sharpPeakRate))),
+  peak: averageNumber(applicablePricingRules.value.map((item) => normalizeNumber(item.peakRate))),
+  flat: averageNumber(applicablePricingRules.value.map((item) => normalizeNumber(item.flatRate))),
+  valley: averageNumber(applicablePricingRules.value.map((item) => normalizeNumber(item.valleyRate))),
+  deepValley: averageNumber(applicablePricingRules.value.map((item) => normalizeNumber(item.deepValleyRate)))
+}))
+
 const chargeSessions = computed(() => billSessions.value.filter((item) => Number(item.sessionType) === 2))
 const dischargeSessions = computed(() => billSessions.value.filter((item) => Number(item.sessionType) === 1))
 const sessionChargeEnergy = computed(() => sumBy(chargeSessions.value, 'totalEnergy'))
-const sessionDischargeEnergy = computed(() => sumBy(dischargeSessions.value, 'totalEnergy'))
 const monthlyPurchasedEnergy = computed(() => Number(epiDelta.value.toFixed(2)))
-const monthlySoldEnergy = computed(() => Number(sessionDischargeEnergy.value.toFixed(2)))
-const monthlyRevenue = computed(() => Number(sumBy(dischargeSessions.value, 'totalFee').toFixed(2)))
-const averageSellRate = computed(() => (monthlySoldEnergy.value > 0 ? monthlyRevenue.value / monthlySoldEnergy.value : 0))
+const monthlySoldEnergy = computed(() => calculateTelemetryDelta('epe'))
+const chargeTouEnergy = computed(() => buildTouEnergy('epi'))
+const dischargeTouEnergy = computed(() => buildTouEnergy('epe'))
+const chargeTouSum = computed(() => sumTouEnergy(chargeTouEnergy.value))
+const dischargeTouSum = computed(() => sumTouEnergy(dischargeTouEnergy.value))
+const chargeConsistencyText = computed(() => consistencyText(chargeTouSum.value, monthlyPurchasedEnergy.value, 'EPI'))
+const dischargeConsistencyText = computed(() => consistencyText(dischargeTouSum.value, monthlySoldEnergy.value, 'EPE'))
+const chargeTotalCost = computed(() => calculateTouAmount(chargeTouEnergy.value))
+const dischargeEquivalentFee = computed(() => calculateTouAmount(dischargeTouEnergy.value))
+const savedCost = computed(() => Number((dischargeEquivalentFee.value - chargeTotalCost.value).toFixed(2)))
 const averageBuyRate = computed(() => averageNumber(applicablePricingRules.value.map((item) => normalizeNumber(item.energyRate))))
 const averageBuyRateText = computed(() => averageBuyRate.value > 0 ? `${averageBuyRate.value.toFixed(2)} 元/kWh` : '待录入')
-const purchaseCost = computed(() => Number((monthlyPurchasedEnergy.value * averageBuyRate.value).toFixed(2)))
 const uniqueApplicablePricingRules = computed(() => uniqueRowsById(applicablePricingRules.value))
 const siteFee = computed(() => sumPricingRuleField('siteFee'))
 const maintenanceFee = computed(() => sumPricingRuleField('maintenanceFee'))
@@ -1220,10 +1236,6 @@ const fixedOperatingCost = computed(() => {
     ).toFixed(2)
   )
 })
-const knownProfit = computed(() => Number((monthlyRevenue.value - purchaseCost.value).toFixed(2)))
-const netProfit = computed(() => {
-  return Number((knownProfit.value - fixedOperatingCost.value - batteryDepreciationCost.value).toFixed(2))
-})
 const batteryEfficiencyText = computed(() => {
   if (!monthlyPurchasedEnergy.value) return '--'
   if (monthlySoldEnergy.value > monthlyPurchasedEnergy.value) return '待补充购电量'
@@ -1232,30 +1244,30 @@ const batteryEfficiencyText = computed(() => {
 
 const billTopCards = computed(() => [
   {
-    label: '购电量合计',
+    label: '充入电量合计',
     value: formatKwh(monthlyPurchasedEnergy.value),
-    hint: '按当前范围内电表 EPI 首末差汇总',
+    hint: '按正向有功电能 EPI 首末差汇总',
     icon: 'ep:connection',
     color: '#2088d8'
   },
   {
-    label: '售电量合计',
+    label: '放出电量合计',
     value: formatKwh(monthlySoldEnergy.value),
-    hint: '来自已记录的放电任务电量',
+    hint: '按反向有功电能 EPE 首末差汇总',
     icon: 'ep:truck',
     color: '#0ea5a4'
   },
   {
-    label: '售电收入合计',
-    value: formatCurrency(monthlyRevenue.value),
-    hint: '来自放电任务费用合计',
+    label: '放电等效电费',
+    value: formatCurrency(dischargeEquivalentFee.value),
+    hint: '按放电时段电价计算',
     icon: 'ep:money',
     color: '#16a34a'
   },
   {
-    label: '毛利润测算',
+    label: '节约成本',
     value: finalProfitText.value,
-    hint: '售电收入减购电成本和固定费用',
+    hint: '放电等效电费减充电总成本',
     icon: 'ep:trophy',
     color: '#f59e0b'
   }
@@ -1264,64 +1276,47 @@ const billTopCards = computed(() => [
 const energyStatRows = computed(() => [
   { label: '期初累计电能', value: formatNullableKwh(startEpi.value) },
   { label: '期末累计电能', value: formatNullableKwh(endEpi.value) },
-  { label: 'EPI用电量合计', value: formatKwh(monthlyPurchasedEnergy.value) },
+  { label: 'EPI充入电量合计', value: formatKwh(monthlyPurchasedEnergy.value) },
   { label: '充电任务电量', value: formatKwh(sessionChargeEnergy.value) },
-  { label: '放电量合计', value: formatKwh(monthlySoldEnergy.value) },
+  { label: 'EPE放出电量合计', value: formatKwh(monthlySoldEnergy.value) },
   { label: '未售出/自耗电量', value: formatKwh(Math.max(0, monthlyPurchasedEnergy.value - monthlySoldEnergy.value)) },
   { label: '充放电效率', value: batteryEfficiencyText.value },
   { label: '损耗电量', value: formatKwh(Math.max(0, monthlyPurchasedEnergy.value - monthlySoldEnergy.value)) },
-  { label: '峰电量', value: '待录入分时' },
-  { label: '平电量', value: '待录入分时' },
-  { label: '谷电量', value: '待录入分时' },
-  { label: '深谷电量', value: '待录入分时' }
+  { label: '尖电量校验', value: formatKwh(chargeTouEnergy.value.sharpPeak) },
+  { label: '峰电量校验', value: formatKwh(chargeTouEnergy.value.peak) },
+  { label: '平电量校验', value: formatKwh(chargeTouEnergy.value.flat) },
+  { label: '谷电量校验', value: formatKwh(chargeTouEnergy.value.valley) }
 ])
 
-const costRows = computed(() => {
-  if (averageBuyRate.value <= 0) {
-    return [
-      { period: '统一', energy: formatKwh(monthlyPurchasedEnergy.value), rate: '待录入', amount: '待录入' },
-      { period: '峰/平/谷', energy: '待录入', rate: '待录入', amount: '待录入' }
-    ]
-  }
-  return [
-    {
-      period: '统一',
-      energy: numberText(monthlyPurchasedEnergy.value),
-      rate: averageBuyRate.value.toFixed(2),
-      amount: numberText(purchaseCost.value)
-    },
-    { period: '峰/平/谷', energy: '待录入', rate: '待录入', amount: '待录入' }
-  ]
-})
+const costRows = computed(() => touRows(chargeTouEnergy.value, 'charge'))
 
 const revenueRows = computed(() => [
-  { label: '服务车辆数（待接入）', value: '待接入车辆' },
-  { label: '任务记录数', value: billSessions.value.length },
-  { label: '售电量合计', value: formatKwh(monthlySoldEnergy.value) },
-  { label: '平均售电单价', value: averageSellRate.value > 0 ? `${averageSellRate.value.toFixed(2)} 元/kWh` : '待录入' },
-  { label: '售电收入合计', value: formatCurrency(monthlyRevenue.value) }
+  { label: 'EPE放出电量合计', value: formatKwh(monthlySoldEnergy.value) },
+  { label: 'EPEJ尖峰放电量', value: formatKwh(dischargeTouEnergy.value.sharpPeak) },
+  { label: 'EPEF高峰放电量', value: formatKwh(dischargeTouEnergy.value.peak) },
+  { label: 'EPEP平时放电量', value: formatKwh(dischargeTouEnergy.value.flat) },
+  { label: 'EPEG低谷放电量', value: formatKwh(dischargeTouEnergy.value.valley) },
+  { label: '反向分项校验', value: dischargeConsistencyText.value },
+  { label: '放电等效电费', value: formatCurrency(dischargeEquivalentFee.value) },
+  { label: '任务记录数（参考）', value: `${billSessions.value.length} 次` }
 ])
 
 const profitRows = computed(() => [
-  { label: '售电收入', value: formatCurrency(monthlyRevenue.value) },
-  { label: '购电成本', value: averageBuyRate.value > 0 ? formatCurrency(purchaseCost.value) : '待录入' },
-  { label: '场地费', value: formatPricingFee(siteFee.value) },
-  { label: '运维费', value: formatPricingFee(maintenanceFee.value) },
-  { label: '通信费', value: formatPricingFee(communicationFee.value) },
-  { label: '平台服务费', value: formatPricingFee(platformServiceFee.value) },
-  { label: '电池折旧成本', value: formatPricingFee(batteryDepreciationCost.value) },
-  { label: '其他固定费用', value: formatPricingFee(otherFixedFee.value) }
+  { label: '放电等效电费', value: formatCurrency(dischargeEquivalentFee.value) },
+  { label: '充电总成本', value: formatCurrency(chargeTotalCost.value) },
+  { label: '节约成本', value: formatCurrency(savedCost.value) },
+  { label: '充电分项校验', value: chargeConsistencyText.value },
+  { label: '放电分项校验', value: dischargeConsistencyText.value }
 ])
 
 const finalProfitText = computed(() => {
-  if (averageBuyRate.value <= 0) return '待录入成本'
-  return formatCurrency(netProfit.value)
+  return formatCurrency(savedCost.value)
 })
 
 const batteryRows = computed(() => [
-  { label: 'EPI用电量合计', value: formatKwh(monthlyPurchasedEnergy.value) },
+  { label: 'EPI充入电量合计', value: formatKwh(monthlyPurchasedEnergy.value) },
   { label: '充电任务电量', value: formatKwh(sessionChargeEnergy.value) },
-  { label: '放电量合计', value: formatKwh(monthlySoldEnergy.value) },
+  { label: 'EPE放出电量合计', value: formatKwh(monthlySoldEnergy.value) },
   { label: '循环次数', value: '待录入容量' },
   { label: '当月任务次数', value: `${billSessions.value.length} 次` },
   { label: '电池效率', value: batteryEfficiencyText.value },
@@ -1349,8 +1344,9 @@ const energyPieOptions = computed<EChartsOption>(() => ({
 
 const revenueBarOptions = computed<EChartsOption>(() => {
   const days = Array.from({ length: 7 }).map((_, index) => dayjs(billRange.value.end).subtract(6 - index, 'day'))
-  const energy = days.map((day) => sumDaily(dischargeSessions.value, day, 'totalEnergy'))
-  const revenue = days.map((day) => sumDaily(dischargeSessions.value, day, 'totalFee'))
+  const dailyRows = days.map((day) => sortedBillTelemetry.value.filter((item) => dayjs(item.collectTime).isSame(day, 'day')))
+  const energy = dailyRows.map((rows) => calculateTelemetryDeltaInRows(rows, 'epe'))
+  const equivalentFee = dailyRows.map((rows) => calculateTouAmount(buildTouEnergyFromRows(rows, 'epe')))
   return {
     color: ['#2088d8', '#22c55e'],
     tooltip: { trigger: 'axis' },
@@ -1359,8 +1355,8 @@ const revenueBarOptions = computed<EChartsOption>(() => {
     xAxis: { type: 'category', data: days.map((day) => day.format('MM-DD')) },
     yAxis: { type: 'value' },
     series: [
-      { name: '售电量', type: 'bar', data: energy },
-      { name: '收入', type: 'bar', data: revenue }
+      { name: '放出电量', type: 'bar', data: energy },
+      { name: '等效电费', type: 'bar', data: equivalentFee }
     ]
   }
 })
@@ -1970,6 +1966,105 @@ const calculateEpiBoundary = (rows: EnergyTelemetryVO[], boundary: 'start' | 'en
   return hasValue ? Number(total.toFixed(2)) : null
 }
 
+const touEnergyFieldMap: Record<TouSource, Record<TouKey, keyof EnergyTelemetryVO | null>> = {
+  epi: {
+    sharpPeak: 'epij',
+    peak: 'epif',
+    flat: 'epip',
+    valley: 'epig',
+    deepValley: null
+  },
+  epe: {
+    sharpPeak: 'epej',
+    peak: 'epef',
+    flat: 'epep',
+    valley: 'epeg',
+    deepValley: null
+  }
+}
+
+const touPeriodLabels: Record<TouKey, string> = {
+  sharpPeak: '尖峰',
+  peak: '高峰',
+  flat: '平时',
+  valley: '低谷',
+  deepValley: '深谷'
+}
+
+const calculateTelemetryDeltaInRows = (rows: EnergyTelemetryVO[], field: keyof EnergyTelemetryVO) => {
+  const groups = groupTelemetryByDevice(rows)
+  let total = 0
+  groups.forEach((items) => {
+    const values = items.map((item) => normalizeNumber(item[field]))
+    const start = firstNumber(values)
+    const end = lastNumber(values)
+    if (start !== null && end !== null) {
+      total += Math.max(0, end - start)
+    }
+  })
+  return Number(total.toFixed(2))
+}
+
+const calculateTelemetryDelta = (field: keyof EnergyTelemetryVO) => {
+  return calculateTelemetryDeltaInRows(sortedBillTelemetry.value, field)
+}
+
+const buildTouEnergy = (source: TouSource): TouEnergy => {
+  const fields = touEnergyFieldMap[source]
+  return {
+    sharpPeak: fields.sharpPeak ? calculateTelemetryDelta(fields.sharpPeak) : 0,
+    peak: fields.peak ? calculateTelemetryDelta(fields.peak) : 0,
+    flat: fields.flat ? calculateTelemetryDelta(fields.flat) : 0,
+    valley: fields.valley ? calculateTelemetryDelta(fields.valley) : 0,
+    deepValley: fields.deepValley ? calculateTelemetryDelta(fields.deepValley) : 0
+  }
+}
+
+const buildTouEnergyFromRows = (rows: EnergyTelemetryVO[], source: TouSource): TouEnergy => {
+  const fields = touEnergyFieldMap[source]
+  return {
+    sharpPeak: fields.sharpPeak ? calculateTelemetryDeltaInRows(rows, fields.sharpPeak) : 0,
+    peak: fields.peak ? calculateTelemetryDeltaInRows(rows, fields.peak) : 0,
+    flat: fields.flat ? calculateTelemetryDeltaInRows(rows, fields.flat) : 0,
+    valley: fields.valley ? calculateTelemetryDeltaInRows(rows, fields.valley) : 0,
+    deepValley: fields.deepValley ? calculateTelemetryDeltaInRows(rows, fields.deepValley) : 0
+  }
+}
+
+const sumTouEnergy = (energy: TouEnergy) => {
+  return Number(
+    (energy.sharpPeak + energy.peak + energy.flat + energy.valley + energy.deepValley).toFixed(2)
+  )
+}
+
+const consistencyText = (partTotal: number, total: number, totalLabel: string) => {
+  if (total <= 0 && partTotal <= 0) {
+    return '无数据'
+  }
+  if (total > 0 && partTotal <= 0) {
+    return '分项缺失'
+  }
+  const diff = Number(Math.abs(partTotal - total).toFixed(2))
+  const tolerance = Math.max(0.01, total * 0.001)
+  if (diff <= tolerance) {
+    return `一致（${totalLabel}）`
+  }
+  return `差异 ${formatKwh(diff)}`
+}
+
+const calculateTouAmount = (energy: TouEnergy) => {
+  const rates = touRates.value
+  return Number(
+    (
+      energy.sharpPeak * rates.sharpPeak +
+      energy.peak * rates.peak +
+      energy.flat * rates.flat +
+      energy.valley * rates.valley +
+      energy.deepValley * rates.deepValley
+    ).toFixed(2)
+  )
+}
+
 const uniqueRowsById = <T extends { id?: number }>(rows: T[]) => {
   const map = new Map<string | number, T>()
   rows.forEach((row, index) => {
@@ -2008,6 +2103,24 @@ const formatNullableKwh = (value: number | null) => (value === null ? '--' : for
 const formatCurrency = (value: number) => `¥${numberText(value)}`
 const formatPricingFee = (value: number) => {
   return uniqueApplicablePricingRules.value.length > 0 ? formatCurrency(value) : '待录入'
+}
+
+const formatTouRate = (value: number) => {
+  return uniqueApplicablePricingRules.value.length > 0 ? `${numberText(value)} 元/kWh` : '待录入'
+}
+
+const formatTouAmount = (energy: number, rate: number) => {
+  return uniqueApplicablePricingRules.value.length > 0 ? formatCurrency(Number((energy * rate).toFixed(2))) : '待录入'
+}
+
+const touRows = (energy: TouEnergy, type: 'charge' | 'discharge') => {
+  const rates = touRates.value
+  return (Object.keys(touPeriodLabels) as TouKey[]).map((key) => ({
+    period: `${touPeriodLabels[key]}${type === 'charge' ? '充电' : '放电'}`,
+    energy: formatKwh(energy[key]),
+    rate: formatTouRate(rates[key]),
+    amount: formatTouAmount(energy[key], rates[key])
+  }))
 }
 
 const exportRawData = () => {

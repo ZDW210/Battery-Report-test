@@ -24,6 +24,15 @@ export interface EnergyTelemetryVO {
   p?: number
   pf?: number
   epi?: number
+  epij?: number
+  epif?: number
+  epip?: number
+  epig?: number
+  epe?: number
+  epej?: number
+  epef?: number
+  epep?: number
+  epeg?: number
   createTime?: string | Date
 }
 

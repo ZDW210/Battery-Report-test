@@ -10,7 +10,10 @@ export interface Env {
 type AnyRecord = Record<string, any>
 
 const ADMIN_PREFIX = '/admin-api'
-const DAILY_FIELDS = new Set(['pa', 'pb', 'pc', 'ua', 'ub', 'uc', 'ia', 'ib', 'ic', 'p', 'pf', 'epi'])
+const DAILY_FIELDS = new Set([
+  'pa', 'pb', 'pc', 'ua', 'ub', 'uc', 'ia', 'ib', 'ic', 'p', 'pf',
+  'epi', 'epij', 'epif', 'epip', 'epig', 'epe', 'epej', 'epef', 'epep', 'epeg'
+])
 const EIOT_PUSH_PATHS = new Set([
   '/eiot',
   '/eiot/meter',
@@ -874,7 +877,7 @@ async function telemetryApi(request: Request, url: URL, env: Env, path: string) 
       .all<AnyRecord>()
     return ok(camelRows(rows.results))
   }
-  return crud(request, url, env, 'energy_telemetry', ['deviceId', 'gatewaySn', 'meterSn', 'meterNo', 'collectTime', 'timestamp', 'source', 'state', 'pa', 'pb', 'pc', 'ua', 'ub', 'uc', 'ia', 'ib', 'ic', 'p', 'pf', 'epi'])
+  return crud(request, url, env, 'energy_telemetry', ['deviceId', 'gatewaySn', 'meterSn', 'meterNo', 'collectTime', 'timestamp', 'source', 'state', 'pa', 'pb', 'pc', 'ua', 'ub', 'uc', 'ia', 'ib', 'ic', 'p', 'pf', 'epi', 'epij', 'epif', 'epip', 'epig', 'epe', 'epej', 'epef', 'epep', 'epeg'])
 }
 
 function detectEiotPushType(payload: unknown) {
@@ -906,6 +909,15 @@ async function archiveEiotPayload(env: Env, type: string, rawBody: string, summa
 
 async function ensureEiotReceiveColumns(env: Env) {
   await ensureColumns(env, 'energy_telemetry', {
+    epij: 'REAL',
+    epif: 'REAL',
+    epip: 'REAL',
+    epig: 'REAL',
+    epe: 'REAL',
+    epej: 'REAL',
+    epef: 'REAL',
+    epep: 'REAL',
+    epeg: 'REAL',
     data_json: 'TEXT',
     payload_url: 'TEXT'
   })
@@ -952,8 +964,10 @@ async function saveEiotMeterPayload(env: Env, payload: unknown, payloadUrl: stri
     await env.DB.prepare(
       `INSERT INTO energy_telemetry(
         device_id, gateway_sn, meter_sn, meter_no, collect_time, timestamp, source, state,
-        pa, pb, pc, ua, ub, uc, ia, ib, ic, p, pf, epi, data_json, payload_url, create_time
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        pa, pb, pc, ua, ub, uc, ia, ib, ic, p, pf, epi,
+        epij, epif, epip, epig, epe, epej, epef, epep, epeg,
+        data_json, payload_url, create_time
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
       .bind(
         deviceId,
@@ -976,6 +990,15 @@ async function saveEiotMeterPayload(env: Env, payload: unknown, payloadUrl: stri
         numberOrNull(row.P),
         numberOrNull(row.PF),
         numberOrNull(row.EPI),
+        numberOrNull(row.EPIJ),
+        numberOrNull(row.EPIF),
+        numberOrNull(row.EPIP),
+        numberOrNull(row.EPIG),
+        numberOrNull(row.EPE),
+        numberOrNull(row.EPEJ),
+        numberOrNull(row.EPEF),
+        numberOrNull(row.EPEP),
+        numberOrNull(row.EPEG),
         JSON.stringify(row),
         payloadUrl,
         nowText()
