@@ -27,9 +27,14 @@ import '@/plugins/animate.css'
 // 路由
 import router, { setupRouter } from '@/router'
 
+// 指令
+import { setupAuth, setupMountedFocus } from '@/directives'
+
 import { createApp } from 'vue'
 
 import App from './App.vue'
+
+import './permission'
 
 import '@/plugins/tongji' // 百度统计
 import Logger from '@/utils/Logger'
@@ -50,19 +55,15 @@ window.addEventListener('vite:preloadError', (event) => {
 const setupAll = async () => {
   const app = createApp(App)
 
-  setupStore(app)
-
   await setupI18n(app)
+
+  setupStore(app)
 
   setupGlobCom(app)
 
   setupElementPlus(app)
 
   setupRouter(app)
-
-  await import('./permission')
-
-  const { setupAuth, setupMountedFocus } = await import('@/directives')
 
   // directives 指令
   setupAuth(app)
