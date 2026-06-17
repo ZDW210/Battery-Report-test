@@ -210,7 +210,6 @@
 import { Echart } from '@/components/Echart'
 import { EnergyAlarmApi } from '@/api/energy/alarm'
 import type { EnergyAlarmVO } from '@/api/energy/alarm'
-import { EnergyCustomerApi } from '@/api/energy/customer'
 import { EnergyDeviceApi } from '@/api/energy/device'
 import type { EnergyDeviceVO } from '@/api/energy/device'
 import { EnergyProjectApi } from '@/api/energy/project'
@@ -237,7 +236,6 @@ const devices = ref<EnergyDeviceVO[]>([])
 const latestAlarms = ref<EnergyAlarmVO[]>([])
 const dataPanelRows = ref<EnergyTelemetryVO[]>([])
 const deviceTotal = ref(0)
-const customerTotal = ref(0)
 const projectTotal = ref(0)
 const activeAlarmTotal = ref(0)
 
@@ -367,10 +365,10 @@ const statCards = computed(() => [
     color: '#2563eb'
   },
   {
-    label: '客户数量',
-    value: customerTotal.value,
-    hint: '已建档客户',
-    icon: 'ep:user',
+    label: '在线率',
+    value: `${onlineRate.value}%`,
+    hint: '按5分钟报文判断',
+    icon: 'ep:connection',
     color: '#0f766e'
   },
   {
@@ -426,10 +424,9 @@ const getDeviceStatusType = (status?: number) => {
 const loadDashboard = async () => {
   loading.value = true
   try {
-    const [devicePage, alarmPage, customerPage, projectPage] = await Promise.all([
+    const [devicePage, alarmPage, projectPage] = await Promise.all([
       EnergyDeviceApi.getDevicePage({ pageNo: 1, pageSize: 100 }),
       EnergyAlarmApi.getAlarmPage({ pageNo: 1, pageSize: 8, status: 0 }),
-      EnergyCustomerApi.getCustomerPage({ pageNo: 1, pageSize: 1 }),
       EnergyProjectApi.getProjectPage({ pageNo: 1, pageSize: 1 })
     ])
 
@@ -437,7 +434,6 @@ const loadDashboard = async () => {
     latestAlarms.value = alarmPage?.list || []
     deviceTotal.value = devicePage?.total || 0
     activeAlarmTotal.value = alarmPage?.total || 0
-    customerTotal.value = customerPage?.total || 0
     projectTotal.value = projectPage?.total || 0
     if (!dataQuery.deviceId && devices.value[0]?.id) {
       dataQuery.deviceId = devices.value[0].id
