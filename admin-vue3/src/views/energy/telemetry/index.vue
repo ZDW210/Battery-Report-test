@@ -805,6 +805,16 @@ type DailyRow = {
 type TouKey = 'sharpPeak' | 'peak' | 'flat' | 'valley' | 'deepValley'
 type TouEnergy = Record<TouKey, number>
 type TouSource = 'epi' | 'epe'
+type TouPeriod = { type: TouKey; start: string; end: string }
+type TelemetryInterval = {
+  deviceId: number
+  startTime: string | Date
+  endTime: string | Date
+  chargeTotal: number
+  dischargeTotal: number
+  chargeTou: TouEnergy
+  dischargeTou: TouEnergy
+}
 
 const message = useMessage()
 const today = dayjs().format('YYYY-MM-DD')
@@ -1154,21 +1164,11 @@ const sortedBillTelemetry = computed(() => {
     .filter((item) => item.collectTime)
     .sort((a, b) => dayjs(a.collectTime as string).valueOf() - dayjs(b.collectTime as string).valueOf())
 })
+const billTelemetryIntervals = computed(() => buildTelemetryIntervals(sortedBillTelemetry.value))
 
 const startEpi = computed(() => calculateEpiBoundary(sortedBillTelemetry.value, 'start'))
 const endEpi = computed(() => calculateEpiBoundary(sortedBillTelemetry.value, 'end'))
-const epiDelta = computed(() => {
-  const groups = groupTelemetryByDevice(sortedBillTelemetry.value)
-  let total = 0
-  groups.forEach((rows) => {
-    const start = firstNumber(rows.map((item) => normalizeNumber(item.epi)))
-    const end = lastNumber(rows.map((item) => normalizeNumber(item.epi)))
-    if (start !== null && end !== null) {
-      total += Math.max(0, end - start)
-    }
-  })
-  return Number(total.toFixed(2))
-})
+const epiDelta = computed(() => sumIntervals(billTelemetryIntervals.value, 'chargeTotal'))
 
 const billSessions = computed(() => {
   const start = dayjs(billRange.value.start).valueOf()
@@ -1206,7 +1206,7 @@ const chargeSessions = computed(() => billSessions.value.filter((item) => Number
 const dischargeSessions = computed(() => billSessions.value.filter((item) => Number(item.sessionType) === 1))
 const sessionChargeEnergy = computed(() => sumBy(chargeSessions.value, 'totalEnergy'))
 const monthlyPurchasedEnergy = computed(() => Number(epiDelta.value.toFixed(2)))
-const monthlySoldEnergy = computed(() => calculateTelemetryDelta('epe'))
+const monthlySoldEnergy = computed(() => sumIntervals(billTelemetryIntervals.value, 'dischargeTotal'))
 const chargeTouEnergy = computed(() => buildTouEnergy('epi'))
 const dischargeTouEnergy = computed(() => buildTouEnergy('epe'))
 const chargeTouSum = computed(() => sumTouEnergy(chargeTouEnergy.value))
@@ -2010,25 +2010,180 @@ const calculateTelemetryDelta = (field: keyof EnergyTelemetryVO) => {
 }
 
 const buildTouEnergy = (source: TouSource): TouEnergy => {
-  const fields = touEnergyFieldMap[source]
-  return {
-    sharpPeak: fields.sharpPeak ? calculateTelemetryDelta(fields.sharpPeak) : 0,
-    peak: fields.peak ? calculateTelemetryDelta(fields.peak) : 0,
-    flat: fields.flat ? calculateTelemetryDelta(fields.flat) : 0,
-    valley: fields.valley ? calculateTelemetryDelta(fields.valley) : 0,
-    deepValley: fields.deepValley ? calculateTelemetryDelta(fields.deepValley) : 0
-  }
+  return sumIntervalTou(billTelemetryIntervals.value, source)
 }
 
 const buildTouEnergyFromRows = (rows: EnergyTelemetryVO[], source: TouSource): TouEnergy => {
+  return sumIntervalTou(buildTelemetryIntervals(rows), source)
+}
+
+const emptyTouEnergy = (): TouEnergy => ({
+  sharpPeak: 0,
+  peak: 0,
+  flat: 0,
+  valley: 0,
+  deepValley: 0
+})
+
+const buildTelemetryIntervals = (rows: EnergyTelemetryVO[]): TelemetryInterval[] => {
+  const intervals: TelemetryInterval[] = []
+  const groups = groupTelemetryByDevice(rows)
+  groups.forEach((items, deviceId) => {
+    for (let index = 1; index < items.length; index += 1) {
+      const prev = items[index - 1]
+      const curr = items[index]
+      if (!prev.collectTime || !curr.collectTime) continue
+      const chargeTotal = positiveDelta(prev.epi, curr.epi)
+      const dischargeTotal = positiveDelta(prev.epe, curr.epe)
+      intervals.push({
+        deviceId,
+        startTime: prev.collectTime,
+        endTime: curr.collectTime,
+        chargeTotal,
+        dischargeTotal,
+        chargeTou: buildIntervalTou(prev, curr, 'epi', chargeTotal),
+        dischargeTou: buildIntervalTou(prev, curr, 'epe', dischargeTotal)
+      })
+    }
+  })
+  return intervals
+}
+
+const buildIntervalTou = (prev: EnergyTelemetryVO, curr: EnergyTelemetryVO, source: TouSource, total: number): TouEnergy => {
+  if (total <= 0) return emptyTouEnergy()
+  const payloadTou = payloadTouDelta(prev, curr, source, total)
+  if (payloadTou) return payloadTou
+  return splitEnergyByPricingTime(curr.deviceId, prev.collectTime, curr.collectTime, total)
+}
+
+const payloadTouDelta = (prev: EnergyTelemetryVO, curr: EnergyTelemetryVO, source: TouSource, total: number): TouEnergy | null => {
   const fields = touEnergyFieldMap[source]
-  return {
-    sharpPeak: fields.sharpPeak ? calculateTelemetryDeltaInRows(rows, fields.sharpPeak) : 0,
-    peak: fields.peak ? calculateTelemetryDeltaInRows(rows, fields.peak) : 0,
-    flat: fields.flat ? calculateTelemetryDeltaInRows(rows, fields.flat) : 0,
-    valley: fields.valley ? calculateTelemetryDeltaInRows(rows, fields.valley) : 0,
-    deepValley: fields.deepValley ? calculateTelemetryDeltaInRows(rows, fields.deepValley) : 0
+  const energy = emptyTouEnergy()
+  let hasPart = false
+  ;(Object.keys(fields) as TouKey[]).forEach((key) => {
+    const field = fields[key]
+    if (!field) return
+    const delta = positiveDelta(prev[field], curr[field])
+    if (delta > 0) hasPart = true
+    energy[key] = delta
+  })
+  if (!hasPart) return null
+  const partTotal = sumTouEnergy(energy)
+  const tolerance = Math.max(0.02, total * 0.02)
+  return Math.abs(partTotal - total) <= tolerance ? energy : null
+}
+
+const splitEnergyByPricingTime = (
+  deviceId: number | undefined,
+  startValue: string | Date | undefined,
+  endValue: string | Date | undefined,
+  total: number
+): TouEnergy => {
+  const energy = emptyTouEnergy()
+  const start = dayjs(startValue)
+  const end = dayjs(endValue)
+  if (!start.isValid() || !end.isValid() || !end.isAfter(start)) {
+    energy.flat = total
+    return energy
   }
+  const periods = parseTouPeriods(matchPricingRuleForDevice(deviceId)?.touPeriods)
+  const totalSeconds = end.diff(start, 'second')
+  if (totalSeconds <= 0) {
+    energy.flat = total
+    return energy
+  }
+  let cursor = start
+  while (cursor.isBefore(end)) {
+    const nextMinute = cursor.add(1, 'minute').startOf('minute')
+    const next = nextMinute.isAfter(cursor) && nextMinute.isBefore(end) ? nextMinute : end
+    const seconds = Math.max(0, next.diff(cursor, 'second'))
+    const key = resolveTouKey(cursor, periods)
+    energy[key] += total * (seconds / totalSeconds)
+    cursor = next
+  }
+  return roundTouEnergy(energy)
+}
+
+const matchPricingRuleForDevice = (deviceId?: number) => {
+  const device = devices.value.find((item) => Number(item.id) === Number(deviceId))
+  if (!device) return undefined
+  const customerId = Number(device.customerId)
+  const projectId = Number(device.projectId)
+  return pricingRuleRows.value
+    .filter((rule) => Number(rule.status) === 0)
+    .filter((rule) => {
+      if (rule.deviceId) return Number(rule.deviceId) === Number(device.id)
+      if (rule.projectId) return Number(rule.projectId) === projectId
+      if (rule.customerId) return Number(rule.customerId) === customerId
+      return false
+    })
+    .sort((a, b) => pricingRulePriority(b, device) - pricingRulePriority(a, device) || Number(b.id || 0) - Number(a.id || 0))[0]
+}
+
+const pricingRulePriority = (rule: EnergyPricingRuleVO, device: EnergyDeviceVO) => {
+  if (rule.deviceId && Number(rule.deviceId) === Number(device.id)) return 3
+  if (rule.projectId && Number(rule.projectId) === Number(device.projectId)) return 2
+  if (rule.customerId && Number(rule.customerId) === Number(device.customerId)) return 1
+  return 0
+}
+
+const parseTouPeriods = (value?: string): TouPeriod[] => {
+  if (!value) return []
+  try {
+    const rows = JSON.parse(value)
+    return Array.isArray(rows)
+      ? rows.filter((item) => item?.type && item?.start && item?.end)
+      : []
+  } catch {
+    return []
+  }
+}
+
+const resolveTouKey = (time: dayjs.Dayjs, periods: TouPeriod[]): TouKey => {
+  const minute = time.hour() * 60 + time.minute()
+  const matched = periods.find((period) => isMinuteInPeriod(minute, period))
+  return matched?.type || 'flat'
+}
+
+const isMinuteInPeriod = (minute: number, period: TouPeriod) => {
+  const start = timeToMinute(period.start)
+  const end = timeToMinute(period.end)
+  if (start === end) return false
+  return start < end ? minute >= start && minute < end : minute >= start || minute < end
+}
+
+const timeToMinute = (value: string) => {
+  const [hour, minute] = value.split(':').map(Number)
+  return Number(hour || 0) * 60 + Number(minute || 0)
+}
+
+const positiveDelta = (previous: unknown, current: unknown) => {
+  const start = normalizeNumber(previous)
+  const end = normalizeNumber(current)
+  return start !== null && end !== null ? Number(Math.max(0, end - start).toFixed(4)) : 0
+}
+
+const roundTouEnergy = (energy: TouEnergy): TouEnergy => ({
+  sharpPeak: Number(energy.sharpPeak.toFixed(4)),
+  peak: Number(energy.peak.toFixed(4)),
+  flat: Number(energy.flat.toFixed(4)),
+  valley: Number(energy.valley.toFixed(4)),
+  deepValley: Number(energy.deepValley.toFixed(4))
+})
+
+const sumIntervals = (intervals: TelemetryInterval[], key: 'chargeTotal' | 'dischargeTotal') => {
+  return Number(intervals.reduce((sum, item) => sum + item[key], 0).toFixed(2))
+}
+
+const sumIntervalTou = (intervals: TelemetryInterval[], source: TouSource): TouEnergy => {
+  const energy = emptyTouEnergy()
+  intervals.forEach((interval) => {
+    const sourceEnergy = source === 'epi' ? interval.chargeTou : interval.dischargeTou
+    ;(Object.keys(energy) as TouKey[]).forEach((key) => {
+      energy[key] += sourceEnergy[key]
+    })
+  })
+  return roundTouEnergy(energy)
 }
 
 const sumTouEnergy = (energy: TouEnergy) => {

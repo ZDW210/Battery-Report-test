@@ -51,3 +51,22 @@ Device status is derived from EIOT push freshness and should not be manually sel
 - If no payload has been received for more than 5 minutes, the device is offline.
 - The edit form must not expose manual `status` or `runMode` controls.
 - `customerId`, `projectId`, location, and other business fields remain manually editable.
+
+## Interval Energy Rule
+
+Every new EIOT realtime payload is compared with the previous telemetry row of the same meter to create an interval energy record.
+
+Preferred calculation:
+
+1. Use `EPI/EPE` difference between two adjacent telemetry rows as interval charge/discharge total.
+2. Use `EPIJ/EPIF/EPIP/EPIG` and `EPEJ/EPEF/EPEP/EPEG` differences when their sum is consistent with the total difference.
+3. If the payload has no valid TOU fields, or the TOU sum is inconsistent with the total, fall back to the matched pricing rule's time periods.
+4. When the interval crosses a TOU boundary, split the interval by minute proportion.
+
+Persisted detail table:
+
+- `energy_telemetry_interval`
+- `calc_method`: `payload` or `pricing-rule`
+- `consistency_status`: `consistent`, `fallback`, or `none`
+
+This keeps raw cumulative meter readings and calculated interval energy separate, so reports can answer both "current accumulated reading" and "how much energy was used in each time period".

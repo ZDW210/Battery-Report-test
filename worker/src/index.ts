@@ -8,6 +8,9 @@ export interface Env {
 }
 
 type AnyRecord = Record<string, any>
+type TouKey = 'sharpPeak' | 'peak' | 'flat' | 'valley' | 'deepValley'
+type TouEnergy = Record<TouKey, number>
+type TouSource = 'epi' | 'epe'
 
 const ADMIN_PREFIX = '/admin-api'
 const DAILY_FIELDS = new Set([
@@ -908,6 +911,34 @@ async function archiveEiotPayload(env: Env, type: string, rawBody: string, summa
 }
 
 async function ensureEiotReceiveColumns(env: Env) {
+  await env.DB.prepare(
+    `CREATE TABLE IF NOT EXISTS energy_telemetry_interval (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      telemetry_id INTEGER UNIQUE,
+      device_id INTEGER,
+      gateway_sn TEXT,
+      meter_sn TEXT,
+      meter_no TEXT,
+      start_time TEXT,
+      end_time TEXT,
+      duration_minutes REAL,
+      charge_total REAL NOT NULL DEFAULT 0,
+      charge_sharp_peak REAL NOT NULL DEFAULT 0,
+      charge_peak REAL NOT NULL DEFAULT 0,
+      charge_flat REAL NOT NULL DEFAULT 0,
+      charge_valley REAL NOT NULL DEFAULT 0,
+      charge_deep_valley REAL NOT NULL DEFAULT 0,
+      discharge_total REAL NOT NULL DEFAULT 0,
+      discharge_sharp_peak REAL NOT NULL DEFAULT 0,
+      discharge_peak REAL NOT NULL DEFAULT 0,
+      discharge_flat REAL NOT NULL DEFAULT 0,
+      discharge_valley REAL NOT NULL DEFAULT 0,
+      discharge_deep_valley REAL NOT NULL DEFAULT 0,
+      calc_method TEXT,
+      consistency_status TEXT,
+      create_time TEXT
+    )`
+  ).run()
   await ensureColumns(env, 'energy_telemetry', {
     epij: 'REAL',
     epif: 'REAL',
@@ -931,6 +962,8 @@ async function ensureEiotReceiveColumns(env: Env) {
   })
   await env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_energy_telemetry_gateway_meter_time ON energy_telemetry(gateway_sn, meter_sn, collect_time)').run()
   await env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_energy_alarm_gateway_meter_time ON energy_alarm(gateway_sn, meter_sn, occur_time)').run()
+  await env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_energy_interval_device_time ON energy_telemetry_interval(device_id, end_time)').run()
+  await env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_energy_interval_meter_time ON energy_telemetry_interval(meter_no, end_time)').run()
 }
 
 async function ensureColumns(env: Env, table: string, columns: Record<string, string>) {
@@ -960,14 +993,16 @@ async function saveEiotMeterPayload(env: Env, payload: unknown, payloadUrl: stri
     const collectTime = cleanText(row.createTime || row.CreateTime) || textFromUnix(timestamp)
     const device = await findOrCreateDeviceByEiot(env, { ...row, gatewaySn, meterSn, meterNo }, collectTime || nowText())
     const deviceId = device?.id ? Number(device.id) : null
+    const previousTelemetry = deviceId ? await findPreviousTelemetry(env, deviceId, collectTime || nowText()) : null
 
-    await env.DB.prepare(
+    const createdTelemetry = await env.DB.prepare(
       `INSERT INTO energy_telemetry(
         device_id, gateway_sn, meter_sn, meter_no, collect_time, timestamp, source, state,
         pa, pb, pc, ua, ub, uc, ia, ib, ic, p, pf, epi,
         epij, epif, epip, epig, epe, epej, epef, epep, epeg,
         data_json, payload_url, create_time
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      RETURNING id`
     )
       .bind(
         deviceId,
@@ -1003,10 +1038,13 @@ async function saveEiotMeterPayload(env: Env, payload: unknown, payloadUrl: stri
         payloadUrl,
         nowText()
       )
-      .run()
+      .first<AnyRecord>()
 
     if (deviceId) {
       await updateDeviceLatestFromTelemetry(env, deviceId, row, collectTime || nowText())
+      if (previousTelemetry && createdTelemetry?.id) {
+        await saveTelemetryInterval(env, previousTelemetry, { ...row, deviceId, gatewaySn, meterSn, meterNo, collectTime }, Number(createdTelemetry.id))
+      }
     }
   }
 }
@@ -1062,6 +1100,137 @@ async function findDeviceByMeter(env: Env, meterNo: string, gatewaySn: string, m
      LIMIT 1`
   )
     .bind(meterNo, meterNo, gatewaySn, meterSn, gatewaySn, meterSn, meterNo)
+    .first<AnyRecord>()
+}
+
+async function findPreviousTelemetry(env: Env, deviceId: number, collectTime: string) {
+  return env.DB.prepare(
+    `SELECT * FROM energy_telemetry
+     WHERE device_id = ? AND collect_time < ?
+     ORDER BY collect_time DESC, id DESC
+     LIMIT 1`
+  )
+    .bind(deviceId, collectTime)
+    .first<AnyRecord>()
+}
+
+async function saveTelemetryInterval(env: Env, previous: AnyRecord, current: AnyRecord, telemetryId: number) {
+  const deviceId = Number(current.deviceId || previous.device_id || 0)
+  const startTime = cleanText(previous.collect_time || previous.collectTime)
+  const endTime = cleanText(current.collectTime || current.collect_time)
+  if (!deviceId || !startTime || !endTime) return
+
+  const chargeTotal = positiveEnergyDelta(previous, current, 'epi')
+  const dischargeTotal = positiveEnergyDelta(previous, current, 'epe')
+  if (chargeTotal <= 0 && dischargeTotal <= 0) return
+
+  const charge = await calculateIntervalTou(env, previous, current, 'epi', chargeTotal, deviceId, startTime, endTime)
+  const discharge = await calculateIntervalTou(env, previous, current, 'epe', dischargeTotal, deviceId, startTime, endTime)
+
+  await env.DB.prepare(
+    `INSERT OR REPLACE INTO energy_telemetry_interval(
+      telemetry_id, device_id, gateway_sn, meter_sn, meter_no, start_time, end_time, duration_minutes,
+      charge_total, charge_sharp_peak, charge_peak, charge_flat, charge_valley, charge_deep_valley,
+      discharge_total, discharge_sharp_peak, discharge_peak, discharge_flat, discharge_valley, discharge_deep_valley,
+      calc_method, consistency_status, create_time
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  )
+    .bind(
+      telemetryId,
+      deviceId,
+      cleanText(current.gatewaySn || previous.gateway_sn) || null,
+      cleanText(current.meterSn || previous.meter_sn) || null,
+      cleanText(current.meterNo || previous.meter_no) || null,
+      startTime,
+      endTime,
+      intervalMinutes(startTime, endTime),
+      chargeTotal,
+      charge.energy.sharpPeak,
+      charge.energy.peak,
+      charge.energy.flat,
+      charge.energy.valley,
+      charge.energy.deepValley,
+      dischargeTotal,
+      discharge.energy.sharpPeak,
+      discharge.energy.peak,
+      discharge.energy.flat,
+      discharge.energy.valley,
+      discharge.energy.deepValley,
+      `charge:${charge.method};discharge:${discharge.method}`,
+      `charge:${charge.status};discharge:${discharge.status}`,
+      nowText()
+    )
+    .run()
+}
+
+async function calculateIntervalTou(
+  env: Env,
+  previous: AnyRecord,
+  current: AnyRecord,
+  source: TouSource,
+  total: number,
+  deviceId: number,
+  startTime: string,
+  endTime: string
+) {
+  if (total <= 0) return { energy: emptyTouEnergy(), method: 'none', status: 'none' }
+  const payload = payloadTouDelta(previous, current, source, total)
+  if (payload) return { energy: payload, method: 'payload', status: 'consistent' }
+  const rule = await findPricingRuleForDevice(env, deviceId, endTime)
+  return {
+    energy: splitEnergyByPricingTime(startTime, endTime, total, parseTouPeriods(rule?.tou_periods)),
+    method: 'pricing-rule',
+    status: 'fallback'
+  }
+}
+
+function payloadTouDelta(previous: AnyRecord, current: AnyRecord, source: TouSource, total: number) {
+  const fields = source === 'epi'
+    ? { sharpPeak: 'epij', peak: 'epif', flat: 'epip', valley: 'epig', deepValley: '' }
+    : { sharpPeak: 'epej', peak: 'epef', flat: 'epep', valley: 'epeg', deepValley: '' }
+  const energy = emptyTouEnergy()
+  let hasPart = false
+  for (const key of Object.keys(energy) as TouKey[]) {
+    const field = fields[key]
+    if (!field) continue
+    const delta = positiveEnergyDelta(previous, current, field)
+    energy[key] = delta
+    if (delta > 0) hasPart = true
+  }
+  if (!hasPart) return null
+  const partTotal = sumTouEnergy(energy)
+  const tolerance = Math.max(0.02, total * 0.02)
+  return Math.abs(partTotal - total) <= tolerance ? energy : null
+}
+
+async function findPricingRuleForDevice(env: Env, deviceId: number, billingTime: string) {
+  const device = await env.DB.prepare('SELECT id, customer_id, project_id FROM energy_device WHERE id = ?')
+    .bind(deviceId)
+    .first<AnyRecord>()
+  if (!device) return null
+  return env.DB.prepare(
+    `SELECT r.*
+     FROM energy_pricing_rule r
+     WHERE r.status = 0
+       AND (? IS NULL OR r.effective_start IS NULL OR r.effective_start <= ?)
+       AND (? IS NULL OR r.effective_end IS NULL OR r.effective_end >= ?)
+       AND (
+         r.device_id = ?
+         OR (r.device_id IS NULL AND r.project_id = ?)
+         OR (r.device_id IS NULL AND r.project_id IS NULL AND r.customer_id = ?)
+       )
+     ORDER BY
+       CASE
+         WHEN r.device_id = ? THEN 3
+         WHEN r.device_id IS NULL AND r.project_id = ? THEN 2
+         WHEN r.device_id IS NULL AND r.project_id IS NULL AND r.customer_id = ? THEN 1
+         ELSE 0
+       END DESC,
+       r.effective_start DESC,
+       r.id DESC
+     LIMIT 1`
+  )
+    .bind(billingTime, billingTime, billingTime, billingTime, deviceId, device.project_id || null, device.customer_id || null, deviceId, device.project_id || null, device.customer_id || null)
     .first<AnyRecord>()
 }
 
@@ -1397,6 +1566,106 @@ function cleanText(value: unknown) {
 function resolveMeterNo(value: unknown, gatewaySn: string, meterSn: string) {
   const meterNo = cleanText(value)
   return meterNo || (gatewaySn && meterSn ? `${gatewaySn}_${meterSn}` : '')
+}
+
+function emptyTouEnergy(): TouEnergy {
+  return { sharpPeak: 0, peak: 0, flat: 0, valley: 0, deepValley: 0 }
+}
+
+function sumTouEnergy(energy: TouEnergy) {
+  return Number((energy.sharpPeak + energy.peak + energy.flat + energy.valley + energy.deepValley).toFixed(4))
+}
+
+function positiveEnergyDelta(previous: AnyRecord, current: AnyRecord, field: string) {
+  const start = telemetryNumber(previous, field)
+  const end = telemetryNumber(current, field)
+  return start !== null && end !== null ? Number(Math.max(0, end - start).toFixed(4)) : 0
+}
+
+function telemetryNumber(row: AnyRecord, field: string) {
+  const aliases = [field, snake(field), field.toUpperCase()]
+  for (const alias of aliases) {
+    const value = numberOrNull(row[alias])
+    if (value !== null) return value
+  }
+  return null
+}
+
+function splitEnergyByPricingTime(startTime: string, endTime: string, total: number, periods: AnyRecord[]): TouEnergy {
+  const energy = emptyTouEnergy()
+  const start = parseLocalDateTime(startTime)
+  const end = parseLocalDateTime(endTime)
+  if (!start || !end || end <= start || total <= 0) {
+    energy.flat = total
+    return energy
+  }
+  const totalSeconds = (end - start) / 1000
+  let cursor = start
+  let guard = 0
+  while (cursor < end && guard < 10000) {
+    const nextMinute = Math.floor(cursor / 60000) * 60000 + 60000
+    const next = Math.min(end, nextMinute > cursor ? nextMinute : cursor + 60000)
+    const key = resolveTouKey(cursor, periods)
+    energy[key] += total * ((next - cursor) / 1000 / totalSeconds)
+    cursor = next
+    guard += 1
+  }
+  if (cursor < end) {
+    energy[resolveTouKey(cursor, periods)] += total * ((end - cursor) / 1000 / totalSeconds)
+  }
+  return roundTouEnergy(energy)
+}
+
+function parseTouPeriods(value: unknown): AnyRecord[] {
+  if (typeof value !== 'string' || !value) return []
+  try {
+    const rows = JSON.parse(value)
+    return Array.isArray(rows) ? rows.filter((item) => item?.type && item?.start && item?.end) : []
+  } catch {
+    return []
+  }
+}
+
+function resolveTouKey(timeMs: number, periods: AnyRecord[]): TouKey {
+  const date = new Date(timeMs)
+  const minute = date.getUTCHours() * 60 + date.getUTCMinutes()
+  const matched = periods.find((period) => isMinuteInPeriod(minute, period))
+  return (matched?.type as TouKey) || 'flat'
+}
+
+function isMinuteInPeriod(minute: number, period: AnyRecord) {
+  const start = timeToMinute(cleanText(period.start))
+  const end = timeToMinute(cleanText(period.end))
+  if (start === end) return false
+  return start < end ? minute >= start && minute < end : minute >= start || minute < end
+}
+
+function timeToMinute(value: string) {
+  const [hour, minute] = value.split(':').map(Number)
+  return Number(hour || 0) * 60 + Number(minute || 0)
+}
+
+function parseLocalDateTime(value: string) {
+  const match = cleanText(value).match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?/)
+  if (!match) return 0
+  const [, year, month, day, hour, minute, second] = match
+  return Date.UTC(Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute), Number(second || 0))
+}
+
+function intervalMinutes(startTime: string, endTime: string) {
+  const start = parseLocalDateTime(startTime)
+  const end = parseLocalDateTime(endTime)
+  return start && end && end > start ? Number(((end - start) / 60000).toFixed(2)) : null
+}
+
+function roundTouEnergy(energy: TouEnergy): TouEnergy {
+  return {
+    sharpPeak: Number(energy.sharpPeak.toFixed(4)),
+    peak: Number(energy.peak.toFixed(4)),
+    flat: Number(energy.flat.toFixed(4)),
+    valley: Number(energy.valley.toFixed(4)),
+    deepValley: Number(energy.deepValley.toFixed(4))
+  }
 }
 
 function numberOrNull(value: unknown) {
