@@ -290,13 +290,15 @@ const totalPurchasedEnergy = computed(() => Number(deviceRows.value.reduce((sum,
 const totalDischargeEnergy = computed(() => Number(deviceRows.value.reduce((sum, row) => sum + row.dischargeEnergy, 0).toFixed(2)))
 const totalPurchaseCost = computed(() => nullableSum(deviceRows.value.map((row) => row.purchaseCost)))
 const chargeTouEnergy = computed(() => calcTouEnergy(['epij', 'epif', 'epip', 'epig']))
+const dischargeTouEnergy = computed(() => calcTouEnergy(['epej', 'epef', 'epep', 'epeg']))
 const hasChargeTouData = computed(() => Object.values(chargeTouEnergy.value).some((value) => value > 0))
+const hasDischargeTouData = computed(() => Object.values(dischargeTouEnergy.value).some((value) => value > 0))
 const chargeTouTotal = computed(() => Number(Object.values(chargeTouEnergy.value).reduce((sum, value) => sum + value, 0).toFixed(2)))
 const averageBuyRate = computed(() => {
   if (!totalPurchasedEnergy.value || totalPurchaseCost.value === null) return null
   return Number((totalPurchaseCost.value / totalPurchasedEnergy.value).toFixed(4))
 })
-const totalRevenue = computed(() => Number(sumBy(scopedSessions.value.filter((item) => Number(item.sessionType) === 1), 'totalFee').toFixed(2)))
+const totalRevenue = computed(() => calcDischargeTouRevenue())
 const averageSellRate = computed(() => (totalDischargeEnergy.value ? Number((totalRevenue.value / totalDischargeEnergy.value).toFixed(4)) : null))
 const applicableRules = computed(() => uniqueRowsById(selectedDevices.value.map(matchRuleForDevice).filter(Boolean) as EnergyPricingRuleVO[]))
 const billableFixedFeeRules = computed(() => {
@@ -360,7 +362,7 @@ const summaryCards = computed(() => [
   { label: '本期电量', value: kwhText(totalPurchasedEnergy.value), hint: '按当前范围内电表 EPI 首末差汇总' },
   { label: '本期电费', value: moneyText(totalBillAmount.value), hint: '按现有计费规则可用字段测算' },
   { label: '平均购电单价', value: averageBuyRate.value === null ? '待录入' : `${numText(averageBuyRate.value)} 元/kWh`, hint: '购电成本 / 本期电量' },
-  { label: '售电收入', value: moneyText(totalRevenue.value), hint: '来自放电任务费用合计' }
+  { label: '售电收入', value: moneyText(totalRevenue.value), hint: 'EPE 分时电量 × 尖峰平谷电价' }
 ])
 
 const feeRows = computed(() => [
@@ -407,7 +409,9 @@ const analysisRows = computed(() => [
   },
   {
     title: '5. 放电收益',
-    content: `本期放电量 ${kwhText(totalDischargeEnergy.value)}，售电收入 ${moneyText(totalRevenue.value)}，平均售电单价 ${averageSellRate.value === null ? '待录入' : `${numText(averageSellRate.value)} 元/kWh`}。`
+    content: hasDischargeTouData.value
+      ? `本期放电量 ${kwhText(totalDischargeEnergy.value)}，售电收入 ${moneyText(totalRevenue.value)}，按 EPEJ×尖电价、EPEF×峰电价、EPEP×平电价、EPEG×谷电价计算。`
+      : `当前范围内未接收到 EPEJ、EPEF、EPEP、EPEG 的有效差值，售电收入暂为 ${moneyText(totalRevenue.value)}。`
   }
 ])
 
@@ -668,15 +672,37 @@ const calcTouEnergy = (fields: Array<keyof EnergyTelemetryVO>) => {
   }
 }
 const calcTelemetryDelta = (field: keyof EnergyTelemetryVO) => {
+  const total = selectedDevices.value.reduce((sum, device) => sum + calcDeviceTelemetryDelta(device, field), 0)
+  return Number(total.toFixed(2))
+}
+const calcDeviceTouEnergy = (device: EnergyDeviceVO, fields: Array<keyof EnergyTelemetryVO>) => {
+  const [sharpField, peakField, flatField, valleyField] = fields
+  return {
+    sharp: calcDeviceTelemetryDelta(device, sharpField),
+    peak: calcDeviceTelemetryDelta(device, peakField),
+    flat: calcDeviceTelemetryDelta(device, flatField),
+    valley: calcDeviceTelemetryDelta(device, valleyField)
+  }
+}
+const calcDeviceTelemetryDelta = (device: EnergyDeviceVO, field: keyof EnergyTelemetryVO) => {
+  const rows = scopedTelemetryRows.value
+    .filter((row) => Number(row.deviceId) === Number(device.id))
+    .filter((row) => row.collectTime)
+    .sort((a, b) => dayjs(a.collectTime as string).valueOf() - dayjs(b.collectTime as string).valueOf())
+  const startValue = firstNumber(rows.map((row) => numberOrNull(row[field])))
+  const endValue = lastNumber(rows.map((row) => numberOrNull(row[field])))
+  if (startValue === null || endValue === null) return 0
+  return Number(Math.max(0, endValue - startValue).toFixed(2))
+}
+const calcDischargeTouRevenue = () => {
   const total = selectedDevices.value.reduce((sum, device) => {
-    const rows = scopedTelemetryRows.value
-      .filter((row) => Number(row.deviceId) === Number(device.id))
-      .filter((row) => row.collectTime)
-      .sort((a, b) => dayjs(a.collectTime as string).valueOf() - dayjs(b.collectTime as string).valueOf())
-    const startValue = firstNumber(rows.map((row) => numberOrNull(row[field])))
-    const endValue = lastNumber(rows.map((row) => numberOrNull(row[field])))
-    if (startValue === null || endValue === null) return sum
-    return sum + Math.max(0, endValue - startValue)
+    const rule = matchRuleForDevice(device)
+    const energy = calcDeviceTouEnergy(device, ['epej', 'epef', 'epep', 'epeg'])
+    return sum
+      + energy.sharp * (numberOrNull(rule?.sharpPeakRate) || 0)
+      + energy.peak * (numberOrNull(rule?.peakRate) || 0)
+      + energy.flat * (numberOrNull(rule?.flatRate) || 0)
+      + energy.valley * (numberOrNull(rule?.valleyRate) || 0)
   }, 0)
   return Number(total.toFixed(2))
 }
