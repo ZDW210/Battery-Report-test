@@ -108,7 +108,7 @@ export default {
     if (request.method === 'OPTIONS') return cors(new Response(null, { status: 204 }))
 
     if (EIOT_PUSH_PATHS.has(url.pathname) && request.method === 'POST') {
-      return handleEiotPush(request, env, ctx, url.pathname)
+      return await handleEiotPush(request, env, ctx, url.pathname)
     }
 
     if (url.pathname.startsWith(`${ADMIN_PREFIX}/`)) {
@@ -125,14 +125,14 @@ export default {
   }
 }
 
-function handleEiotPush(request: Request, env: Env, ctx: ExecutionContext, path: string) {
+async function handleEiotPush(request: Request, env: Env, ctx: ExecutionContext, path: string) {
   const receivedAt = Date.now()
-  ctx.waitUntil(processEiotPush(request.clone(), env, path, receivedAt))
+  const rawBody = await request.text()
+  ctx.waitUntil(processEiotPush(rawBody, env, path, receivedAt))
   return ok({ accepted: true, receivedAt: new Date(receivedAt).toISOString() })
 }
 
-async function processEiotPush(request: Request, env: Env, path: string, receivedAt: number) {
-  let rawBody = ''
+async function processEiotPush(rawBody: string, env: Env, path: string, receivedAt: number) {
   let payload: unknown = null
   let pushType = path === '/eiot/alarm' ? 'alarm' : path === '/eiot/meter' ? 'meter' : 'unknown'
   let payloadUrl = ''
@@ -141,7 +141,6 @@ async function processEiotPush(request: Request, env: Env, path: string, receive
   const requestId = crypto.randomUUID()
 
   try {
-    rawBody = await request.text()
     payload = rawBody ? JSON.parse(rawBody) : null
     pushType = pushType === 'unknown' ? detectEiotPushType(payload) : pushType
     const summary = getEiotPayloadSummary(payload)
