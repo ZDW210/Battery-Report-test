@@ -78,6 +78,7 @@
                 <div class="bill-overview__head">
                   <span>费用组成</span>
                   <span>计费数量</span>
+                  <span>计费标准</span>
                   <span>电费</span>
                 </div>
                 <div
@@ -88,6 +89,7 @@
                 >
                   <span class="bill-overview__name">{{ item.category }}</span>
                   <span class="bill-overview__quantity">{{ item.quantity }}</span>
+                  <span class="bill-overview__rate">{{ item.rate }}</span>
                   <strong class="bill-overview__amount">{{ item.amount }}</strong>
                 </div>
                 <div class="bill-overview__note">
@@ -390,7 +392,8 @@ const feeRows = computed(() => [
 
 const billOverviewRows = computed(() => feeRows.value.map((row) => ({
   category: row.category,
-  quantity: row.category === '合计' || row.rate === '--' ? row.quantity : `${row.quantity} / ${row.rate}`,
+  quantity: row.quantity,
+  rate: row.rate,
   amount: row.amount
 })))
 
@@ -511,7 +514,7 @@ const buildPrintableBillHtml = () => {
     .map((row) => `<tr><td>${row.category}</td><td>${row.quantity}</td><td>${row.rate}</td><td>${row.amount}</td><td>${row.remark}</td></tr>`)
     .join('')
   const overviewHtml = billOverviewRows.value
-    .map((row) => `<tr class="${row.category === '合计' ? 'total' : ''}"><td>${escapeHtml(row.category)}</td><td>${escapeHtml(row.quantity)}</td><td>${escapeHtml(row.amount)}</td></tr>`)
+    .map((row) => `<tr class="${row.category === '合计' ? 'total' : ''}"><td>${escapeHtml(row.category)}</td><td>${escapeHtml(row.quantity)}</td><td>${escapeHtml(row.rate)}</td><td>${escapeHtml(row.amount)}</td></tr>`)
     .join('')
   const analysisHtml = analysisRows.value.map((row) => `<p><b>${row.title}</b><br>${row.content}</p>`).join('')
   const analysisBarsHtml = analysisBarRows.value
@@ -559,7 +562,7 @@ const buildPrintableBillHtml = () => {
     .bill-box { border: 1px solid #b7ecec; }
     .bill-box-title { display: flex; justify-content: space-between; background: #d9fbfb; color: #007273; padding: 9px 12px; font-weight: 800; font-size: 16px; }
     .bill-overview-table th { color: #334155; background: #f8ffff; }
-    .bill-overview-table td:nth-child(2), .bill-overview-table td:nth-child(3), .bill-overview-table th:nth-child(2), .bill-overview-table th:nth-child(3) { text-align: right; }
+    .bill-overview-table td:nth-child(2), .bill-overview-table td:nth-child(3), .bill-overview-table td:nth-child(4), .bill-overview-table th:nth-child(2), .bill-overview-table th:nth-child(3), .bill-overview-table th:nth-child(4) { text-align: right; }
     .bill-overview-table .total td { font-weight: 800; color: #0f172a; background: #f8ffff; }
     .analysis { padding: 10px 12px 12px; }
     .analysis p { margin: 0 0 9px; line-height: 1.55; }
@@ -633,7 +636,7 @@ const buildPrintableBillHtml = () => {
   <div class="bill-layout">
     <section class="bill-box">
       <div class="bill-box-title"><span>账单概况</span><small>单位：kWh、元/kWh、元</small></div>
-      <table class="bill-overview-table"><thead><tr><th>费用组成</th><th>计费数量</th><th>电费</th></tr></thead><tbody>${overviewHtml}</tbody></table>
+      <table class="bill-overview-table"><thead><tr><th>费用组成</th><th>计费数量</th><th>计费标准</th><th>电费</th></tr></thead><tbody>${overviewHtml}</tbody></table>
     </section>
     <section class="bill-box">
       <div class="bill-box-title"><span>用能分析</span><small>${hasChargeTouData.value ? '来自电表分项字段' : '分项缺失'}</small></div>
@@ -1004,7 +1007,7 @@ onMounted(async () => {
   .bill-overview__head,
   .bill-overview__row {
     display: grid;
-    grid-template-columns: minmax(170px, 1.3fr) minmax(130px, .8fr) minmax(110px, .65fr);
+    grid-template-columns: minmax(170px, 1.2fr) minmax(110px, .65fr) minmax(120px, .75fr) minmax(100px, .55fr);
     align-items: center;
     column-gap: 12px;
     min-height: 34px;
@@ -1017,7 +1020,8 @@ onMounted(async () => {
     font-weight: 700;
 
     span:nth-child(2),
-    span:nth-child(3) {
+    span:nth-child(3),
+    span:nth-child(4) {
       text-align: right;
     }
   }
@@ -1041,6 +1045,7 @@ onMounted(async () => {
   }
 
   .bill-overview__quantity,
+  .bill-overview__rate,
   .bill-overview__amount {
     text-align: right;
   }
