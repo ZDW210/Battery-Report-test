@@ -954,10 +954,10 @@ async function saveEiotMeterPayload(env: Env, payload: unknown, payloadUrl: stri
     const row = item && typeof item === 'object' ? (item as AnyRecord) : {}
     const gatewaySn = cleanText(row.gatewaySn)
     const meterSn = cleanText(row.meterSn)
-    const meterNo = cleanText(row.meterNo)
+    const meterNo = resolveMeterNo(row.meterNo, gatewaySn, meterSn)
     const timestamp = numberOrNull(row.timestamp)
     const collectTime = cleanText(row.createTime || row.CreateTime) || textFromUnix(timestamp)
-    const device = await findDeviceByMeter(env, meterNo, gatewaySn, meterSn)
+    const device = await findOrCreateDeviceByEiot(env, { ...row, gatewaySn, meterSn, meterNo }, collectTime || nowText())
     const deviceId = device?.id ? Number(device.id) : null
 
     await env.DB.prepare(
@@ -1017,10 +1017,10 @@ async function saveEiotAlarmPayload(env: Env, payload: unknown, payloadUrl: stri
 
   const gatewaySn = cleanText(body.gatewaySn)
   const meterSn = cleanText(body.meterSn)
-  const meterNo = cleanText(body.meterNo)
+  const meterNo = resolveMeterNo(body.meterNo, gatewaySn, meterSn)
   const timestamp = numberOrNull(body.timestamp)
   const occurTime = cleanText(body.createTime || body.CreateTime) || textFromUnix(timestamp) || nowText()
-  const device = await findDeviceByMeter(env, meterNo, gatewaySn, meterSn)
+  const device = await findOrCreateDeviceByEiot(env, { ...body, gatewaySn, meterSn, meterNo }, occurTime)
   const deviceId = device?.id ? Number(device.id) : null
 
   for (const item of list) {
@@ -1064,6 +1064,55 @@ async function findDeviceByMeter(env: Env, meterNo: string, gatewaySn: string, m
     .first<AnyRecord>()
 }
 
+async function findOrCreateDeviceByEiot(env: Env, row: AnyRecord, collectTime: string) {
+  const gatewaySn = cleanText(row.gatewaySn)
+  const meterSn = cleanText(row.meterSn)
+  const meterNo = resolveMeterNo(row.meterNo, gatewaySn, meterSn)
+  const existing = await findDeviceByMeter(env, meterNo, gatewaySn, meterSn)
+  if (existing) return existing
+  if (!meterNo && (!gatewaySn || !meterSn)) return null
+
+  const state = cleanText(row.state)
+  const status = state === 'ONLINE' ? 0 : state === 'OFFLINE' ? 1 : 0
+  const voltage = averageNumbers([row.Ua, row.Ub, row.Uc])
+  const current = averageNumbers([row.Ia, row.Ib, row.Ic])
+  const label = meterNo || meterSn || gatewaySn
+  const deviceNo = await buildAutoDeviceNo(label)
+  const remark = 'EIOT推送首次接收时自动生成，客户、场地等信息待人工完善'
+
+  try {
+    const created = await env.DB.prepare(
+      `INSERT INTO energy_device(
+        device_no, device_name, device_type, gateway_sn, meter_sn, meter_no, status,
+        last_soc, last_power, last_voltage, last_current, last_reading_time, remark, create_time, update_time
+      ) VALUES (?, ?, 5, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      RETURNING id, status`
+    )
+      .bind(
+        deviceNo,
+        `EIOT电表-${label}`,
+        gatewaySn || null,
+        meterSn || null,
+        meterNo || null,
+        status,
+        numberOrNull(row.SOC ?? row.soc),
+        numberOrNull(row.P),
+        voltage,
+        current,
+        collectTime || nowText(),
+        remark,
+        nowText(),
+        nowText()
+      )
+      .first<AnyRecord>()
+    return created
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    if (!message.toLowerCase().includes('unique')) throw error
+    return findDeviceByMeter(env, meterNo, gatewaySn, meterSn)
+  }
+}
+
 async function updateDeviceLatestFromTelemetry(env: Env, deviceId: number, row: AnyRecord, collectTime: string) {
   const state = cleanText(row.state)
   const status = state === 'ONLINE' ? 0 : state === 'OFFLINE' ? 1 : null
@@ -1072,14 +1121,15 @@ async function updateDeviceLatestFromTelemetry(env: Env, deviceId: number, row: 
   await env.DB.prepare(
     `UPDATE energy_device
      SET status = COALESCE(?, status),
+         last_soc = COALESCE(?, last_soc),
          last_power = COALESCE(?, last_power),
          last_voltage = COALESCE(?, last_voltage),
          last_current = COALESCE(?, last_current),
          last_reading_time = ?,
          update_time = ?
-     WHERE id = ?`
+      WHERE id = ?`
   )
-    .bind(status, numberOrNull(row.P), voltage, current, collectTime, nowText(), deviceId)
+    .bind(status, numberOrNull(row.SOC ?? row.soc), numberOrNull(row.P), voltage, current, collectTime, nowText(), deviceId)
     .run()
 }
 
@@ -1278,6 +1328,10 @@ async function sha256Hex(value: string) {
   return [...new Uint8Array(hash)].map((item) => item.toString(16).padStart(2, '0')).join('')
 }
 
+async function buildAutoDeviceNo(seed: string) {
+  return `AUTO-${(await sha256Hex(seed)).slice(0, 12).toUpperCase()}`
+}
+
 async function token(prefix: string) {
   const bytes = new Uint8Array(24)
   crypto.getRandomValues(bytes)
@@ -1318,6 +1372,11 @@ function num(value: string | null, fallback: number) {
 
 function cleanText(value: unknown) {
   return typeof value === 'string' ? value.trim() : ''
+}
+
+function resolveMeterNo(value: unknown, gatewaySn: string, meterSn: string) {
+  const meterNo = cleanText(value)
+  return meterNo || (gatewaySn && meterSn ? `${gatewaySn}_${meterSn}` : '')
 }
 
 function numberOrNull(value: unknown) {
