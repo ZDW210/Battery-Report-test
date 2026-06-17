@@ -1202,9 +1202,7 @@ const touRates = computed<TouEnergy>(() => ({
   deepValley: averageNumber(applicablePricingRules.value.map((item) => normalizeNumber(item.deepValleyRate)))
 }))
 
-const chargeSessions = computed(() => billSessions.value.filter((item) => Number(item.sessionType) === 2))
 const dischargeSessions = computed(() => billSessions.value.filter((item) => Number(item.sessionType) === 1))
-const sessionChargeEnergy = computed(() => sumBy(chargeSessions.value, 'totalEnergy'))
 const monthlyPurchasedEnergy = computed(() => Number(epiDelta.value.toFixed(2)))
 const monthlySoldEnergy = computed(() => sumIntervals(billTelemetryIntervals.value, 'dischargeTotal'))
 const chargeTouEnergy = computed(() => buildTouEnergy('epi'))
@@ -1277,7 +1275,6 @@ const energyStatRows = computed(() => [
   { label: '期初累计电能', value: formatNullableKwh(startEpi.value) },
   { label: '期末累计电能', value: formatNullableKwh(endEpi.value) },
   { label: 'EPI充入电量合计', value: formatKwh(monthlyPurchasedEnergy.value) },
-  { label: '充电任务电量', value: formatKwh(sessionChargeEnergy.value) },
   { label: 'EPE放出电量合计', value: formatKwh(monthlySoldEnergy.value) },
   { label: '未售出/自耗电量', value: formatKwh(Math.max(0, monthlyPurchasedEnergy.value - monthlySoldEnergy.value)) },
   { label: '充放电效率', value: batteryEfficiencyText.value },
@@ -1315,7 +1312,6 @@ const finalProfitText = computed(() => {
 
 const batteryRows = computed(() => [
   { label: 'EPI充入电量合计', value: formatKwh(monthlyPurchasedEnergy.value) },
-  { label: '充电任务电量', value: formatKwh(sessionChargeEnergy.value) },
   { label: 'EPE放出电量合计', value: formatKwh(monthlySoldEnergy.value) },
   { label: '循环次数', value: '待录入容量' },
   { label: '当月任务次数', value: `${billSessions.value.length} 次` },

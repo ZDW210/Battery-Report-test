@@ -109,7 +109,6 @@
             <el-table-column label="期初累计电能" prop="startEpiText" align="right" width="140" />
             <el-table-column label="期末累计电能" prop="endEpiText" align="right" width="140" />
             <el-table-column label="本期电量" prop="purchasedEnergyText" align="right" width="120" />
-            <el-table-column label="充电任务电量" prop="chargeEnergyText" align="right" width="130" />
             <el-table-column label="放电任务电量" prop="dischargeEnergyText" align="right" width="130" />
             <el-table-column label="购电单价" prop="buyRateText" align="right" width="110" />
             <el-table-column label="购电成本" prop="purchaseCostText" align="right" width="120" />
@@ -227,7 +226,6 @@ const deviceRows = computed(() => {
     const endEpi = lastNumber(rows.map((row) => numberOrNull(row.epi)))
     const epiDelta = startEpi !== null && endEpi !== null ? Math.max(0, endEpi - startEpi) : 0
     const deviceSessions = scopedSessions.value.filter((item) => Number(item.deviceId) === Number(device.id))
-    const chargeEnergy = sumBy(deviceSessions.filter((item) => Number(item.sessionType) === 2), 'totalEnergy')
     const dischargeEnergy = sumBy(deviceSessions.filter((item) => Number(item.sessionType) === 1), 'totalEnergy')
     const purchasedEnergy = Number(epiDelta.toFixed(2))
     const rule = matchRuleForDevice(device)
@@ -241,14 +239,12 @@ const deviceRows = computed(() => {
       startEpi,
       endEpi,
       purchasedEnergy,
-      chargeEnergy,
       dischargeEnergy,
       buyRate,
       purchaseCost,
       startEpiText: startEpi === null ? '--' : kwhText(startEpi),
       endEpiText: endEpi === null ? '--' : kwhText(endEpi),
       purchasedEnergyText: kwhText(purchasedEnergy),
-      chargeEnergyText: kwhText(chargeEnergy),
       dischargeEnergyText: kwhText(dischargeEnergy),
       buyRateText: buyRate === null ? '待录入' : `${numText(buyRate)} 元/kWh`,
       purchaseCostText: purchaseCost === null ? '待录入' : moneyText(purchaseCost)
@@ -257,7 +253,6 @@ const deviceRows = computed(() => {
 })
 
 const totalPurchasedEnergy = computed(() => Number(deviceRows.value.reduce((sum, row) => sum + row.purchasedEnergy, 0).toFixed(2)))
-const totalChargeEnergy = computed(() => Number(deviceRows.value.reduce((sum, row) => sum + row.chargeEnergy, 0).toFixed(2)))
 const totalDischargeEnergy = computed(() => Number(deviceRows.value.reduce((sum, row) => sum + row.dischargeEnergy, 0).toFixed(2)))
 const totalPurchaseCost = computed(() => nullableSum(deviceRows.value.map((row) => row.purchaseCost)))
 const averageBuyRate = computed(() => {
@@ -333,7 +328,6 @@ const summaryCards = computed(() => [
 
 const overviewRows = computed(() => [
   { label: '本期电量', value: kwhText(totalPurchasedEnergy.value), remark: '按当前范围内每块电表 EPI 首末差汇总' },
-  { label: '充电任务电量', value: kwhText(totalChargeEnergy.value), remark: '来自充放电任务，仅作业务记录参考' },
   { label: '放电任务电量', value: kwhText(totalDischargeEnergy.value), remark: '用于售电收入测算' },
   { label: '平均购电单价', value: averageBuyRate.value === null ? '待录入' : `${numText(averageBuyRate.value)} 元/kWh`, remark: '来自计费规则电量单价' },
   { label: '平均售电单价', value: averageSellRate.value === null ? '待录入' : `${numText(averageSellRate.value)} 元/kWh`, remark: '售电收入 / 放电任务电量' },
