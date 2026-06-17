@@ -32,30 +32,6 @@
           </el-form-item>
         </el-col>
         <el-col :span="12">
-          <el-form-item label="设备状态" prop="status">
-            <el-select v-model="formData.status" class="!w-1/1" placeholder="请选择设备状态">
-              <el-option
-                v-for="dict in getIntDictOptions(DICT_TYPE.ENERGY_DEVICE_STATUS)"
-                :key="dict.value"
-                :label="dict.label"
-                :value="dict.value"
-              />
-            </el-select>
-          </el-form-item>
-        </el-col>
-        <el-col :span="12">
-          <el-form-item label="运行模式" prop="runMode">
-            <el-select v-model="formData.runMode" clearable class="!w-1/1" placeholder="请选择运行模式">
-              <el-option
-                v-for="dict in getIntDictOptions(DICT_TYPE.ENERGY_RUN_MODE)"
-                :key="dict.value"
-                :label="dict.label"
-                :value="dict.value"
-              />
-            </el-select>
-          </el-form-item>
-        </el-col>
-        <el-col :span="12">
           <el-form-item label="网关序列号" prop="gatewaySn">
             <el-input v-model="formData.gatewaySn" maxlength="64" placeholder="例如 12207013690004" />
           </el-form-item>
@@ -177,8 +153,6 @@ const formData = ref<EnergyDeviceVO>({
   meterNo: undefined,
   customerId: undefined,
   projectId: undefined,
-  status: 1,
-  runMode: undefined,
   latitude: undefined,
   longitude: undefined,
   remark: undefined
@@ -191,8 +165,7 @@ const formRules = reactive({
   meterSn: [{ required: true, message: '电表序列号不能为空', trigger: 'blur' }],
   meterNo: [{ required: true, message: '仪表编号不能为空', trigger: 'blur' }],
   customerId: [{ required: true, message: '所属客户不能为空', trigger: 'change' }],
-  projectId: [{ required: true, message: '项目场站不能为空', trigger: 'change' }],
-  status: [{ required: true, message: '设备状态不能为空', trigger: 'change' }]
+  projectId: [{ required: true, message: '项目场站不能为空', trigger: 'change' }]
 })
 const formRef = ref()
 
@@ -249,8 +222,6 @@ const resetForm = () => {
     meterNo: undefined,
     customerId: undefined,
     projectId: undefined,
-    status: 1,
-    runMode: undefined,
     latitude: undefined,
     longitude: undefined,
     remark: undefined

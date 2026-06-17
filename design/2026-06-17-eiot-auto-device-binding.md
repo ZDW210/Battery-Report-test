@@ -42,3 +42,12 @@ Fields left blank for later manual maintenance:
 ## UI Expectation
 
 Auto-created meters should appear in Device Management as incomplete records. Operations staff can later assign customer, project/site, vehicle relation, and other business information without losing already received telemetry and alarm history.
+
+## Device Status Rule
+
+Device status is derived from EIOT push freshness and should not be manually selected in Device Management.
+
+- If `lastReadingTime` is within the latest 5 minutes, the device is online.
+- If no payload has been received for more than 5 minutes, the device is offline.
+- The edit form must not expose manual `status` or `runMode` controls.
+- `customerId`, `projectId`, location, and other business fields remain manually editable.

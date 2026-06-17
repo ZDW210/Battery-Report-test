@@ -79,8 +79,8 @@ const PRICING_RULE_FEE_COLUMNS: Record<string, string> = {
   other_fixed_fee: 'REAL NOT NULL DEFAULT 0'
 }
 const DEVICE_FIELDS = [
-  'deviceNo', 'deviceName', 'deviceType', 'gatewaySn', 'meterSn', 'meterNo', 'customerId', 'projectId', 'status',
-  'runMode', 'latitude', 'longitude', 'lastSoc', 'lastSoh', 'lastPower', 'lastVoltage', 'lastCurrent', 'lastTemp',
+  'deviceNo', 'deviceName', 'deviceType', 'gatewaySn', 'meterSn', 'meterNo', 'customerId', 'projectId',
+  'latitude', 'longitude', 'lastSoc', 'lastSoh', 'lastPower', 'lastVoltage', 'lastCurrent', 'lastTemp',
   'lastReadingTime', 'remark'
 ]
 
@@ -580,6 +580,7 @@ async function resetCustomerPassword(request: Request, env: Env) {
 }
 
 async function deviceApi(request: Request, url: URL, env: Env, path: string) {
+  if (request.method === 'GET') await refreshDeviceOnlineStatus(env)
   if (path === '/energy/device/page' && request.method === 'GET') return devicePage(url, env)
   if (path === '/energy/device/simple-list' && request.method === 'GET') return deviceSimpleList(url, env)
   if (path === '/energy/device/control' && request.method === 'POST') {
@@ -1113,6 +1114,21 @@ async function findOrCreateDeviceByEiot(env: Env, row: AnyRecord, collectTime: s
   }
 }
 
+async function refreshDeviceOnlineStatus(env: Env) {
+  const cutoff = deviceOnlineCutoffText()
+  await env.DB.prepare(
+    `UPDATE energy_device
+     SET status = CASE
+       WHEN last_reading_time IS NOT NULL AND last_reading_time >= ? THEN 0
+       ELSE 1
+     END,
+     update_time = ?
+     WHERE status IN (0, 1)`
+  )
+    .bind(cutoff, nowText())
+    .run()
+}
+
 async function updateDeviceLatestFromTelemetry(env: Env, deviceId: number, row: AnyRecord, collectTime: string) {
   const state = cleanText(row.state)
   const status = state === 'ONLINE' ? 0 : state === 'OFFLINE' ? 1 : null
@@ -1363,6 +1379,10 @@ function cors(response: Response) {
 
 function nowText() {
   return new Date().toISOString().replace('T', ' ').slice(0, 19)
+}
+
+function deviceOnlineCutoffText() {
+  return new Date(Date.now() + 8 * 60 * 60 * 1000 - 5 * 60 * 1000).toISOString().replace('T', ' ').slice(0, 19)
 }
 
 function num(value: string | null, fallback: number) {
