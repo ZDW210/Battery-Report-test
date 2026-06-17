@@ -153,6 +153,15 @@
         <el-col :span="24">
           <el-divider content-position="left">容量/需量用电价格</el-divider>
         </el-col>
+        <el-col :span="24">
+          <el-form-item label="容需量计费方式" prop="capacityBillingMode">
+            <el-radio-group v-model="formData.capacityBillingMode">
+              <el-radio value="none">不计容需量</el-radio>
+              <el-radio value="maxDemand">按最大需量</el-radio>
+              <el-radio value="transformerCapacity">按变压器容量</el-radio>
+            </el-radio-group>
+          </el-form-item>
+        </el-col>
         <el-col v-for="field in capacityPriceFields" :key="field.prop" :span="8">
           <el-form-item :label="field.label" :prop="field.prop">
             <el-input-number
@@ -402,6 +411,7 @@ const shanghaiJuneExample: Partial<EnergyPricingRuleVO> = {
   valleyRate: 0.372036,
   deepValleyRate: 0,
   touPeriods: JSON.stringify(defaultTouPeriods),
+  capacityBillingMode: 'none',
   maxDemandPrice: 40.8,
   transformerCapacityKva: 0,
   transformerCapacityPrice: 25.5,
@@ -426,6 +436,7 @@ const formData = ref<EnergyPricingRuleVO>({
   valleyRate: 0,
   deepValleyRate: 0,
   touPeriods: JSON.stringify(defaultTouPeriods),
+  capacityBillingMode: 'none',
   maxDemandPrice: 0,
   transformerCapacityKva: 0,
   transformerCapacityPrice: 0,
@@ -556,6 +567,7 @@ const resetForm = () => {
     valleyRate: 0,
     deepValleyRate: 0,
     touPeriods: JSON.stringify(defaultTouPeriods),
+    capacityBillingMode: 'none',
     maxDemandPrice: 0,
     transformerCapacityKva: 0,
     transformerCapacityPrice: 0,

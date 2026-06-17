@@ -296,7 +296,9 @@ const hasDischargeTouData = computed(() => Object.values(dischargeTouEnergy.valu
 const chargeTouTotal = computed(() => Number(Object.values(chargeTouEnergy.value).reduce((sum, value) => sum + value, 0).toFixed(2)))
 const maxDemandKw = computed(() => calcMaxDemandKw(selectedDevices.value))
 const maxDemandFee = computed(() => calcMaxDemandFee())
-const transformerCapacityKva = computed(() => sumBillableRuleField('transformerCapacityKva'))
+const maxDemandEnabled = computed(() => billableFixedFeeRules.value.some((rule) => rule.capacityBillingMode === 'maxDemand'))
+const transformerCapacityEnabled = computed(() => billableFixedFeeRules.value.some((rule) => rule.capacityBillingMode === 'transformerCapacity'))
+const transformerCapacityKva = computed(() => sumCapacityBillingRuleField('transformerCapacityKva'))
 const transformerCapacityFee = computed(() => calcTransformerCapacityFee())
 const averageBuyRate = computed(() => {
   if (!totalPurchasedEnergy.value || totalPurchaseCost.value === null) return null
@@ -666,7 +668,10 @@ const matchRuleForDevice = (device: EnergyDeviceVO) => {
 const scopeWeight = (rule: EnergyPricingRuleVO) => (rule.deviceId ? 3 : rule.projectId ? 2 : rule.customerId ? 1 : 0)
 const avgRuleField = (field: keyof EnergyPricingRuleVO) => average(applicableRules.value.map((rule) => numberOrNull(rule[field]))) || 0
 const sumFixedRuleField = (field: keyof EnergyPricingRuleVO) => Number(billableFixedFeeRules.value.reduce((sum, rule) => sum + Number(rule[field] || 0), 0).toFixed(2))
-const sumBillableRuleField = (field: keyof EnergyPricingRuleVO) => Number(billableFixedFeeRules.value.reduce((sum, rule) => sum + Number(rule[field] || 0), 0).toFixed(2))
+const sumCapacityBillingRuleField = (field: keyof EnergyPricingRuleVO) => Number(billableFixedFeeRules.value
+  .filter((rule) => rule.capacityBillingMode === 'transformerCapacity')
+  .reduce((sum, rule) => sum + Number(rule[field] || 0), 0)
+  .toFixed(2))
 const calcTouEnergy = (fields: Array<keyof EnergyTelemetryVO>) => {
   const [sharpField, peakField, flatField, valleyField] = fields
   return {
@@ -715,6 +720,7 @@ const calcMaxDemandFee = () => {
   const groups = new Map<string, { rule?: EnergyPricingRuleVO; devices: EnergyDeviceVO[] }>()
   selectedDevices.value.forEach((device) => {
     const rule = matchRuleForDevice(device)
+    if (rule?.capacityBillingMode !== 'maxDemand') return
     const key = rule?.id ? `rule:${rule.id}` : `device:${device.id}`
     const group = groups.get(key) || { rule, devices: [] }
     group.devices.push(device)
@@ -728,7 +734,9 @@ const calcMaxDemandFee = () => {
   return Number(total.toFixed(2))
 }
 const calcTransformerCapacityFee = () => {
-  const total = billableFixedFeeRules.value.reduce((sum, rule) => {
+  const total = billableFixedFeeRules.value
+    .filter((rule) => rule.capacityBillingMode === 'transformerCapacity')
+    .reduce((sum, rule) => {
     const capacity = numberOrNull(rule.transformerCapacityKva) || 0
     const price = numberOrNull(rule.transformerCapacityPrice) || 0
     return sum + capacity * price
@@ -783,6 +791,15 @@ const fixedFeeRow = (category: string, amount: number, remark: string) => ({
 })
 const demandFeeRow = () => {
   const rate = avgRuleField('maxDemandPrice')
+  if (!maxDemandEnabled.value) {
+    return {
+      category: '最大需量费用',
+      quantity: '未启用',
+      rate: rate > 0 ? `${numText(rate)} 元/kW·月` : '待录入',
+      amount: '¥0',
+      remark: '当前计费规则未选择“按最大需量”'
+    }
+  }
   return {
     category: '最大需量费用',
     quantity: `${numText(maxDemandKw.value)} kW`,
@@ -793,9 +810,18 @@ const demandFeeRow = () => {
 }
 const transformerCapacityFeeRow = () => {
   const rate = avgRuleField('transformerCapacityPrice')
+  if (!transformerCapacityEnabled.value) {
+    return {
+      category: '变压器容量费用',
+      quantity: '未启用',
+      rate: rate > 0 ? `${numText(rate)} 元/kVA·月` : '待录入',
+      amount: '¥0',
+      remark: '当前计费规则未选择“按变压器容量”'
+    }
+  }
   return {
     category: '变压器容量费用',
-    quantity: `${numText(transformerCapacityKva.value)} kVA`,
+    quantity: transformerCapacityKva.value > 0 ? `${numText(transformerCapacityKva.value)} kVA` : '待录入',
     rate: rate > 0 ? `${numText(rate)} 元/kVA·月` : '待录入',
     amount: transformerCapacityFee.value > 0 ? moneyText(transformerCapacityFee.value) : '¥0',
     remark: '按计费规则录入的变压器容量 × 变压器容量单价'

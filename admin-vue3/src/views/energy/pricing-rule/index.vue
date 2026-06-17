@@ -121,6 +121,7 @@
       <el-descriptions-item label="低谷电价">{{ formatRate(matchedRule.valleyRate) }}</el-descriptions-item>
       <el-descriptions-item label="分时时段" :span="3">{{ formatTouPeriods(matchedRule.touPeriods) }}</el-descriptions-item>
       <el-descriptions-item label="政府基金附加">{{ formatRate(matchedRule.governmentFundSurcharge) }}</el-descriptions-item>
+      <el-descriptions-item label="容需量方式">{{ getCapacityBillingModeText(matchedRule.capacityBillingMode) }}</el-descriptions-item>
       <el-descriptions-item label="最大需量单价">{{ formatCurrency(matchedRule.maxDemandPrice) }}</el-descriptions-item>
       <el-descriptions-item label="变压器容量">{{ formatNumber(matchedRule.transformerCapacityKva) }} kVA</el-descriptions-item>
       <el-descriptions-item label="容量单价">{{ formatCurrency(matchedRule.transformerCapacityPrice) }}</el-descriptions-item>
@@ -174,6 +175,9 @@
       </el-table-column>
       <el-table-column label="分时时段" min-width="260">
         <template #default="{ row }">{{ formatTouPeriods(row.touPeriods) }}</template>
+      </el-table-column>
+      <el-table-column label="容需量方式" width="120">
+        <template #default="{ row }">{{ getCapacityBillingModeText(row.capacityBillingMode) }}</template>
       </el-table-column>
       <el-table-column align="right" label="最大需量单价" width="120">
         <template #default="{ row }">{{ formatCurrency(row.maxDemandPrice) }}</template>
@@ -404,6 +408,15 @@ const getVoltageLevelText = (value?: string) => {
     '220kv_plus': '220千伏及以上'
   }
   return options[value || ''] || '-'
+}
+
+const getCapacityBillingModeText = (value?: string) => {
+  const options: Record<string, string> = {
+    none: '不计容需量',
+    maxDemand: '按最大需量',
+    transformerCapacity: '按变压器容量'
+  }
+  return options[value || 'none'] || '不计容需量'
 }
 
 const getFixedFeeTotal = (row: EnergyPricingRuleVO) => {
