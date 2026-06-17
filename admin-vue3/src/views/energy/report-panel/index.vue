@@ -294,6 +294,8 @@ const dischargeTouEnergy = computed(() => calcTouEnergy(['epej', 'epef', 'epep',
 const hasChargeTouData = computed(() => Object.values(chargeTouEnergy.value).some((value) => value > 0))
 const hasDischargeTouData = computed(() => Object.values(dischargeTouEnergy.value).some((value) => value > 0))
 const chargeTouTotal = computed(() => Number(Object.values(chargeTouEnergy.value).reduce((sum, value) => sum + value, 0).toFixed(2)))
+const maxDemandKw = computed(() => calcMaxDemandKw(selectedDevices.value))
+const maxDemandFee = computed(() => calcMaxDemandFee())
 const averageBuyRate = computed(() => {
   if (!totalPurchasedEnergy.value || totalPurchaseCost.value === null) return null
   return Number((totalPurchaseCost.value / totalPurchasedEnergy.value).toFixed(4))
@@ -348,7 +350,7 @@ const feeTotals = computed(() => {
     platformServiceFee: sumFixedRuleField('platformServiceFee'),
     batteryDepreciationCost: sumFixedRuleField('batteryDepreciationCost'),
     otherFixedFee: sumFixedRuleField('otherFixedFee'),
-    maxDemandPrice: sumFixedRuleField('maxDemandPrice'),
+    maxDemandPrice: maxDemandFee.value,
     transformerCapacityPrice: sumFixedRuleField('transformerCapacityPrice')
   }
 })
@@ -371,7 +373,7 @@ const feeRows = computed(() => [
   feeRow('输配电量电费', totalPurchasedEnergy.value, avgRuleField('transmissionDistributionPrice'), feeTotals.value.transmission, '输配电价 × 本期电量'),
   feeRow('系统运行费', totalPurchasedEnergy.value, avgRuleField('systemOperationFee'), feeTotals.value.systemOperation, '系统运行费折价 × 本期电量'),
   feeRow('政府性基金及附加', totalPurchasedEnergy.value, avgRuleField('governmentFundSurcharge'), feeTotals.value.governmentFund, '基金及附加 × 本期电量'),
-  fixedFeeRow('最大需量费用', feeTotals.value.maxDemandPrice, fixedFeeRemark('当前按规则录入值展示')),
+  demandFeeRow(),
   fixedFeeRow('变压器容量费用', feeTotals.value.transformerCapacityPrice, fixedFeeRemark('当前按规则录入值展示')),
   fixedFeeRow('场地费', feeTotals.value.siteFee, fixedFeeRemark('固定费用')),
   fixedFeeRow('运维费', feeTotals.value.maintenanceFee, fixedFeeRemark('固定费用')),
@@ -706,6 +708,49 @@ const calcDischargeTouRevenue = () => {
   }, 0)
   return Number(total.toFixed(2))
 }
+const calcMaxDemandFee = () => {
+  const groups = new Map<string, { rule?: EnergyPricingRuleVO; devices: EnergyDeviceVO[] }>()
+  selectedDevices.value.forEach((device) => {
+    const rule = matchRuleForDevice(device)
+    const key = rule?.id ? `rule:${rule.id}` : `device:${device.id}`
+    const group = groups.get(key) || { rule, devices: [] }
+    group.devices.push(device)
+    groups.set(key, group)
+  })
+  const total = Array.from(groups.values()).reduce((sum, group) => {
+    const demand = calcMaxDemandKw(group.devices)
+    const price = numberOrNull(group.rule?.maxDemandPrice) || 0
+    return sum + demand * price
+  }, 0)
+  return Number(total.toFixed(2))
+}
+const calcMaxDemandKw = (devicesForDemand: EnergyDeviceVO[]) => {
+  const deviceIds = new Set(devicesForDemand.map((device) => Number(device.id)).filter(Number.isFinite))
+  const bucketMs = 5 * 60 * 1000
+  const windowMs = 15 * 60 * 1000
+  const buckets = new Map<number, number>()
+  scopedTelemetryRows.value.forEach((row) => {
+    if (!deviceIds.has(Number(row.deviceId))) return
+    if (!row.collectTime) return
+    const power = numberOrNull(row.p)
+    if (power === null) return
+    const time = dayjs(row.collectTime as string).valueOf()
+    if (!Number.isFinite(time)) return
+    const bucket = Math.floor(time / bucketMs) * bucketMs
+    buckets.set(bucket, (buckets.get(bucket) || 0) + Math.max(0, power))
+  })
+  const points = Array.from(buckets.entries())
+    .map(([time, power]) => ({ time, power }))
+    .sort((a, b) => a.time - b.time)
+  if (!points.length) return 0
+  const maxDemand = points.reduce((max, point, index) => {
+    const windowStart = point.time - windowMs + bucketMs
+    const window = points.slice(0, index + 1).filter((item) => item.time >= windowStart)
+    const demand = window.reduce((sum, item) => sum + item.power, 0) / window.length
+    return Math.max(max, demand)
+  }, 0)
+  return Number(maxDemand.toFixed(2))
+}
 const fixedFeeRemark = (remark: string) => {
   if (totalPurchasedEnergy.value <= 0) return '本期电量为 0，固定费用不计入本期电费'
   if (query.scopeType === 'device' && billableFixedFeeRules.value.length === 0) return '单个电表不重复分摊场地级固定费用'
@@ -725,6 +770,16 @@ const fixedFeeRow = (category: string, amount: number, remark: string) => ({
   amount: amount > 0 ? moneyText(amount) : '¥0',
   remark
 })
+const demandFeeRow = () => {
+  const rate = avgRuleField('maxDemandPrice')
+  return {
+    category: '最大需量费用',
+    quantity: `${numText(maxDemandKw.value)} kW`,
+    rate: rate > 0 ? `${numText(rate)} 元/kW·月` : '待录入',
+    amount: maxDemandFee.value > 0 ? moneyText(maxDemandFee.value) : '¥0',
+    remark: '本期遥测 P 按 5 分钟聚合，并取约 15 分钟窗口平均最大需量 × 最大需量单价'
+  }
+}
 const firstText = (values: Array<unknown>) => values.map((value) => String(value || '').trim()).find(Boolean) || ''
 const deviceLabel = (device?: EnergyDeviceVO) => device ? `${device.deviceName || device.deviceNo || `电表 ${device.id}`} / ${device.meterNo || '-'}` : ''
 const getElectricityCategoryText = (value?: string) => {
