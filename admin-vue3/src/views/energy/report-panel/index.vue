@@ -296,6 +296,8 @@ const hasDischargeTouData = computed(() => Object.values(dischargeTouEnergy.valu
 const chargeTouTotal = computed(() => Number(Object.values(chargeTouEnergy.value).reduce((sum, value) => sum + value, 0).toFixed(2)))
 const maxDemandKw = computed(() => calcMaxDemandKw(selectedDevices.value))
 const maxDemandFee = computed(() => calcMaxDemandFee())
+const transformerCapacityKva = computed(() => sumBillableRuleField('transformerCapacityKva'))
+const transformerCapacityFee = computed(() => calcTransformerCapacityFee())
 const averageBuyRate = computed(() => {
   if (!totalPurchasedEnergy.value || totalPurchaseCost.value === null) return null
   return Number((totalPurchaseCost.value / totalPurchasedEnergy.value).toFixed(4))
@@ -351,7 +353,7 @@ const feeTotals = computed(() => {
     batteryDepreciationCost: sumFixedRuleField('batteryDepreciationCost'),
     otherFixedFee: sumFixedRuleField('otherFixedFee'),
     maxDemandPrice: maxDemandFee.value,
-    transformerCapacityPrice: sumFixedRuleField('transformerCapacityPrice')
+    transformerCapacityPrice: transformerCapacityFee.value
   }
 })
 const totalBillAmount = computed(() => {
@@ -374,7 +376,7 @@ const feeRows = computed(() => [
   feeRow('系统运行费', totalPurchasedEnergy.value, avgRuleField('systemOperationFee'), feeTotals.value.systemOperation, '系统运行费折价 × 本期电量'),
   feeRow('政府性基金及附加', totalPurchasedEnergy.value, avgRuleField('governmentFundSurcharge'), feeTotals.value.governmentFund, '基金及附加 × 本期电量'),
   demandFeeRow(),
-  fixedFeeRow('变压器容量费用', feeTotals.value.transformerCapacityPrice, fixedFeeRemark('当前按规则录入值展示')),
+  transformerCapacityFeeRow(),
   fixedFeeRow('场地费', feeTotals.value.siteFee, fixedFeeRemark('固定费用')),
   fixedFeeRow('运维费', feeTotals.value.maintenanceFee, fixedFeeRemark('固定费用')),
   fixedFeeRow('通信费', feeTotals.value.communicationFee, fixedFeeRemark('固定费用')),
@@ -664,6 +666,7 @@ const matchRuleForDevice = (device: EnergyDeviceVO) => {
 const scopeWeight = (rule: EnergyPricingRuleVO) => (rule.deviceId ? 3 : rule.projectId ? 2 : rule.customerId ? 1 : 0)
 const avgRuleField = (field: keyof EnergyPricingRuleVO) => average(applicableRules.value.map((rule) => numberOrNull(rule[field]))) || 0
 const sumFixedRuleField = (field: keyof EnergyPricingRuleVO) => Number(billableFixedFeeRules.value.reduce((sum, rule) => sum + Number(rule[field] || 0), 0).toFixed(2))
+const sumBillableRuleField = (field: keyof EnergyPricingRuleVO) => Number(billableFixedFeeRules.value.reduce((sum, rule) => sum + Number(rule[field] || 0), 0).toFixed(2))
 const calcTouEnergy = (fields: Array<keyof EnergyTelemetryVO>) => {
   const [sharpField, peakField, flatField, valleyField] = fields
   return {
@@ -724,6 +727,14 @@ const calcMaxDemandFee = () => {
   }, 0)
   return Number(total.toFixed(2))
 }
+const calcTransformerCapacityFee = () => {
+  const total = billableFixedFeeRules.value.reduce((sum, rule) => {
+    const capacity = numberOrNull(rule.transformerCapacityKva) || 0
+    const price = numberOrNull(rule.transformerCapacityPrice) || 0
+    return sum + capacity * price
+  }, 0)
+  return Number(total.toFixed(2))
+}
 const calcMaxDemandKw = (devicesForDemand: EnergyDeviceVO[]) => {
   const deviceIds = new Set(devicesForDemand.map((device) => Number(device.id)).filter(Number.isFinite))
   const bucketMs = 5 * 60 * 1000
@@ -778,6 +789,16 @@ const demandFeeRow = () => {
     rate: rate > 0 ? `${numText(rate)} 元/kW·月` : '待录入',
     amount: maxDemandFee.value > 0 ? moneyText(maxDemandFee.value) : '¥0',
     remark: '本期遥测 P 按 5 分钟聚合，并取约 15 分钟窗口平均最大需量 × 最大需量单价'
+  }
+}
+const transformerCapacityFeeRow = () => {
+  const rate = avgRuleField('transformerCapacityPrice')
+  return {
+    category: '变压器容量费用',
+    quantity: `${numText(transformerCapacityKva.value)} kVA`,
+    rate: rate > 0 ? `${numText(rate)} 元/kVA·月` : '待录入',
+    amount: transformerCapacityFee.value > 0 ? moneyText(transformerCapacityFee.value) : '¥0',
+    remark: '按计费规则录入的变压器容量 × 变压器容量单价'
   }
 }
 const firstText = (values: Array<unknown>) => values.map((value) => String(value || '').trim()).find(Boolean) || ''

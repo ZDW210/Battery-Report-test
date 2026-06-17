@@ -121,8 +121,9 @@
       <el-descriptions-item label="低谷电价">{{ formatRate(matchedRule.valleyRate) }}</el-descriptions-item>
       <el-descriptions-item label="分时时段" :span="3">{{ formatTouPeriods(matchedRule.touPeriods) }}</el-descriptions-item>
       <el-descriptions-item label="政府基金附加">{{ formatRate(matchedRule.governmentFundSurcharge) }}</el-descriptions-item>
-      <el-descriptions-item label="最大需量">{{ formatCurrency(matchedRule.maxDemandPrice) }}</el-descriptions-item>
-      <el-descriptions-item label="变压器容量">{{ formatCurrency(matchedRule.transformerCapacityPrice) }}</el-descriptions-item>
+      <el-descriptions-item label="最大需量单价">{{ formatCurrency(matchedRule.maxDemandPrice) }}</el-descriptions-item>
+      <el-descriptions-item label="变压器容量">{{ formatNumber(matchedRule.transformerCapacityKva) }} kVA</el-descriptions-item>
+      <el-descriptions-item label="容量单价">{{ formatCurrency(matchedRule.transformerCapacityPrice) }}</el-descriptions-item>
       <el-descriptions-item label="固定费用合计">{{ formatCurrency(getFixedFeeTotal(matchedRule)) }}</el-descriptions-item>
       <el-descriptions-item label="场地费">{{ formatCurrency(matchedRule.siteFee) }}</el-descriptions-item>
       <el-descriptions-item label="运维费">{{ formatCurrency(matchedRule.maintenanceFee) }}</el-descriptions-item>
@@ -174,10 +175,13 @@
       <el-table-column label="分时时段" min-width="260">
         <template #default="{ row }">{{ formatTouPeriods(row.touPeriods) }}</template>
       </el-table-column>
-      <el-table-column align="right" label="最大需量" width="110">
+      <el-table-column align="right" label="最大需量单价" width="120">
         <template #default="{ row }">{{ formatCurrency(row.maxDemandPrice) }}</template>
       </el-table-column>
-      <el-table-column align="right" label="变压器容量" width="120">
+      <el-table-column align="right" label="容量(kVA)" width="110">
+        <template #default="{ row }">{{ formatNumber(row.transformerCapacityKva) }}</template>
+      </el-table-column>
+      <el-table-column align="right" label="容量单价" width="120">
         <template #default="{ row }">{{ formatCurrency(row.transformerCapacityPrice) }}</template>
       </el-table-column>
       <el-table-column align="right" label="固定费用合计" width="130">
@@ -416,6 +420,11 @@ const getFixedFeeTotal = (row: EnergyPricingRuleVO) => {
 const formatCurrency = (value?: number) => {
   const amount = Number(value || 0)
   return amount > 0 ? `¥${amount.toFixed(2)}` : '¥0.00'
+}
+
+const formatNumber = (value?: number) => {
+  const amount = Number(value || 0)
+  return amount > 0 ? amount.toFixed(2) : '0.00'
 }
 
 const formatRate = (value?: number) => {

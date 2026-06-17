@@ -153,7 +153,7 @@
         <el-col :span="24">
           <el-divider content-position="left">容量/需量用电价格</el-divider>
         </el-col>
-        <el-col v-for="field in capacityPriceFields" :key="field.prop" :span="12">
+        <el-col v-for="field in capacityPriceFields" :key="field.prop" :span="8">
           <el-form-item :label="field.label" :prop="field.prop">
             <el-input-number
               v-model="formData[field.prop]"
@@ -384,6 +384,7 @@ const defaultTouPeriods: TouPeriodRow[] = [
 ]
 const capacityPriceFields: Array<{ label: string; prop: PricingField }> = [
   { label: '最大需量（元/千瓦·月）', prop: 'maxDemandPrice' },
+  { label: '变压器容量（kVA）', prop: 'transformerCapacityKva' },
   { label: '变压器容量（元/千伏安·月）', prop: 'transformerCapacityPrice' }
 ]
 const shanghaiJuneExample: Partial<EnergyPricingRuleVO> = {
@@ -402,6 +403,7 @@ const shanghaiJuneExample: Partial<EnergyPricingRuleVO> = {
   deepValleyRate: 0,
   touPeriods: JSON.stringify(defaultTouPeriods),
   maxDemandPrice: 40.8,
+  transformerCapacityKva: 0,
   transformerCapacityPrice: 25.5,
   energyRate: 0.662376
 }
@@ -425,6 +427,7 @@ const formData = ref<EnergyPricingRuleVO>({
   deepValleyRate: 0,
   touPeriods: JSON.stringify(defaultTouPeriods),
   maxDemandPrice: 0,
+  transformerCapacityKva: 0,
   transformerCapacityPrice: 0,
   timeRate: 0,
   energyRate: 0,
@@ -554,6 +557,7 @@ const resetForm = () => {
     deepValleyRate: 0,
     touPeriods: JSON.stringify(defaultTouPeriods),
     maxDemandPrice: 0,
+    transformerCapacityKva: 0,
     transformerCapacityPrice: 0,
     timeRate: 0,
     energyRate: 0,
