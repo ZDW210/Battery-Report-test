@@ -645,7 +645,18 @@ const buildPrintableBillHtml = () => {
     .join('')
   const analysisHtml = analysisRows.value.map((row) => `<p><b>${row.title}</b><br>${row.content}</p>`).join('')
   const analysisBarsHtml = analysisBarRows.value
-    .map((row) => `<div class="print-bar"><div><span style="height:${row.percent}%"></span></div><b>${escapeHtml(row.label)}</b><em>${kwhText(row.value)}</em></div>`)
+    .map((row) => {
+      const barHeight = Math.max(4, Math.round((Number(row.percent) || 0) * 0.82))
+      const barY = 90 - barHeight
+      return `<div class="print-bar">
+        <svg class="print-bar-svg" viewBox="0 0 58 96" role="img" aria-label="${escapeHtml(row.label)} ${kwhText(row.value)}">
+          <line x1="4" y1="90" x2="54" y2="90" stroke="#94a3b8" stroke-width="1.2" />
+          <rect x="19" y="${barY}" width="20" height="${barHeight}" rx="3" fill="#48c6c8" stroke="#0f766e" stroke-width="1" />
+        </svg>
+        <b>${escapeHtml(row.label)}</b>
+        <em>${kwhText(row.value)}</em>
+      </div>`
+    })
     .join('')
   return `<!doctype html>
 <html>
@@ -654,6 +665,7 @@ const buildPrintableBillHtml = () => {
   <title>用电电量报表</title>
   <style>
     @page { size: A4; margin: 16mm; }
+    * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     body { font-family: "Microsoft YaHei", Arial, sans-serif; color: #1f2937; font-size: 12px; }
     .bill-head { color: #0f766e; padding-bottom: 22px; }
     .brand-row { display: grid; grid-template-columns: 210px 1fr 220px; align-items: start; gap: 22px; }
@@ -696,10 +708,9 @@ const buildPrintableBillHtml = () => {
     .analysis { padding: 10px 12px 12px; }
     .analysis p { margin: 0 0 9px; line-height: 1.55; }
     .analysis p b { color: #007273; }
-    .print-bars { display: flex; height: 136px; gap: 18px; align-items: end; margin-top: 10px; padding: 8px 12px 0; border-top: 1px dashed #9adcdc; }
+    .print-bars { display: flex; gap: 18px; align-items: end; margin-top: 10px; padding: 8px 12px 0; border-top: 1px dashed #9adcdc; }
     .print-bar { flex: 1; text-align: center; color: #475569; }
-    .print-bar div { height: 86px; display: flex; align-items: end; justify-content: center; border-bottom: 1px solid #94a3b8; }
-    .print-bar span { width: 22px; display: block; background: #48c6c8; min-height: 4px; }
+    .print-bar-svg { display: block; width: 58px; height: 96px; margin: 0 auto; overflow: visible; }
     .print-bar b, .print-bar em { display: block; margin-top: 4px; font-style: normal; }
     .note { color: #64748b; margin-top: 14px; line-height: 1.7; }
   </style>
