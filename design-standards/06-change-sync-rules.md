@@ -581,6 +581,14 @@
 ```
 ```text
 日期：2026-06-18
+变更内容：修正报表面板电费明细计费标准展示；零售交易电费改为使用计费规则的尖/峰/平/谷/深谷分时电价，未匹配计费规则的设备电量单独列为“未匹配计费规则”，不再混入费用行按 0 单价冲低平、谷等分时时段计费标准。
+影响范围：worker/src/index.ts，design-standards/04-api-standards.md，design-standards/06-change-sync-rules.md
+已同步标准：04-api-standards.md 补充报表费用明细分时电价来源和未匹配规则电量处理要求。
+备注：远端 D1 中平/谷电价已保存；截图中的 0 主要来自未匹配计费规则设备电量被混算到费用明细。
+```
+
+```text
+日期：2026-06-18
 变更内容：修复 Worker 客户账号权限绕过和刷新令牌状态校验问题；客户老板账号访问 customer、project、device、vehicle、account-event、user-scope、pricing-rule、charge-session 等接口时均按绑定 customer_id 做后端强过滤，维护类写操作由平台管理员执行；refresh-token 重新校验 system_user.status，禁用或删除账号会撤销 session 并拒绝续签。
 影响范围：worker/src/index.ts，design-standards/04-api-standards.md，design-standards/06-change-sync-rules.md
 已同步标准：04-api-standards.md 补充客户账号后端强隔离、关联客户归属反查、客户账号只读边界和 refresh-token 禁用用户校验要求。

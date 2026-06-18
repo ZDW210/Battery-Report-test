@@ -300,3 +300,9 @@ POST /infra-api/energy/eiot/alarm
 - 当业务记录未直接保存 `customer_id` 时，必须通过项目或设备反查客户归属，例如 `COALESCE(record.customer_id, project.customer_id, device.customer_id, device_project.customer_id)`，避免客户账号通过直接请求 ID 越权读取其他客户数据。
 - 客户老板账号默认只允许查询、导出自己客户范围内的数据；客户资料、项目、设备、车辆、扫码刷卡记录、用户授权、计费规则、充放电任务、客户账号权限等维护类写操作必须由平台管理员执行。
 - `/admin-api/system/auth/refresh-token` 必须重新校验 `system_user.status = 0`；用户被禁用或删除后必须撤销对应 session，禁止继续签发新的 access token。
+
+## 2026-06-18 报表费用明细标准补充
+
+- 报表面板“电费明细”的“零售交易电费”必须使用计费规则中的 `sharpPeakRate`、`peakRate`、`flatRate`、`valleyRate`、`deepValleyRate` 分时电价，不得用固定基础电价替代。
+- 同一报表范围内存在未匹配计费规则的设备电量时，接口必须单独输出“未匹配计费规则”明细行，费率为空且金额为 0；不得把这部分电量混入已匹配规则的费用行并按 0 单价拉低计费标准。
+- 费用明细的计费标准应按已匹配规则电量加权计算；没有本期电量但需要展示固定分时时段时，可展示当前范围内已匹配规则的平均标准。

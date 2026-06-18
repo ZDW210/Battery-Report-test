@@ -1720,7 +1720,7 @@ function energyDetailRow(label: string, startReading: number | null, endReading:
 function buildReportFeeDetails(deviceDetails: AnyRecord[], rules: AnyRecord[], telemetryRows: AnyRecord[]) {
   const rows = [
     feeDetailHeader('市场化购电费'),
-    ...touFeeRowsByDevice(deviceDetails, rules, '市场化购电费', '零售交易电费', 'chargeTou', (rule) => numberOrNull(rule?.agent_purchase_price) || 0, 1, true),
+    ...touFeeRowsByDevice(deviceDetails, rules, '市场化购电费', '零售交易电费', 'chargeTou', (rule, key) => Number(averageTouRates(rule ? [rule] : [])[key] || 0), 1, true),
     feeDetailHeader('上网环节线损费用'),
     ...touFeeRowsByDevice(deviceDetails, rules, '上网环节线损费用', '上网环节线损费用', 'chargeTou', (rule) => numberOrNull(rule?.line_loss_price) || 0),
     feeDetailHeader('输配电量电费'),
@@ -1768,28 +1768,44 @@ function touFeeRowsByDevice(
     { key: 'deepValley', label: '深谷' }
   ]
   return periods
-    .map((period) => {
-      let billingEnergy = 0
+    .flatMap((period) => {
+      let matchedEnergy = 0
+      let unmatchedEnergy = 0
       let amount = 0
       const fallbackRates: Array<number | null> = []
       deviceDetails.forEach((detail) => {
         const rule = findRuleById(rules, detail.pricingRuleId)
         const energy = Number(detail?.[energyField]?.[period.key] || 0)
+        if (!rule) {
+          unmatchedEnergy += energy
+          return
+        }
         const rate = rateGetter(rule, period.key)
-        billingEnergy += energy
+        matchedEnergy += energy
         amount += energy * rate * sign
         fallbackRates.push(Number.isFinite(rate) ? rate : null)
       })
-      const displayRate = billingEnergy > 0 ? Math.abs(amount) / billingEnergy : averageNumber(fallbackRates)
-      return {
+      const displayRate = matchedEnergy > 0 ? Math.abs(amount) / matchedEnergy : averageNumber(fallbackRates)
+      const rows: AnyRecord[] = []
+      if (includeZeroRows || matchedEnergy > 0) rows.push({
         category,
         component,
         period: period.label,
-        billingEnergy: round4(billingEnergy),
+        billingEnergy: round4(matchedEnergy),
         rate: round8(displayRate),
         amount: round2(amount),
         source: '计费规则 × EIOT分时电量'
-      }
+      })
+      if (unmatchedEnergy > 0) rows.push({
+        category,
+        component: `${component}（未匹配计费规则）`,
+        period: period.label,
+        billingEnergy: round4(unmatchedEnergy),
+        rate: null,
+        amount: 0,
+        source: '未匹配计费规则，未计入费用'
+      })
+      return rows
     })
     .filter((row) => includeZeroRows || Number(row.billingEnergy || 0) > 0)
 }
