@@ -198,6 +198,7 @@ CREATE TABLE IF NOT EXISTS energy_charge_session (
   device_id INTEGER,
   customer_id INTEGER,
   pricing_rule_id INTEGER,
+  operator_user_id INTEGER,
   session_type INTEGER,
   start_time TEXT,
   end_time TEXT,
@@ -255,6 +256,7 @@ CREATE TABLE IF NOT EXISTS energy_telemetry (
 CREATE INDEX IF NOT EXISTS idx_energy_telemetry_device_time ON energy_telemetry(device_id, collect_time);
 CREATE INDEX IF NOT EXISTS idx_energy_telemetry_meter_time ON energy_telemetry(meter_no, collect_time);
 CREATE INDEX IF NOT EXISTS idx_energy_device_status_reading ON energy_device(status, last_reading_time);
+CREATE INDEX IF NOT EXISTS idx_energy_charge_session_operator_status ON energy_charge_session(operator_user_id, status, start_time);
 
 CREATE TABLE IF NOT EXISTS energy_alarm (
   id INTEGER PRIMARY KEY AUTOINCREMENT,

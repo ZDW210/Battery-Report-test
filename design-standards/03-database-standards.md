@@ -77,7 +77,7 @@ EIOT 原始推送报文不建议只存数据库 JSON 字段。推荐：
 - 小程序用户授权：`user_type + user_id + status`、`customer_id`、`project_id`、`device_id`
 - 小程序 App 用户：`username + deleted` 必须唯一，`status`、`tenant_id` 必须建索引。
 - App 用户密码必须使用 Spring Security `PasswordEncoder` 兼容的 BCrypt 密文存储，禁止明文或可逆加密。
-- 会话：`device_id`、`customer_id`、`start_time`、`status`、`session_no`
+- 会话：`device_id`、`customer_id`、`operator_user_id`、`start_time`、`status`、`session_no`
 - 同步日志：`request_id`、`sync_type`、`create_time`
 - EIOT 凭证：`tenant_id`、`status`
 - 操控日志：`device_id`、`session_id`、`method`、`status`、`operate_time`

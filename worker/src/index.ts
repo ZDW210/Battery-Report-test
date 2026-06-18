@@ -225,7 +225,7 @@ async function handleAdminApi(request: Request, env: Env, ctx: ExecutionContext)
     if (path.startsWith('/energy/account-event/')) return accountEventApi(request, url, env, path, accessScope)
     if (path.startsWith('/energy/user-scope/')) return userScopeApi(request, url, env, path, accessScope)
     if (path.startsWith('/energy/pricing-rule/')) return pricingRuleApi(request, url, env, path, accessScope)
-    if (path.startsWith('/energy/charge-session/')) return chargeSessionApi(request, url, env, path, accessScope)
+    if (path.startsWith('/energy/charge-session/')) return chargeSessionApi(request, url, env, path, accessScope, user)
     if (path.startsWith('/energy/eiot-log/')) return crud(request, url, env, 'energy_eiot_sync_log', ['syncType', 'requestId', 'gatewaySn', 'meterSn', 'payloadUrl', 'status', 'errorMsg'])
     if (path.startsWith('/energy/alarm/')) return alarmApi(request, url, env, path, accessScope)
     if (path.startsWith('/energy/telemetry/')) return telemetryApi(request, url, env, path, accessScope)
@@ -846,9 +846,11 @@ async function deviceGet(url: URL, env: Env, accessScope: AccessScope) {
 }
 
 async function alarmApi(request: Request, url: URL, env: Env, path: string, accessScope: AccessScope) {
-  if (path === '/energy/alarm/ack' && request.method === 'PUT') return updateStatus(request, env, 'energy_alarm', 1, 'ack_time')
-  if (path === '/energy/alarm/close' && request.method === 'PUT') return updateStatus(request, env, 'energy_alarm', 2, 'close_time')
+  if (path === '/energy/alarm/ack' && request.method === 'PUT') return updateAlarmStatus(request, env, 1, 'ack_time', accessScope)
+  if (path === '/energy/alarm/close' && request.method === 'PUT') return updateAlarmStatus(request, env, 2, 'close_time', accessScope)
   if (path === '/energy/alarm/page' && request.method === 'GET') return alarmPage(url, env, accessScope)
+  if (path === '/energy/alarm/get' && request.method === 'GET') return alarmGet(url, env, accessScope)
+  if (accessScope.isCustomerAccount) return customerAccountForbidden()
   return crud(request, url, env, 'energy_alarm', ['alarmNo', 'deviceId', 'code', 'level', 'title', 'content', 'status', 'occurTime'])
 }
 
@@ -890,6 +892,48 @@ async function alarmPage(url: URL, env: Env, accessScope: AccessScope) {
     .all<AnyRecord>()
 
   return ok({ list: camelRows(rows.results), total })
+}
+
+async function alarmGet(url: URL, env: Env, accessScope: AccessScope) {
+  const id = positiveId(url.searchParams.get('id'))
+  if (!id) return fail('告警ID格式不正确', 400)
+  const where = ['a.id = ?']
+  const args: any[] = [id]
+  applyCustomerScope(where, args, 'COALESCE(d.customer_id, p.customer_id)', accessScope)
+  const row = await env.DB.prepare(
+    `SELECT a.*, d.device_name, d.device_no, d.customer_id, d.project_id, c.name AS customer_name, p.name AS project_name
+     FROM energy_alarm a
+     LEFT JOIN energy_device d ON d.id = a.device_id
+     LEFT JOIN energy_customer c ON c.id = d.customer_id
+     LEFT JOIN energy_project p ON p.id = d.project_id
+     WHERE ${where.join(' AND ')}`
+  )
+    .bind(...args)
+    .first<AnyRecord>()
+  return ok(row ? camel(row) : null)
+}
+
+async function updateAlarmStatus(request: Request, env: Env, status: number, timeField: string, accessScope: AccessScope) {
+  const body = await readJson(request)
+  const id = positiveId(body.id)
+  if (!id) return fail('告警ID格式不正确', 400)
+  const where = ['a.id = ?']
+  const args: any[] = [id]
+  applyCustomerScope(where, args, 'COALESCE(d.customer_id, p.customer_id)', accessScope)
+  const alarm = await env.DB.prepare(
+    `SELECT a.id
+     FROM energy_alarm a
+     LEFT JOIN energy_device d ON d.id = a.device_id
+     LEFT JOIN energy_project p ON p.id = d.project_id
+     WHERE ${where.join(' AND ')}`
+  )
+    .bind(...args)
+    .first<AnyRecord>()
+  if (!alarm) return fail('告警不存在或无权限操作', 403, 403)
+  await env.DB.prepare(`UPDATE energy_alarm SET status = ?, ${timeField} = ?, update_time = ? WHERE id = ?`)
+    .bind(status, nowText(), nowText(), id)
+    .run()
+  return ok(true)
 }
 
 async function vehicleApi(request: Request, url: URL, env: Env, path: string, accessScope: AccessScope) {
@@ -1308,7 +1352,8 @@ async function ensurePricingRuleFeeColumns(env: Env) {
   }
 }
 
-async function chargeSessionApi(request: Request, url: URL, env: Env, path: string, accessScope: AccessScope) {
+async function chargeSessionApi(request: Request, url: URL, env: Env, path: string, accessScope: AccessScope, user: AnyRecord) {
+  await ensureChargeSessionSecurityColumns(env)
   if (path === '/energy/charge-session/page' && request.method === 'GET') return chargeSessionPage(url, env, accessScope)
   if (path === '/energy/charge-session/simple-list' && request.method === 'GET') return chargeSessionSimpleList(url, env, accessScope)
   if (path === '/energy/charge-session/get' && request.method === 'GET') return chargeSessionGet(url, env, accessScope)
@@ -1329,28 +1374,107 @@ async function chargeSessionApi(request: Request, url: URL, env: Env, path: stri
     }
     const sessionNo = `CS${Date.now()}`
     const row = await env.DB.prepare(
-      `INSERT INTO energy_charge_session(session_no, device_id, pricing_rule_id, session_type, start_time, status, create_time)
-       VALUES (?, ?, ?, ?, ?, 1, ?) RETURNING id`
+      `INSERT INTO energy_charge_session(session_no, device_id, pricing_rule_id, operator_user_id, session_type, start_time, status, create_time)
+       VALUES (?, ?, ?, ?, ?, ?, 1, ?) RETURNING id`
     )
-      .bind(sessionNo, deviceId, pricingRuleId, body.sessionType || 1, nowText(), nowText())
+      .bind(sessionNo, deviceId, pricingRuleId, positiveId(user.id), body.sessionType || 1, nowText(), nowText())
       .first<AnyRecord>()
     return ok(Number(row?.id))
   }
   if (path === '/energy/charge-session/stop' && request.method === 'POST') {
     const body = await readJson(request)
+    const sessionId = positiveId(body.sessionId)
+    if (!sessionId) return fail('会话ID格式不正确', 400)
+    const session = await findChargeSessionForAction(env, sessionId, accessScope, user, [1])
+    if (!session) return fail('会话不存在、状态不允许或无权限操作', 403, 403)
+    const endEnergy = energyReadingOrNull(body.endEnergy)
+    if (body.endEnergy !== undefined && body.endEnergy !== null && body.endEnergy !== '' && endEnergy === null) {
+      return fail('结束读数格式不正确', 400)
+    }
+    const startEnergy = numberOrNull(session.start_energy)
+    if (endEnergy !== null && startEnergy !== null && endEnergy < startEnergy) return fail('结束读数不能小于开始读数', 400)
     await env.DB.prepare('UPDATE energy_charge_session SET end_time = ?, end_energy = ?, status = 2, update_time = ? WHERE id = ?')
-      .bind(nowText(), body.endEnergy || null, nowText(), body.sessionId)
+      .bind(nowText(), endEnergy, nowText(), sessionId)
       .run()
     return ok(true)
   }
   if (path === '/energy/charge-session/settle' && request.method === 'POST') {
     const body = await readJson(request)
+    const sessionId = positiveId(body.sessionId)
+    if (!sessionId) return fail('会话ID格式不正确', 400)
+    const session = await findChargeSessionForAction(env, sessionId, accessScope, user, [2])
+    if (!session) return fail('会话不存在、状态不允许或无权限操作', 403, 403)
     await env.DB.prepare('UPDATE energy_charge_session SET status = 3, update_time = ? WHERE id = ?')
-      .bind(nowText(), body.sessionId)
+      .bind(nowText(), sessionId)
       .run()
     return ok(true)
   }
+  if (path === '/energy/charge-session/update' && request.method === 'PUT') {
+    const body = await readJson(request)
+    const sessionId = positiveId(body.id)
+    if (!sessionId) return fail('会话ID格式不正确', 400)
+    const session = await findChargeSessionForAction(env, sessionId, accessScope, user)
+    if (!session) return fail('会话不存在或无权限操作', 403, 403)
+    const energyError = validateChargeSessionEnergyUpdate(body, session)
+    if (energyError) return fail(energyError, 400)
+    return updateRowFromBody(body, env, 'energy_charge_session', ['sessionNo', 'deviceId', 'customerId', 'pricingRuleId', 'sessionType', 'startTime', 'endTime', 'startEnergy', 'endEnergy', 'totalEnergy', 'durationMinutes', 'energyFee', 'timeFee', 'totalFee', 'status'])
+  }
+  if (path === '/energy/charge-session/delete' && request.method === 'DELETE') {
+    const sessionId = positiveId(url.searchParams.get('id'))
+    if (!sessionId) return fail('会话ID格式不正确', 400)
+    const session = await findChargeSessionForAction(env, sessionId, accessScope, user)
+    if (!session) return fail('会话不存在或无权限操作', 403, 403)
+    await env.DB.prepare('DELETE FROM energy_charge_session WHERE id = ?').bind(sessionId).run()
+    return ok(true)
+  }
+  if (path === '/energy/charge-session/create' && request.method === 'POST') return fail('请使用开始任务创建会话', 400)
   return crud(request, url, env, 'energy_charge_session', ['sessionNo', 'deviceId', 'customerId', 'pricingRuleId', 'sessionType', 'startTime', 'endTime', 'startEnergy', 'endEnergy', 'totalEnergy', 'durationMinutes', 'energyFee', 'timeFee', 'totalFee', 'status'])
+}
+
+async function ensureChargeSessionSecurityColumns(env: Env) {
+  await ensureColumns(env, 'energy_charge_session', {
+    operator_user_id: 'INTEGER'
+  })
+  await env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_energy_charge_session_operator_status ON energy_charge_session(operator_user_id, status, start_time)').run()
+}
+
+async function findChargeSessionForAction(env: Env, sessionId: number, accessScope: AccessScope, user: AnyRecord, allowedStatuses?: number[]) {
+  const where = ['s.id = ?']
+  const args: any[] = [sessionId]
+  if (allowedStatuses?.length) {
+    where.push(`s.status IN (${allowedStatuses.map(() => '?').join(',')})`)
+    args.push(...allowedStatuses)
+  }
+  applyCustomerScope(where, args, chargeSessionCustomerColumn(), accessScope)
+  if (!accessScope.isCustomerAccount) {
+    where.push('(s.operator_user_id IS NULL OR s.operator_user_id = ?)')
+    args.push(positiveId(user.id))
+  }
+  return env.DB.prepare(
+    `SELECT s.*
+     FROM energy_charge_session s
+     ${chargeSessionJoins()}
+     WHERE ${where.join(' AND ')}`
+  )
+    .bind(...args)
+    .first<AnyRecord>()
+}
+
+function energyReadingOrNull(value: unknown) {
+  if (value === undefined || value === null || value === '') return null
+  const parsed = Number(value)
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null
+}
+
+function validateChargeSessionEnergyUpdate(body: AnyRecord, session: AnyRecord) {
+  const hasStart = body.startEnergy !== undefined && body.startEnergy !== null && body.startEnergy !== ''
+  const hasEnd = body.endEnergy !== undefined && body.endEnergy !== null && body.endEnergy !== ''
+  const startEnergy = hasStart ? energyReadingOrNull(body.startEnergy) : numberOrNull(session.start_energy)
+  const endEnergy = hasEnd ? energyReadingOrNull(body.endEnergy) : numberOrNull(session.end_energy)
+  if (hasStart && startEnergy === null) return '开始读数格式不正确'
+  if (hasEnd && endEnergy === null) return '结束读数格式不正确'
+  if (startEnergy !== null && endEnergy !== null && endEnergy < startEnergy) return '结束读数不能小于开始读数'
+  return ''
 }
 
 async function chargeSessionPage(url: URL, env: Env, accessScope: AccessScope) {
@@ -2548,12 +2672,6 @@ async function validateDeviceUnique(env: Env, body: AnyRecord, id?: number) {
 
 async function deleteRow(url: URL, env: Env, table: string) {
   await env.DB.prepare(`DELETE FROM ${table} WHERE id = ?`).bind(url.searchParams.get('id')).run()
-  return ok(true)
-}
-
-async function updateStatus(request: Request, env: Env, table: string, status: number, timeField: string) {
-  const body = await readJson(request)
-  await env.DB.prepare(`UPDATE ${table} SET status = ?, ${timeField} = ? WHERE id = ?`).bind(status, nowText(), body.id).run()
   return ok(true)
 }
 

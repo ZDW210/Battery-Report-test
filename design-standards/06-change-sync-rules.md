@@ -42,6 +42,14 @@
 
 ```text
 日期：2026-06-18
+变更内容：修复告警确认/关闭和充放电会话停止/结算的越权风险；告警 ack/close 复用客户归属过滤，客户账号不能通过普通告警 CRUD 写操作绕过权限；充放电会话增加 operator_user_id，开始任务写入当前用户，停止、结算、修改、删除前校验操作人、客户范围、状态和读数。
+影响范围：cloudflare-worker-package/worker/src/index.ts，cloudflare-worker-package/migrations/0001_init.sql，cloudflare-worker-package/design-standards/03-database-standards.md，cloudflare-worker-package/design-standards/04-api-standards.md，cloudflare-worker-package/design-standards/06-change-sync-rules.md
+已同步标准：03-database-standards.md 补充会话 operator_user_id 索引要求；04-api-standards.md 补充告警动作归属校验、会话操作人校验和读数后端校验要求。
+备注：本次不部署，仅提交 GitHub。
+```
+
+```text
+日期：2026-06-18
 变更内容：修复 Worker session 过期清理和充放电会话外键引用校验；登录入口清理 expires_time 已过期的 system_session；/energy/charge-session/start 写入前校验 deviceId 和 pricingRuleId 存在，避免孤儿会话影响后续账单和计费规则匹配。
 影响范围：cloudflare-worker-package/worker/src/index.ts，cloudflare-worker-package/design-standards/04-api-standards.md，cloudflare-worker-package/design-standards/06-change-sync-rules.md
 已同步标准：04-api-standards.md 补充 session 过期清理触发点和充放电会话开始前引用校验要求。

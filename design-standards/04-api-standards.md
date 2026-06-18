@@ -101,7 +101,9 @@ GET    /export
 - 开始会话必须校验设备没有进行中会话，并复用计费规则匹配服务；未命中生效计费规则时不得创建会话。
 - 开始会话写入 `energy_charge_session` 前必须校验 `deviceId` 对应设备存在、`pricingRuleId` 对应计费规则存在；不得写入孤儿设备或孤儿计费规则引用。
 - 开始会话必须校验设备已绑定客户；手动传入 `pricingRuleId` 时也必须确认该计费规则适用于当前设备、项目或客户，不能绕过自动匹配规则直接写入会话。
+- 开始会话必须记录 `operator_user_id`；停止、结算、修改和删除会话前必须校验当前用户是否为会话操作人或具备对应范围权限，禁止仅凭会话 ID 更新。
 - 结束会话必须计算总电量、时长、电量费用、时间费用和总费用；结束读数不能小于开始读数。
+- 结束读数、开始读数等客户端传入电量必须在 Worker 后端校验为非负数；如果同时存在开始和结束读数，结束读数不得小于开始读数。
 - 当前 EIOT 真实实时字段只有 `EPI`，第一版会话使用 `start_energy/end_energy` 保存通用电能读数；不得把未收到的 `EPE` 或 BMS/PCS 放电电能字段伪装成真实结算依据。
 
 ## 小程序接口标准
@@ -299,6 +301,7 @@ POST /infra-api/energy/eiot/alarm
 - 所有密码创建、重置、修改接口必须在 Worker 后端调用统一密码强度校验，要求 8-32 位且同时包含字母和数字；前端校验只做交互提示，不能作为安全边界。
 - 客户老板账号的数据权限必须在 Worker 后端强制执行，不能只依赖菜单隐藏或前端路由隐藏。
 - `/admin-api/energy/customer/**`、`/admin-api/energy/project/**`、`/admin-api/energy/device/**`、`/admin-api/energy/vehicle/**`、`/admin-api/energy/account-event/**`、`/admin-api/energy/user-scope/**`、`/admin-api/energy/pricing-rule/**`、`/admin-api/energy/charge-session/**` 的列表、详情和精简列表接口必须按当前客户账号绑定的 `customer_id` 过滤。
+- `/admin-api/energy/alarm/ack` 和 `/admin-api/energy/alarm/close` 必须复用告警列表同一客户归属表达式做后端过滤；普通告警 CRUD 写操作不得对客户账号开放，避免绕过页面权限操作其他客户告警。
 - 当业务记录未直接保存 `customer_id` 时，必须通过项目或设备反查客户归属，例如 `COALESCE(record.customer_id, project.customer_id, device.customer_id, device_project.customer_id)`，避免客户账号通过直接请求 ID 越权读取其他客户数据。
 - 客户老板账号默认只允许查询、导出自己客户范围内的数据；客户资料、项目、设备、车辆、扫码刷卡记录、用户授权、计费规则、充放电任务、客户账号权限等维护类写操作必须由平台管理员执行。
 - `/admin-api/system/auth/refresh-token` 必须重新校验 `system_user.status = 0`；用户被禁用或删除后必须撤销对应 session，禁止继续签发新的 access token。
