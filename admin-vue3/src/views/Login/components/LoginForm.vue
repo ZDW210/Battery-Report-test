@@ -32,7 +32,7 @@
             :prefix-icon="iconLock"
             show-password
             type="password"
-            @keyup.enter="getCode()"
+            @keyup.enter="handleLogin({})"
           />
         </el-form-item>
       </el-col>
@@ -63,18 +63,10 @@
             :title="t('login.login')"
             class="w-full"
             type="primary"
-            @click="getCode()"
+            @click="handleLogin({})"
           />
         </el-form-item>
       </el-col>
-      <Verify
-        v-if="loginData.captchaEnable === 'true'"
-        ref="verify"
-        :captchaType="captchaType"
-        :imgSize="{ width: '400px', height: '200px' }"
-        mode="pop"
-        @success="handleLogin"
-      />
     </el-row>
   </el-form>
 </template>
@@ -102,8 +94,6 @@ const { currentRoute, push } = useRouter()
 const permissionStore = usePermissionStore()
 const redirect = ref<string>('')
 const loginLoading = ref(false)
-const verify = ref()
-const captchaType = ref('blockPuzzle') // blockPuzzle 滑块 clickWord 点击文字 pictureWord 文字验证码
 
 const getShow = computed(() => unref(getLoginState) === LoginStateEnum.LOGIN)
 
@@ -113,28 +103,15 @@ const LoginRules = {
 }
 const loginData = reactive({
   isShowPassword: false,
-  captchaEnable: import.meta.env.VITE_APP_CAPTCHA_ENABLE,
   tenantEnable: 'false',
   loginForm: {
     tenantName: '',
     username: '',
     password: '',
-    captchaVerification: '',
     rememberMe: true
   }
 })
 
-// 获取验证码
-const getCode = async () => {
-  // 情况一，未开启：则直接登录
-  if (loginData.captchaEnable === 'false') {
-    await handleLogin({})
-  } else {
-    // 情况二，已开启：则展示验证码；只有完成验证码的情况，才进行登录
-    // 弹出验证码
-    verify.value.show()
-  }
-}
 // 获取租户 ID
 const getTenantId = async () => {
   if (loginData.tenantEnable === 'true') {
@@ -168,7 +145,7 @@ const getTenantByWebsite = async () => {
 }
 const loading = ref() // ElLoading.service 返回的实例
 // 登录
-const handleLogin = async (params: any) => {
+const handleLogin = async (_params: any) => {
   loginLoading.value = true
   try {
     await getTenantId()
@@ -177,7 +154,6 @@ const handleLogin = async (params: any) => {
       return
     }
     const loginDataLoginForm = { ...loginData.loginForm }
-    loginDataLoginForm.captchaVerification = params.captchaVerification
     const res = await LoginApi.login(loginDataLoginForm)
     if (!res) {
       return

@@ -15,11 +15,7 @@ const { getLoginState } = useLoginState()
 const getFormTitle = computed(() => {
   const titleObj = {
     [LoginStateEnum.RESET_PASSWORD]: t('sys.login.forgetFormTitle'),
-    [LoginStateEnum.LOGIN]: '管理端登录',
-    [LoginStateEnum.REGISTER]: t('sys.login.signUpFormTitle'),
-    [LoginStateEnum.MOBILE]: t('sys.login.mobileSignInFormTitle'),
-    [LoginStateEnum.QR_CODE]: t('sys.login.qrSignInFormTitle'),
-    [LoginStateEnum.SSO]: t('sys.login.ssoFormTitle')
+    [LoginStateEnum.LOGIN]: '管理端登录'
   }
   return titleObj[unref(getLoginState)]
 })
