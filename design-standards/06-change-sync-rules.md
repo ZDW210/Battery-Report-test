@@ -581,6 +581,14 @@
 ```
 ```text
 日期：2026-06-18
+变更内容：修复 Worker 报表默认月份和个人修改密码安全校验；报表接口未传 billMonth 时改用 Asia/Shanghai 本地月份，避免北京时间月初默认到上个月；/system/user/profile/update-password 后端补充统一密码强度校验，禁止绕过前端直接设置弱密码。
+影响范围：worker/src/index.ts，design-standards/04-api-standards.md，design-standards/06-change-sync-rules.md
+已同步标准：04-api-standards.md 补充报表默认月份必须使用业务本地时区、密码创建/重置/修改必须后端统一强校验。
+备注：前端 report-panel 已显式传 billMonth，本修复主要覆盖脚本或其他客户端直接调用 API 的场景。
+```
+
+```text
+日期：2026-06-18
 变更内容：统一报表面板电费明细的分时时段展示规则；电量型费用类别按尖、峰、平、谷、深谷固定展示，市场化购电费、上网环节线损费用、输配电量电费、系统运行费用、政府性基金及附加不再只输出本期有电量的时段。
 影响范围：worker/src/index.ts，design-standards/04-api-standards.md，design-standards/06-change-sync-rules.md
 已同步标准：04-api-standards.md 补充电量型费用类别固定分时时段展示要求。

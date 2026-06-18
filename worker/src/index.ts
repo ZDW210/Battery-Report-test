@@ -365,6 +365,8 @@ async function systemCompatApi(request: Request, url: URL, env: Env, path: strin
   if (path === '/system/user/profile/update-password' && request.method === 'PUT') {
     const body = await readJson(request)
     if (!(await verifyPassword(String(body.oldPassword || ''), String(user.password_hash || '')))) return fail('旧密码不正确', 400)
+    const passwordError = validatePlainPassword(body.newPassword, true)
+    if (passwordError) return fail(passwordError, 400)
     await env.DB.prepare('UPDATE system_user SET password_hash = ?, update_time = ? WHERE id = ?')
       .bind(await hashPassword(String(body.newPassword || '')), nowText(), user.id)
       .run()
@@ -1451,7 +1453,7 @@ async function reportApi(request: Request, url: URL, env: Env, path: string, acc
 }
 
 async function reportBill(url: URL, env: Env, accessScope: AccessScope) {
-  const billMonth = cleanText(url.searchParams.get('billMonth')) || nowText().slice(0, 7)
+  const billMonth = cleanText(url.searchParams.get('billMonth')) || localNowText().slice(0, 7)
   const monthStart = `${billMonth}-01 00:00:00`
   const monthEnd = endOfMonthText(billMonth)
   const scopeType = cleanText(url.searchParams.get('scopeType')) || 'all'

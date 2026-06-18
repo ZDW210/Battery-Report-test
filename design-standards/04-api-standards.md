@@ -295,6 +295,7 @@ POST /infra-api/energy/eiot/alarm
 - 数据面板、充放电任务和计费试算使用项目场站汇总时，必须能命中项目级计费规则，不允许只匹配设备级规则。
 ## 2026-06-18 安全补充标准：客户账号后端隔离
 
+- 所有密码创建、重置、修改接口必须在 Worker 后端调用统一密码强度校验，要求 8-32 位且同时包含字母和数字；前端校验只做交互提示，不能作为安全边界。
 - 客户老板账号的数据权限必须在 Worker 后端强制执行，不能只依赖菜单隐藏或前端路由隐藏。
 - `/admin-api/energy/customer/**`、`/admin-api/energy/project/**`、`/admin-api/energy/device/**`、`/admin-api/energy/vehicle/**`、`/admin-api/energy/account-event/**`、`/admin-api/energy/user-scope/**`、`/admin-api/energy/pricing-rule/**`、`/admin-api/energy/charge-session/**` 的列表、详情和精简列表接口必须按当前客户账号绑定的 `customer_id` 过滤。
 - 当业务记录未直接保存 `customer_id` 时，必须通过项目或设备反查客户归属，例如 `COALESCE(record.customer_id, project.customer_id, device.customer_id, device_project.customer_id)`，避免客户账号通过直接请求 ID 越权读取其他客户数据。
@@ -303,6 +304,7 @@ POST /infra-api/energy/eiot/alarm
 
 ## 2026-06-18 报表费用明细标准补充
 
+- 报表接口默认账单月份必须使用业务本地时区（Asia/Shanghai）的当前月份；不得使用 UTC 时间直接截取月份，避免北京时间月初 00:00-07:59 默认到上个月。
 - 报表面板“电费明细”的“零售交易电费”必须使用计费规则中的 `sharpPeakRate`、`peakRate`、`flatRate`、`valleyRate`、`deepValleyRate` 分时电价，不得用固定基础电价替代。
 - 同一报表范围内存在未匹配计费规则的场地或设备电量时，不得把这部分电量混入已匹配规则的费用行；电费明细主表只展示已匹配计费规则且可计费的费用明细，未匹配规则的场地或设备必须通过独立的“未匹配计费规则电量”数据返回并展示电量。
 - 费用明细的计费标准应按已匹配规则电量加权计算；没有本期电量但需要展示固定分时时段时，可展示当前范围内已匹配规则的平均标准。
