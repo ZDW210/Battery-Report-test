@@ -581,6 +581,14 @@
 ```
 ```text
 日期：2026-06-18
+变更内容：修复计费规则有效结束时间边界匹配问题；当 effectiveEnd 保存为日期当天 00:00:00 或仅日期格式时，规则匹配统一按当天 23:59:59 处理，确保客户级规则能继承到该客户下所有场地和设备，不会在结束日期当天被误判过期。
+影响范围：worker/src/index.ts，design-standards/04-api-standards.md，design-standards/06-change-sync-rules.md
+已同步标准：04-api-standards.md 补充 effectiveEnd 整日有效的匹配规则。
+备注：本次修复的是通用匹配原则，适用于后续新增客户、项目、设备的客户级/项目级/设备级计费规则。
+```
+
+```text
+日期：2026-06-18
 变更内容：按业务口径调整未匹配计费规则数据展示；报表接口新增 unmatchedPricingDetails，电费明细主表只展示已匹配规则并可正常计费的费用行，未匹配规则的场地或设备在独立“未匹配计费规则电量”板块展示项目、电表、仪表编号、分时时段、充电电量和放电电量。
 影响范围：worker/src/index.ts，admin-vue3/src/api/energy/report/index.ts，admin-vue3/src/views/energy/report-panel/index.vue，design-standards/04-api-standards.md，design-standards/06-change-sync-rules.md
 已同步标准：04-api-standards.md 明确未匹配规则电量不得混入电费明细主表，必须单独返回并展示。

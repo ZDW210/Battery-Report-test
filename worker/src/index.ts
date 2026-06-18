@@ -1229,7 +1229,7 @@ async function matchPricingRule(url: URL, env: Env, accessScope: AccessScope) {
      LEFT JOIN energy_device d ON d.id = r.device_id
      WHERE r.status = 0
        AND (? IS NULL OR r.effective_start IS NULL OR r.effective_start <= ?)
-       AND (? IS NULL OR r.effective_end IS NULL OR r.effective_end >= ?)
+        AND (? IS NULL OR r.effective_end IS NULL OR ${pricingRuleEffectiveEndSql()} >= ?)
        AND (
          r.device_id = ?
          OR (r.device_id IS NULL AND r.project_id = ?)
@@ -2297,7 +2297,7 @@ async function findPricingRuleForDevice(env: Env, deviceId: number, billingTime:
      FROM energy_pricing_rule r
      WHERE r.status = 0
        AND (? IS NULL OR r.effective_start IS NULL OR r.effective_start <= ?)
-       AND (? IS NULL OR r.effective_end IS NULL OR r.effective_end >= ?)
+        AND (? IS NULL OR r.effective_end IS NULL OR ${pricingRuleEffectiveEndSql()} >= ?)
        AND (
          r.device_id = ?
          OR (r.device_id IS NULL AND r.project_id = ?)
@@ -2628,6 +2628,14 @@ function userScopeJoins() {
 
 function pricingRuleCustomerColumn() {
   return 'COALESCE(r.customer_id, p.customer_id, d.customer_id, dp.customer_id)'
+}
+
+function pricingRuleEffectiveEndSql() {
+  return `CASE
+    WHEN length(r.effective_end) = 10 THEN r.effective_end || ' 23:59:59'
+    WHEN substr(r.effective_end, 12, 8) = '00:00:00' THEN substr(r.effective_end, 1, 10) || ' 23:59:59'
+    ELSE r.effective_end
+  END`
 }
 
 function chargeSessionCustomerColumn() {
