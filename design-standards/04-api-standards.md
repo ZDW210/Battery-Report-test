@@ -170,6 +170,7 @@ POST /infra-api/energy/eiot/alarm
 - EIOT 接入口必须保证存在租户上下文；本地未传 `tenant-id` 时默认使用租户 `1`，正式接入可通过 token/signature 映射租户后由后端设置租户上下文。
 - 实时电表数据入库必须保留 `gatewaySn`、`meterSn`、`meterNo`、`timestamp`、`source`、`state`、`Pa/Pb/Pc`、`Ua/Ub/Uc`、`Ia/Ib/Ic`、`P`、`PF`、`EPI`，管理端通过 `/admin-api/energy/telemetry/page` 查询展示。
 - 管理端实时采集数据统一使用 `energy:telemetry:query` 权限；分页列表使用 `/admin-api/energy/telemetry/page`，曲线和间隔明细原始点使用 `/admin-api/energy/telemetry/chart`，逐日极值使用 `/admin-api/energy/telemetry/daily-stat`。
+- 管理端 GET 请求日期范围数组必须按 `collectTime[0]=...&collectTime[1]=...`、`effectiveStart[0]=...&effectiveStart[1]=...` 这类方括号索引格式提交；前端 axios 参数序列化不得改成点号格式，否则 Worker `rangeParam` 无法解析。
 - 逐日极值接口除返回每日 `max`、`min`、`avg` 外，必须返回 `maxTime` 和 `minTime`，用于管理端多级表头展示最大值/最小值的发生时间；没有采集值的日期由前端按查询日期范围补齐显示 `--`。
 - 遥测图表接口只能开放当前真实入库字段：`pa/pb/pc/p`、`ua/ub/uc`、`ia/ib/ic`、`pf`、`epi`。未收到的线电压、频率、无功功率、视在功率、温度、开关量等字段不得作为真实指标返回。
 - 充放电结算如需放电电能，必须确认 EIOT 是否能提供反向电能 `EPE` 或额外 BMS/PCS 数据；仅有 `EPI` 时只能稳定计算正向有功电能变化。
@@ -226,6 +227,7 @@ POST /infra-api/energy/eiot/alarm
 - 管理端新增客户老板账号使用 `/admin-api/energy/customer-account/**`，权限标识为 `energy:customer-account:*`。
 - 创建客户老板账号时必须绑定一个 `energy_customer`，并同步创建后台登录用户、专属角色、用户角色关系和角色菜单权限。
 - 客户老板账号的“开放板块”只控制网页端菜单呈现和后端接口权限，默认只赋予所选板块的查询与导出类权限；新增、删除、设备控制、开始/结束任务等高风险操作不得默认开放。
+- 客户老板账号创建和重置密码接口不得使用硬编码默认密码；必须由管理员显式输入初始/临时密码，并在前后端校验 8-32 位且同时包含字母和数字。
 - 运营人员把账号密码发给客户老板登录网页端；客户老板登录后左侧菜单只能看到其角色已开放的板块。
 - 后续如需要客户老板只能看自己客户下的数据，必须在对应业务查询接口补充客户维度数据权限过滤，不能只依赖菜单隐藏。
 ## 2026-06-12 App/EIOT 安全收口补充
@@ -270,6 +272,10 @@ POST /infra-api/energy/eiot/alarm
 - 安科瑞 EIOT 标准中 HTTP 推送地址由接收方提供，要求 `method=POST`、`Content-Type=application/json`；本项目同时兼容历史设计入口 `POST /infra-api/energy/eiot/realtime` 和 `POST /infra-api/energy/eiot/alarm`。
 - EIOT 推送接口收到请求后必须立即返回 HTTP 200；R2 归档、D1 写入、设备状态刷新和同步日志写入必须放入后台任务处理，任何写入失败不得影响 EIOT 本次 HTTP 响应。
 - 实时报文必须遍历数组逐条写入 `energy_telemetry`，高频查询字段继续单独保存 `gatewaySn`、`meterSn`、`meterNo`、`timestamp`、`state`、`Pa/Pb/Pc/P`、`Ua/Ub/Uc`、`Ia/Ib/Ic`、`PF`、`EPI`，完整单条报文同步保存到 `dataJson`。
+- EIOT 入库的 `collect_time/occur_time/last_reading_time` 必须统一为业务本地时间文本（中国时区，格式 `YYYY-MM-DD HH:mm:ss`）：优先使用 EIOT `createTime/CreateTime`，缺失时用 Unix `timestamp` 转为中国本地时间，最后才使用当前中国本地时间兜底。分时计费、在线状态和报表筛选都以该业务本地时间口径为准，不得混用 UTC 文本。
+- EIOT 遥测可能乱序到达。每条遥测入库后必须按该设备重新计算当前采集点前后相邻两段 `energy_telemetry_interval`，不能只按“入库时查到的上一条”生成区间；旧报文晚到时也不得覆盖设备最新采集时间和最新遥测值。
+- EIOT 首次接收到未知电表并自动创建设备时，`device_type` 必须使用系统字典中已定义的电表类型值 `2`，不得写入前端无法翻译的临时枚举值。
+- 设备在线状态刷新不得在每次列表查询时全表更新；应限定在当前查询范围或当前页设备 ID 内，并依赖 EIOT 最新报文实时维护单台设备状态。
 - 报警报文必须遍历 `list[]` 写入 `energy_alarm`，保留 `alarmNo`、`code`、`level`、中文标题、中文内容、发生时间、`gatewaySn`、`meterSn`、`meterNo`、`timestamp` 和 `dataJson`。
 - 原始完整请求体必须归档到 R2，key 使用 `eiot/{type}/{timestamp}-{gatewaySn}-{uuid}.json`，D1 只保存 `payloadUrl`。
 - 设备匹配必须优先使用 `meterNo`，其次使用 `gatewaySn + meterSn`，不得把 `meterNo` 按下划线拆分。
@@ -279,6 +285,7 @@ POST /infra-api/energy/eiot/alarm
 - `GET /admin-api/energy/device/page` 和 `GET /admin-api/energy/device/simple-list` 必须关联 `energy_customer`、`energy_project` 返回 `customerName`、`projectName`。
 - 首页运行负载、设备管理列表、数据面板电表选择器都以设备接口返回的关联名称为准，不得只返回 `customerId/projectId` 后让前端二次查询。
 - 设备分页过滤继续支持 `deviceName`、`deviceNo`、`deviceType`、`gatewaySn`、`meterSn`、`meterNo`、`status`，简表接口至少支持 `customerId`、`projectId`、`status` 过滤。
+- 设备标准 CRUD 字段必须包含 `runMode`，允许管理端维护运行模式；运行模式仍可由 EIOT 最新报文或控制流程刷新，但不能阻止后台人工维护。
 
 ## 2026-06-16 计费规则范围匹配补充
 

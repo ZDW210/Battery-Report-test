@@ -100,6 +100,7 @@ current/design/sql/mysql
 # 2026-06-16 安科瑞 EIOT 入站数据字段补充
 
 - `energy_telemetry` 必须保留实时曲线高频字段，同时新增 `data_json` 和 `payload_url`，用于保存单条仪表报文 JSON 和 R2 原始请求体归档地址。
+- D1 初始迁移脚本必须直接包含运行时业务所需字段；计费规则表不得依赖页面首次访问时批量 `ALTER TABLE` 补齐核心字段，避免并发请求触发 D1 锁冲突。运行时 `ensureColumns` 只能作为旧库兼容兜底。
 - `energy_alarm` 必须支持 EIOT 报警来源字段：`gateway_sn`、`meter_sn`、`meter_no`、`timestamp`、`data_json`、`payload_url`。
 - D1 生产环境允许 Worker 在启动接收 EIOT 报文时执行幂等补列和 `CREATE INDEX IF NOT EXISTS`，但后续整理迁移脚本时必须把这些字段同步回正式 migrations。
 - 遥测和报警的原始完整请求体不得只存在 D1；必须归档到 R2，D1 仅保存结构化查询字段、单条报文摘要 JSON 和 R2 地址。

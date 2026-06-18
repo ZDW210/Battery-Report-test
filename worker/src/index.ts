@@ -87,7 +87,7 @@ const PRICING_RULE_FEE_COLUMNS: Record<string, string> = {
   other_fixed_fee: 'REAL NOT NULL DEFAULT 0'
 }
 const DEVICE_FIELDS = [
-  'deviceNo', 'deviceName', 'deviceType', 'gatewaySn', 'meterSn', 'meterNo', 'customerId', 'projectId',
+  'deviceNo', 'deviceName', 'deviceType', 'runMode', 'gatewaySn', 'meterSn', 'meterNo', 'customerId', 'projectId',
   'latitude', 'longitude', 'lastSoc', 'lastSoh', 'lastPower', 'lastVoltage', 'lastCurrent', 'lastTemp',
   'lastReadingTime', 'remark'
 ]
@@ -544,10 +544,12 @@ async function createCustomerAccount(request: Request, env: Env) {
   const body = await readJson(request)
   const username = String(body.username || '').trim()
   if (!username) return fail('账号不能为空', 400)
+  const passwordError = validatePlainPassword(body.password, true)
+  if (passwordError) return fail(passwordError, 400)
   const exists = await env.DB.prepare('SELECT id FROM system_user WHERE username = ?').bind(username).first()
   if (exists) return fail('账号已存在', 400)
 
-  const passwordHash = await hashPassword(String(body.password || '123456'))
+  const passwordHash = await hashPassword(String(body.password))
   const user = await env.DB.prepare(
     'INSERT INTO system_user(username, password_hash, nickname, mobile, status, user_type, create_time) VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id'
   )
@@ -582,16 +584,17 @@ async function updateCustomerAccount(request: Request, env: Env) {
 
 async function resetCustomerPassword(request: Request, env: Env) {
   const body = await readJson(request)
+  const passwordError = validatePlainPassword(body.password, true)
+  if (passwordError) return fail(passwordError, 400)
   const account = await env.DB.prepare('SELECT system_user_id FROM energy_customer_account WHERE id = ?').bind(body.id).first<AnyRecord>()
   if (!account) return fail('账号不存在', 404)
   await env.DB.prepare('UPDATE system_user SET password_hash = ? WHERE id = ?')
-    .bind(await hashPassword(String(body.password || '123456')), account.system_user_id)
+    .bind(await hashPassword(String(body.password)), account.system_user_id)
     .run()
   return ok(true)
 }
 
 async function deviceApi(request: Request, url: URL, env: Env, path: string, accessScope: AccessScope) {
-  if (request.method === 'GET') await refreshDeviceOnlineStatus(env)
   if (path === '/energy/device/page' && request.method === 'GET') return devicePage(url, env, accessScope)
   if (path === '/energy/device/simple-list' && request.method === 'GET') return deviceSimpleList(url, env, accessScope)
   if (path === '/energy/device/control' && request.method === 'POST') {
@@ -614,6 +617,7 @@ async function deviceApi(request: Request, url: URL, env: Env, path: string, acc
 }
 
 async function devicePage(url: URL, env: Env, accessScope: AccessScope) {
+  await refreshStaleOnlineDevices(env, accessScope)
   const pageNo = num(url.searchParams.get('pageNo'), 1)
   const pageSize = num(url.searchParams.get('pageSize'), 10)
   const where: string[] = []
@@ -652,10 +656,13 @@ async function devicePage(url: URL, env: Env, accessScope: AccessScope) {
     .bind(...args, pageSize, (pageNo - 1) * pageSize)
     .all<AnyRecord>()
 
-  return ok({ list: camelRows(rows.results), total })
+  const pageRows = rows.results || []
+  await refreshDeviceOnlineStatus(env, pageRows.map((row) => Number(row.id)).filter(Number.isFinite))
+  return ok({ list: camelRows(applyDeviceOnlineStatus(pageRows)), total })
 }
 
 async function deviceSimpleList(url: URL, env: Env, accessScope: AccessScope) {
+  await refreshStaleOnlineDevices(env, accessScope)
   const where: string[] = []
   const args: any[] = []
 
@@ -677,7 +684,9 @@ async function deviceSimpleList(url: URL, env: Env, accessScope: AccessScope) {
     .bind(...args)
     .all<AnyRecord>()
 
-  return ok(camelRows(rows.results))
+  const listRows = rows.results || []
+  await refreshDeviceOnlineStatus(env, listRows.map((row) => Number(row.id)).filter(Number.isFinite))
+  return ok(camelRows(applyDeviceOnlineStatus(listRows)))
 }
 
 async function alarmApi(request: Request, url: URL, env: Env, path: string, accessScope: AccessScope) {
@@ -1319,7 +1328,7 @@ function demandFeeDetailRow(rules: AnyRecord[], deviceDetails: AnyRecord[], tele
     amount += ruleDemand * price
   })
   const rate = demand > 0 ? amount / demand : averageNumber(enabled.map((rule) => numberOrNull(rule.max_demand_price)))
-  return { category: '容需量费用', component: '最大需量费用', period: '', billingEnergy: demand, rate, amount: round2(demand * rate), source: '遥测P按15分钟窗口聚合最大需量 × 单价' }
+  return { category: '容需量费用', component: '最大需量费用', period: '', billingEnergy: demand, rate, amount: round2(amount), source: '遥测P按15分钟窗口聚合最大需量 × 单价' }
 }
 
 function transformerFeeDetailRow(rules: AnyRecord[]) {
@@ -1464,6 +1473,7 @@ async function ensureEiotReceiveColumns(env: Env) {
     payload_url: 'TEXT'
   })
   await env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_energy_telemetry_gateway_meter_time ON energy_telemetry(gateway_sn, meter_sn, collect_time)').run()
+  await env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_energy_device_status_reading ON energy_device(status, last_reading_time)').run()
   await env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_energy_alarm_gateway_meter_time ON energy_alarm(gateway_sn, meter_sn, occur_time)').run()
   await env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_energy_interval_device_time ON energy_telemetry_interval(device_id, end_time)').run()
   await env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_energy_interval_meter_time ON energy_telemetry_interval(meter_no, end_time)').run()
@@ -1493,10 +1503,9 @@ async function saveEiotMeterPayload(env: Env, payload: unknown, payloadUrl: stri
     const meterSn = cleanText(row.meterSn)
     const meterNo = resolveMeterNo(row.meterNo, gatewaySn, meterSn)
     const timestamp = numberOrNull(row.timestamp)
-    const collectTime = cleanText(row.createTime || row.CreateTime) || textFromUnix(timestamp)
-    const device = await findOrCreateDeviceByEiot(env, { ...row, gatewaySn, meterSn, meterNo }, collectTime || nowText())
+    const collectTime = normalizeEiotCollectTime(row.createTime || row.CreateTime, timestamp)
+    const device = await findOrCreateDeviceByEiot(env, { ...row, gatewaySn, meterSn, meterNo }, collectTime)
     const deviceId = device?.id ? Number(device.id) : null
-    const previousTelemetry = deviceId ? await findPreviousTelemetry(env, deviceId, collectTime || nowText()) : null
 
     const createdTelemetry = await env.DB.prepare(
       `INSERT INTO energy_telemetry(
@@ -1544,9 +1553,9 @@ async function saveEiotMeterPayload(env: Env, payload: unknown, payloadUrl: stri
       .first<AnyRecord>()
 
     if (deviceId) {
-      await updateDeviceLatestFromTelemetry(env, deviceId, row, collectTime || nowText())
-      if (previousTelemetry && createdTelemetry?.id) {
-        await saveTelemetryInterval(env, previousTelemetry, { ...row, deviceId, gatewaySn, meterSn, meterNo, collectTime }, Number(createdTelemetry.id))
+      await updateDeviceLatestFromTelemetry(env, deviceId, row, collectTime)
+      if (createdTelemetry?.id) {
+        await rebuildTelemetryIntervalsAround(env, deviceId, Number(createdTelemetry.id))
       }
     }
   }
@@ -1561,7 +1570,7 @@ async function saveEiotAlarmPayload(env: Env, payload: unknown, payloadUrl: stri
   const meterSn = cleanText(body.meterSn)
   const meterNo = resolveMeterNo(body.meterNo, gatewaySn, meterSn)
   const timestamp = numberOrNull(body.timestamp)
-  const occurTime = cleanText(body.createTime || body.CreateTime) || textFromUnix(timestamp) || nowText()
+  const occurTime = normalizeEiotCollectTime(body.createTime || body.CreateTime, timestamp)
   const device = await findOrCreateDeviceByEiot(env, { ...body, gatewaySn, meterSn, meterNo }, occurTime)
   const deviceId = device?.id ? Number(device.id) : null
 
@@ -1617,8 +1626,50 @@ async function findPreviousTelemetry(env: Env, deviceId: number, collectTime: st
     .first<AnyRecord>()
 }
 
+async function findTelemetryById(env: Env, telemetryId: number) {
+  return env.DB.prepare('SELECT * FROM energy_telemetry WHERE id = ?')
+    .bind(telemetryId)
+    .first<AnyRecord>()
+}
+
+async function findNextTelemetry(env: Env, deviceId: number, collectTime: string) {
+  return env.DB.prepare(
+    `SELECT * FROM energy_telemetry
+     WHERE device_id = ? AND collect_time > ?
+     ORDER BY collect_time ASC, id ASC
+     LIMIT 1`
+  )
+    .bind(deviceId, collectTime)
+    .first<AnyRecord>()
+}
+
+async function rebuildTelemetryIntervalsAround(env: Env, deviceId: number, telemetryId: number) {
+  const current = await findTelemetryById(env, telemetryId)
+  const collectTime = cleanText(current?.collect_time)
+  if (!current || !collectTime) return
+
+  const previous = await findPreviousTelemetry(env, deviceId, collectTime)
+  const next = await findNextTelemetry(env, deviceId, collectTime)
+
+  await env.DB.prepare('DELETE FROM energy_telemetry_interval WHERE telemetry_id = ?')
+    .bind(telemetryId)
+    .run()
+  if (next?.id) {
+    await env.DB.prepare('DELETE FROM energy_telemetry_interval WHERE telemetry_id = ?')
+      .bind(next.id)
+      .run()
+  }
+
+  if (previous) {
+    await saveTelemetryInterval(env, previous, current, telemetryId)
+  }
+  if (next?.id) {
+    await saveTelemetryInterval(env, current, next, Number(next.id))
+  }
+}
+
 async function saveTelemetryInterval(env: Env, previous: AnyRecord, current: AnyRecord, telemetryId: number) {
-  const deviceId = Number(current.deviceId || previous.device_id || 0)
+  const deviceId = Number(current.deviceId || current.device_id || previous.device_id || 0)
   const startTime = cleanText(previous.collect_time || previous.collectTime)
   const endTime = cleanText(current.collectTime || current.collect_time)
   if (!deviceId || !startTime || !endTime) return
@@ -1638,12 +1689,12 @@ async function saveTelemetryInterval(env: Env, previous: AnyRecord, current: Any
       calc_method, consistency_status, create_time
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   )
-    .bind(
+      .bind(
       telemetryId,
       deviceId,
-      cleanText(current.gatewaySn || previous.gateway_sn) || null,
-      cleanText(current.meterSn || previous.meter_sn) || null,
-      cleanText(current.meterNo || previous.meter_no) || null,
+      cleanText(current.gatewaySn || current.gateway_sn || previous.gateway_sn) || null,
+      cleanText(current.meterSn || current.meter_sn || previous.meter_sn) || null,
+      cleanText(current.meterNo || current.meter_no || previous.meter_no) || null,
       startTime,
       endTime,
       intervalMinutes(startTime, endTime),
@@ -1763,7 +1814,7 @@ async function findOrCreateDeviceByEiot(env: Env, row: AnyRecord, collectTime: s
       `INSERT INTO energy_device(
         device_no, device_name, device_type, gateway_sn, meter_sn, meter_no, status,
         last_soc, last_power, last_voltage, last_current, last_reading_time, remark, create_time, update_time
-      ) VALUES (?, ?, 5, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, 2, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       RETURNING id, status`
     )
       .bind(
@@ -1777,7 +1828,7 @@ async function findOrCreateDeviceByEiot(env: Env, row: AnyRecord, collectTime: s
         numberOrNull(row.P),
         voltage,
         current,
-        collectTime || nowText(),
+        collectTime,
         remark,
         nowText(),
         nowText()
@@ -1791,8 +1842,11 @@ async function findOrCreateDeviceByEiot(env: Env, row: AnyRecord, collectTime: s
   }
 }
 
-async function refreshDeviceOnlineStatus(env: Env) {
+async function refreshDeviceOnlineStatus(env: Env, deviceIds: number[]) {
+  const ids = Array.from(new Set(deviceIds.filter(Number.isFinite)))
+  if (!ids.length) return
   const cutoff = deviceOnlineCutoffText()
+  const placeholders = ids.map(() => '?').join(',')
   await env.DB.prepare(
     `UPDATE energy_device
      SET status = CASE
@@ -1800,10 +1854,34 @@ async function refreshDeviceOnlineStatus(env: Env) {
        ELSE 1
      END,
      update_time = ?
-     WHERE status IN (0, 1)`
+     WHERE id IN (${placeholders}) AND status IN (0, 1)`
   )
-    .bind(cutoff, nowText())
+    .bind(cutoff, nowText(), ...ids)
     .run()
+}
+
+async function refreshStaleOnlineDevices(env: Env, accessScope: AccessScope) {
+  const where = ['status = 0', '(last_reading_time IS NULL OR last_reading_time < ?)']
+  const args: any[] = [deviceOnlineCutoffText()]
+  applyCustomerScope(where, args, 'COALESCE(customer_id, (SELECT customer_id FROM energy_project WHERE id = energy_device.project_id))', accessScope)
+  await env.DB.prepare(
+    `UPDATE energy_device
+     SET status = 1, update_time = ?
+     WHERE ${where.join(' AND ')}`
+  )
+    .bind(nowText(), ...args)
+    .run()
+}
+
+function applyDeviceOnlineStatus(rows: AnyRecord[]) {
+  const cutoff = deviceOnlineCutoffText()
+  return rows.map((row) => {
+    if (Number(row.status) !== 0 && Number(row.status) !== 1) return row
+    return {
+      ...row,
+      status: cleanText(row.last_reading_time) && cleanText(row.last_reading_time) >= cutoff ? 0 : 1
+    }
+  })
 }
 
 async function updateDeviceLatestFromTelemetry(env: Env, deviceId: number, row: AnyRecord, collectTime: string) {
@@ -1813,16 +1891,16 @@ async function updateDeviceLatestFromTelemetry(env: Env, deviceId: number, row: 
   const current = averageNumbers([row.Ia, row.Ib, row.Ic])
   await env.DB.prepare(
     `UPDATE energy_device
-     SET status = COALESCE(?, status),
-         last_soc = COALESCE(?, last_soc),
-         last_power = COALESCE(?, last_power),
-         last_voltage = COALESCE(?, last_voltage),
-         last_current = COALESCE(?, last_current),
-         last_reading_time = ?,
-         update_time = ?
-      WHERE id = ?`
+      SET status = COALESCE(?, status),
+          last_soc = COALESCE(?, last_soc),
+          last_power = COALESCE(?, last_power),
+          last_voltage = COALESCE(?, last_voltage),
+          last_current = COALESCE(?, last_current),
+          last_reading_time = ?,
+          update_time = ?
+      WHERE id = ? AND (last_reading_time IS NULL OR last_reading_time <= ?)`
   )
-    .bind(status, numberOrNull(row.SOC ?? row.soc), numberOrNull(row.P), voltage, current, collectTime, nowText(), deviceId)
+    .bind(status, numberOrNull(row.SOC ?? row.soc), numberOrNull(row.P), voltage, current, collectTime, nowText(), deviceId, collectTime)
     .run()
 }
 
@@ -2038,6 +2116,15 @@ async function verifyPassword(password: string, stored: string) {
   return password === stored
 }
 
+function validatePlainPassword(value: unknown, required = false) {
+  const password = String(value || '')
+  if (!password) return required ? '密码不能为空' : ''
+  if (password.length < 8 || password.length > 32) return '密码长度必须为8-32位'
+  if (!/[A-Za-z]/.test(password) || !/\d/.test(password)) return '密码必须同时包含字母和数字'
+  if (/^\d+$/.test(password) || /^[A-Za-z]+$/.test(password)) return '密码不能为纯数字或纯字母'
+  return ''
+}
+
 async function sha256Hex(value: string) {
   const data = new TextEncoder().encode(value)
   const hash = await crypto.subtle.digest('SHA-256', data)
@@ -2081,8 +2168,12 @@ function nowText() {
   return new Date().toISOString().replace('T', ' ').slice(0, 19)
 }
 
+function localNowText() {
+  return localTextFromMs(Date.now())
+}
+
 function deviceOnlineCutoffText() {
-  return new Date(Date.now() + 8 * 60 * 60 * 1000 - 5 * 60 * 1000).toISOString().replace('T', ' ').slice(0, 19)
+  return localTextFromMs(Date.now() - 5 * 60 * 1000)
 }
 
 function num(value: string | null, fallback: number) {
@@ -2158,10 +2249,15 @@ function parseTouPeriods(value: unknown): AnyRecord[] {
 }
 
 function resolveTouKey(timeMs: number, periods: AnyRecord[]): TouKey {
-  const date = new Date(timeMs)
-  const minute = date.getUTCHours() * 60 + date.getUTCMinutes()
+  const minute = localMinuteOfDay(timeMs)
   const matched = periods.find((period) => isMinuteInPeriod(minute, period))
   return (matched?.type as TouKey) || 'flat'
+}
+
+function localMinuteOfDay(timeMs: number) {
+  const dayMs = 24 * 60 * 60 * 1000
+  const minuteMs = ((timeMs % dayMs) + dayMs) % dayMs
+  return Math.floor(minuteMs / 60000)
 }
 
 function isMinuteInPeriod(minute: number, period: AnyRecord) {
@@ -2177,7 +2273,7 @@ function timeToMinute(value: string) {
 }
 
 function parseLocalDateTime(value: string) {
-  const match = cleanText(value).match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?/)
+  const match = normalizeDateTimeText(value).match(/^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})$/)
   if (!match) return 0
   const [, year, month, day, hour, minute, second] = match
   return Date.UTC(Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute), Number(second || 0))
@@ -2215,11 +2311,27 @@ function averageNumbers(values: unknown[]) {
   return numbers.reduce((sum, value) => sum + value, 0) / numbers.length
 }
 
-function textFromUnix(value: unknown) {
+function normalizeEiotCollectTime(value: unknown, timestamp?: unknown) {
+  return normalizeDateTimeText(value) || localTextFromUnix(timestamp) || localNowText()
+}
+
+function normalizeDateTimeText(value: unknown) {
+  const text = cleanText(value)
+  const match = text.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?/)
+  if (!match) return ''
+  const [, year, month, day, hour, minute, second] = match
+  return `${year}-${month}-${day} ${hour}:${minute}:${second || '00'}`
+}
+
+function localTextFromUnix(value: unknown) {
   const timestamp = numberOrNull(value)
   if (!timestamp) return ''
   const milliseconds = timestamp > 100000000000 ? timestamp : timestamp * 1000
-  return new Date(milliseconds).toISOString().replace('T', ' ').slice(0, 19)
+  return localTextFromMs(milliseconds)
+}
+
+function localTextFromMs(milliseconds: number) {
+  return new Date(milliseconds + 8 * 60 * 60 * 1000).toISOString().replace('T', ' ').slice(0, 19)
 }
 
 function endOfMonthText(monthValue: string) {

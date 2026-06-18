@@ -163,9 +163,9 @@ const openForm = (type: 'create' | 'update', id?: number) => {
 }
 
 const handleResetPassword = async (row: EnergyCustomerAccountVO) => {
-  const password = await message.prompt('请输入新的临时密码，4-16位', '重置密码', {
-    inputPattern: /^.{4,16}$/,
-    inputErrorMessage: '密码长度为4-16位'
+  const password = await message.prompt('请输入新的临时密码，8-32位且包含字母和数字', '重置密码', {
+    inputPattern: /^(?=.*[A-Za-z])(?=.*\d).{8,32}$/,
+    inputErrorMessage: '密码必须为8-32位，并同时包含字母和数字'
   })
   await EnergyCustomerAccountApi.resetPassword(row.id!, password.value)
   message.success('密码已重置')

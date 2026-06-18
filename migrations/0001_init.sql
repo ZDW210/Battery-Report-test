@@ -158,6 +158,24 @@ CREATE TABLE IF NOT EXISTS energy_pricing_rule (
   customer_id INTEGER,
   project_id INTEGER,
   device_id INTEGER,
+  electricity_category TEXT NOT NULL DEFAULT 'general_commercial',
+  pricing_mode TEXT NOT NULL DEFAULT 'two_part',
+  voltage_level TEXT NOT NULL DEFAULT 'under_1kv',
+  agent_purchase_price REAL NOT NULL DEFAULT 0,
+  line_loss_price REAL NOT NULL DEFAULT 0,
+  transmission_distribution_price REAL NOT NULL DEFAULT 0,
+  system_operation_fee REAL NOT NULL DEFAULT 0,
+  government_fund_surcharge REAL NOT NULL DEFAULT 0,
+  sharp_peak_rate REAL NOT NULL DEFAULT 0,
+  peak_rate REAL NOT NULL DEFAULT 0,
+  flat_rate REAL NOT NULL DEFAULT 0,
+  valley_rate REAL NOT NULL DEFAULT 0,
+  deep_valley_rate REAL NOT NULL DEFAULT 0,
+  tou_periods TEXT NOT NULL DEFAULT '[]',
+  capacity_billing_mode TEXT NOT NULL DEFAULT 'none',
+  max_demand_price REAL NOT NULL DEFAULT 0,
+  transformer_capacity_kva REAL NOT NULL DEFAULT 0,
+  transformer_capacity_price REAL NOT NULL DEFAULT 0,
   time_rate REAL,
   energy_rate REAL,
   site_fee REAL NOT NULL DEFAULT 0,
@@ -236,6 +254,7 @@ CREATE TABLE IF NOT EXISTS energy_telemetry (
 
 CREATE INDEX IF NOT EXISTS idx_energy_telemetry_device_time ON energy_telemetry(device_id, collect_time);
 CREATE INDEX IF NOT EXISTS idx_energy_telemetry_meter_time ON energy_telemetry(meter_no, collect_time);
+CREATE INDEX IF NOT EXISTS idx_energy_device_status_reading ON energy_device(status, last_reading_time);
 
 CREATE TABLE IF NOT EXISTS energy_alarm (
   id INTEGER PRIMARY KEY AUTOINCREMENT,

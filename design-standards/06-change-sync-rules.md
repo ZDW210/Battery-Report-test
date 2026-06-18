@@ -42,6 +42,30 @@
 
 ```text
 日期：2026-06-18
+变更内容：修复 Worker 版管理端参数、设备字段和部署文档问题；前端 axios GET 参数序列化改回方括号索引格式，保证 collectTime[0]/collectTime[1] 被 Worker 正确解析；设备 CRUD 字段补充 runMode；最大需量费用直接使用逐规则累加金额取整，避免二次 demand*rate 产生 0.01 误差；README R2 桶名更新为 wrangler.jsonc 当前配置的 baobiao-eiot-archive。
+影响范围：cloudflare-worker-package/admin-vue3/src/config/axios/service.ts，cloudflare-worker-package/worker/src/index.ts，cloudflare-worker-package/README.md，cloudflare-worker-package/design-standards/04-api-standards.md
+已同步标准：04-api-standards.md 补充前端范围参数序列化格式和设备 runMode CRUD 要求。
+备注：wrangler.jsonc 的实际 R2 bucket 配置未变，仅修正文档不一致。
+```
+
+```text
+日期：2026-06-18
+变更内容：修复 Worker 运行与部署隐患：EIOT 自动创建设备类型改为系统字典已有的电表类型 2；D1 初始迁移补齐计费规则费用和分时字段；客户老板账号创建/重置密码取消 123456 默认弱密码并增加前后端复杂度校验；设备在线状态刷新限定为当前设备列表结果，不再每次 GET 全表更新。
+影响范围：cloudflare-worker-package/worker/src/index.ts，cloudflare-worker-package/migrations/0001_init.sql，cloudflare-worker-package/admin-vue3/src/views/energy/customerAccount，cloudflare-worker-package/design-standards/03-database-standards.md，cloudflare-worker-package/design-standards/04-api-standards.md，cloudflare-worker-package/design-standards/05-frontend-standards.md
+已同步标准：03-database-standards.md 补充 D1 初始迁移字段完整性；04-api-standards.md 补充自动设备类型、在线状态刷新范围和客户密码规则；05-frontend-standards.md 补充客户账号密码表单规则。
+备注：运行时 ensureColumns 继续作为旧库兼容兜底，但新库不应依赖首次页面访问补列。
+```
+
+```text
+日期：2026-06-18
+变更内容：修复 Worker EIOT 时间口径和乱序遥测区间计算问题；EIOT 采集/告警时间统一为中国本地业务时间，分时计费按本地小时匹配尖峰平谷，在线状态 cutoff 使用本地时间；遥测入库后重算当前采集点前后相邻区间，避免同设备报文乱序导致分时电量遗漏；旧报文晚到时不再覆盖设备最新采集时间。
+影响范围：cloudflare-worker-package/worker/src/index.ts，cloudflare-worker-package/design-standards/04-api-standards.md
+已同步标准：04-api-standards.md 补充 EIOT 本地时间口径和乱序遥测区间重算规则。
+备注：系统 create_time/update_time 可继续使用 Worker UTC 文本，业务采集时间不得与其混用。
+```
+
+```text
+日期：2026-06-18
 变更内容：统一数据面板“用电量报表”和独立报表面板的账单数据来源；两处同名电量、购电成本、售电收入、放电等效电费和节约成本均以 /admin-api/energy/report/bill 返回值为准。Worker 账单接口改为按电表匹配计费规则后逐表计算分时购电成本、售电收入、最大需量费用和变压器容量费用，再汇总返回，避免按全范围平均电价导致场站/全部汇总失真。
 影响范围：cloudflare-worker-package/worker/src/index.ts，cloudflare-worker-package/admin-vue3/src/api/energy/report/index.ts，cloudflare-worker-package/admin-vue3/src/views/energy/telemetry/index.vue，cloudflare-worker-package/admin-vue3/src/views/energy/report-panel/index.vue，cloudflare-worker-package/design-standards/05-frontend-standards.md
 已同步标准：05-frontend-standards.md 补充数据面板与报表面板同名指标必须共用 /energy/report/bill 的硬约束。

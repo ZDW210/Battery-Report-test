@@ -7,7 +7,7 @@
 部署前必须先在 Cloudflare 创建：
 
 1. D1 数据库：`energy-storage-platform`
-2. R2 存储桶：`energy-storage-platform-files`
+2. R2 存储桶：`baobiao-eiot-archive`
 
 然后进入 D1 数据库详情页，把真实的 `database_id` 填入 `wrangler.jsonc`：
 

@@ -48,8 +48,8 @@
             <el-input
               v-model="formData.password"
               :disabled="formType === 'update'"
-              maxlength="16"
-              placeholder="新增时填写，后续可重置"
+              maxlength="32"
+              placeholder="8-32位，需同时包含字母和数字"
               show-password
             />
           </el-form-item>
@@ -191,8 +191,12 @@ const validatePassword = (value: string | undefined, callback: (error?: Error) =
     callback(new Error('首次密码不能为空'))
     return
   }
-  if (value.length < 4 || value.length > 16) {
-    callback(new Error('密码长度为4-16位'))
+  if (value.length < 8 || value.length > 32) {
+    callback(new Error('密码长度为8-32位'))
+    return
+  }
+  if (!/[A-Za-z]/.test(value) || !/\d/.test(value)) {
+    callback(new Error('密码必须同时包含字母和数字'))
     return
   }
   callback()
