@@ -42,6 +42,14 @@
 
 ```text
 日期：2026-06-18
+变更内容：清理前端仓库中的敏感默认值；admin-vue3/.env 不再提交默认登录账号密码、API 加密密钥和百度地图 Key；移除浏览器本地密码缓存用 RSA 私钥，登录记住信息只保留账号类非密码字段；.gitignore 补充 admin-vue3 本地环境覆盖文件。
+影响范围：cloudflare-worker-package/.gitignore，cloudflare-worker-package/admin-vue3/.env，cloudflare-worker-package/admin-vue3/src/utils/auth.ts，cloudflare-worker-package/admin-vue3/src/utils/jsencrypt.ts，cloudflare-worker-package/design-standards/05-frontend-standards.md，cloudflare-worker-package/design-standards/06-change-sync-rules.md
+已同步标准：05-frontend-standards.md 补充前端环境密钥提交限制、禁止内置密码解密私钥和禁止本地缓存密码要求。
+备注：已清理当前仓库文件中的敏感默认值；历史提交中已出现过的 Key 仍建议在对应平台轮换。
+```
+
+```text
+日期：2026-06-18
 变更内容：修复告警确认/关闭和充放电会话停止/结算的越权风险；告警 ack/close 复用客户归属过滤，客户账号不能通过普通告警 CRUD 写操作绕过权限；充放电会话增加 operator_user_id，开始任务写入当前用户，停止、结算、修改、删除前校验操作人、客户范围、状态和读数。
 影响范围：cloudflare-worker-package/worker/src/index.ts，cloudflare-worker-package/migrations/0001_init.sql，cloudflare-worker-package/design-standards/03-database-standards.md，cloudflare-worker-package/design-standards/04-api-standards.md，cloudflare-worker-package/design-standards/06-change-sync-rules.md
 已同步标准：03-database-standards.md 补充会话 operator_user_id 索引要求；04-api-standards.md 补充告警动作归属校验、会话操作人校验和读数后端校验要求。
