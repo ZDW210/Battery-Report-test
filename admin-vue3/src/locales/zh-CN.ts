@@ -138,6 +138,9 @@ export default {
     backLogin: '返回',
     getSmsCode: '获取验证码',
     btnMobile: '手机登录',
+    btnQRCode: '二维码登录',
+    qrcode: '扫描二维码登录',
+    btnRegister: '注册',
     SmsSendMsg: '验证码已发送',
     resetPassword: '重置密码',
     resetPasswordSuccess: '重置密码成功',
@@ -154,6 +157,7 @@ export default {
   },
   router: {
     login: '登录',
+    socialLogin: '社交登录',
     home: '首页',
     analysis: '分析页',
     workplace: '工作台'

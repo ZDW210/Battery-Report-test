@@ -1,5 +1,5 @@
 import request from '@/config/axios'
-import type { UserLoginVO } from './types'
+import type { RegisterVO, UserLoginVO } from './types'
 
 export interface SmsCodeVO {
   mobile: string
@@ -20,6 +20,11 @@ export const login = (data: UserLoginVO) => {
       isEncrypt: false
     }
   })
+}
+
+// 注册
+export const register = (data: RegisterVO) => {
+  return request.post({ url: '/system/auth/register', data })
 }
 
 // 使用租户名，获得租户编号
@@ -52,6 +57,24 @@ export const smsLogin = (data: SmsLoginVO) => {
   return request.post({ url: '/system/auth/sms-login', data })
 }
 
+// 社交快捷登录，使用 code 授权码
+export function socialLogin(type: string, code: string, state: string) {
+  return request.post({
+    url: '/system/auth/social-login',
+    data: {
+      type,
+      code,
+      state
+    }
+  })
+}
+
+// 社交授权的跳转
+export const socialAuthRedirect = (type: number, redirectUri: string) => {
+  return request.get({
+    url: '/system/auth/social-auth-redirect?type=' + type + '&redirectUri=' + redirectUri
+  })
+}
 // 获取验证图片以及 token
 export const getCode = (data: any) => {
   return request.postOriginal({ url: 'system/captcha/get', data })

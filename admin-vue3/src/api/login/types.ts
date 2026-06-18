@@ -1,6 +1,10 @@
 export type UserLoginVO = {
   username: string
   password: string
+  captchaVerification: string
+  socialType?: string
+  socialCode?: string
+  socialState?: string
 }
 
 export type TokenType = {
@@ -24,4 +28,11 @@ export type UserVO = {
   avatar: string
   loginIp: string
   loginDate: string
+}
+
+export type RegisterVO = {
+  tenantName: string
+  username: string
+  password: string
+  captchaVerification: string
 }

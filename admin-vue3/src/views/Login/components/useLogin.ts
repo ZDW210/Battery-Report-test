@@ -2,7 +2,11 @@ import { Ref } from 'vue'
 
 export enum LoginStateEnum {
   LOGIN,
-  RESET_PASSWORD
+  REGISTER,
+  RESET_PASSWORD,
+  MOBILE,
+  QR_CODE,
+  SSO
 }
 
 const currentState = ref(LoginStateEnum.LOGIN)

@@ -26,6 +26,8 @@
   },
   "dependencies": {
     "@element-plus/icons-vue": "2.3.2",
+    "@form-create/designer": "^3.4.0",
+    "@form-create/element-ui": "^3.2.38",
     "@iconify/vue": "^5.0.1",
     "@vueuse/core": "^14.3.0",
     "@wangeditor-next/editor": "^5.7.0",

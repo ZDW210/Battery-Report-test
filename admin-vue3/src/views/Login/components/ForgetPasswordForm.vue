@@ -37,6 +37,14 @@
           />
         </el-form-item>
       </el-col>
+      <Verify
+        ref="verify"
+        v-if="resetPasswordData.captchaEnable === 'true'"
+        :captchaType="captchaType"
+        :imgSize="{ width: '400px', height: '200px' }"
+        mode="pop"
+        @success="getSmsCode"
+      />
       <!-- 验证码 -->
       <el-col :span="24" class="px-10px">
         <el-form-item prop="code">
@@ -123,6 +131,7 @@ import { ElLoading } from 'element-plus'
 import * as authUtil from '@/utils/auth'
 import * as LoginApi from '@/api/login'
 defineOptions({ name: 'ForgetPasswordForm' })
+const verify = ref()
 
 const { t } = useI18n()
 const message = useMessage()
@@ -135,6 +144,7 @@ const iconCircleCheck = useIcon({ icon: 'ep:circle-check' })
 const { validForm } = useFormValid(formSmsResetPassword)
 const { handleBackLogin, getLoginState, setLoginState } = useLoginState()
 const getShow = computed(() => unref(getLoginState) === LoginStateEnum.RESET_PASSWORD)
+const captchaType = ref('blockPuzzle') // blockPuzzle 滑块 clickWord 点击文字 pictureWord 文字验证码
 
 const validatePass2 = (_rule, value, callback) => {
   if (value === '') {
@@ -164,6 +174,7 @@ const rules = {
 }
 
 const resetPasswordData = reactive({
+  captchaEnable: import.meta.env.VITE_APP_CAPTCHA_ENABLE,
   tenantEnable: import.meta.env.VITE_APP_TENANT_ENABLE,
   tenantName: '',
   username: '',
@@ -176,19 +187,29 @@ const resetPasswordData = reactive({
 const smsVO = reactive({
   tenantName: '',
   mobile: '',
+  captchaVerification: '',
   scene: 23
 })
 const mobileCodeTimer = ref(0)
 const redirect = ref<string>('')
 
+// 获取验证码
 const getCode = async () => {
-  await getSmsCode()
+  // 情况一，未开启：则直接发送验证码
+  if (resetPasswordData.captchaEnable === 'false') {
+    await getSmsCode({})
+  } else {
+    // 情况二，已开启：则展示验证码；只有完成验证码的情况，才进行发送验证码
+    // 弹出验证码
+    verify.value.show()
+  }
 }
 
-const getSmsCode = async () => {
+const getSmsCode = async (params) => {
   if (resetPasswordData.tenantEnable === 'true') {
     await getTenantId()
   }
+  smsVO.captchaVerification = params.captchaVerification
   smsVO.mobile = resetPasswordData.mobile
   await sendSmsCode(smsVO).then(async () => {
     message.success(t('login.SmsSendMsg'))

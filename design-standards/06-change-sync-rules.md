@@ -42,14 +42,6 @@
 
 ```text
 日期：2026-06-18
-变更内容：清理 Worker 版管理端未使用前端页面和大型组件；删除不可路由的 RuoYi 系统管理、运维监控、示例构建器页面，移除表单设计器、验证码、工作流、地图等未接入组件和相关 form-create 依赖；个人中心去掉 Worker 未支持的第三方社交绑定页签。
-影响范围：admin-vue3 页面源码、通用组件、登录/个人中心入口、构建依赖和前端包体积。
-已同步标准：05-frontend-standards.md 补充 Worker 版管理端只保留实际业务页面、不可路由页面必须删除、未接入大型组件不得保留的规则。
-备注：保留 dict/data、notify/my、infra/file 以及用户/部门选择器组件等仍被现有业务间接使用的通用能力。
-```
-
-```text
-日期：2026-06-18
 变更内容：进一步保护前端环境文件；将 admin-vue3/.env 加入 .gitignore，并从 Git 索引移除该文件，避免后续本地填写真实密钥后再次提交到仓库。
 影响范围：cloudflare-worker-package/.gitignore，cloudflare-worker-package/admin-vue3/.env，cloudflare-worker-package/design-standards/06-change-sync-rules.md
 已同步标准：沿用 05-frontend-standards.md 中“不在 Git 跟踪环境文件提交真实凭据”的要求。
