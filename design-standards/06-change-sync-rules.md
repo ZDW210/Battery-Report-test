@@ -581,6 +581,14 @@
 ```
 ```text
 日期：2026-06-18
+变更内容：统一报表面板电费明细的分时时段展示规则；电量型费用类别按尖、峰、平、谷、深谷固定展示，市场化购电费、上网环节线损费用、输配电量电费、系统运行费用、政府性基金及附加不再只输出本期有电量的时段。
+影响范围：worker/src/index.ts，design-standards/04-api-standards.md，design-standards/06-change-sync-rules.md
+已同步标准：04-api-standards.md 补充电量型费用类别固定分时时段展示要求。
+备注：本次修复的是报表展示原则，后续新增客户、场地或设备时同样适用。
+```
+
+```text
+日期：2026-06-18
 变更内容：修复计费规则有效结束时间边界匹配问题；当 effectiveEnd 保存为日期当天 00:00:00 或仅日期格式时，规则匹配统一按当天 23:59:59 处理，确保客户级规则能继承到该客户下所有场地和设备，不会在结束日期当天被误判过期。
 影响范围：worker/src/index.ts，design-standards/04-api-standards.md，design-standards/06-change-sync-rules.md
 已同步标准：04-api-standards.md 补充 effectiveEnd 整日有效的匹配规则。
