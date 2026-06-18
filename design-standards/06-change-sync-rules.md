@@ -42,6 +42,14 @@
 
 ```text
 日期：2026-06-18
+变更内容：修复 Worker session 过期清理和充放电会话外键引用校验；登录入口清理 expires_time 已过期的 system_session；/energy/charge-session/start 写入前校验 deviceId 和 pricingRuleId 存在，避免孤儿会话影响后续账单和计费规则匹配。
+影响范围：cloudflare-worker-package/worker/src/index.ts，cloudflare-worker-package/design-standards/04-api-standards.md，cloudflare-worker-package/design-standards/06-change-sync-rules.md
+已同步标准：04-api-standards.md 补充 session 过期清理触发点和充放电会话开始前引用校验要求。
+备注：本次不部署，仅提交 GitHub。
+```
+
+```text
+日期：2026-06-18
 变更内容：修复 Worker 版管理端参数、设备字段和部署文档问题；前端 axios GET 参数序列化改回方括号索引格式，保证 collectTime[0]/collectTime[1] 被 Worker 正确解析；设备 CRUD 字段补充 runMode；最大需量费用直接使用逐规则累加金额取整，避免二次 demand*rate 产生 0.01 误差；README R2 桶名更新为 wrangler.jsonc 当前配置的 baobiao-eiot-archive。
 影响范围：cloudflare-worker-package/admin-vue3/src/config/axios/service.ts，cloudflare-worker-package/worker/src/index.ts，cloudflare-worker-package/README.md，cloudflare-worker-package/design-standards/04-api-standards.md
 已同步标准：04-api-standards.md 补充前端范围参数序列化格式和设备 runMode CRUD 要求。

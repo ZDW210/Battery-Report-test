@@ -99,6 +99,7 @@ GET    /export
 - 仅允许后台令牌访问，权限标识使用 `energy:charge-session:*`。
 - 第一版必须支持分页、详情、开始、结束、结算；暂停/恢复待设备控制服务和状态流转补齐后再开放。
 - 开始会话必须校验设备没有进行中会话，并复用计费规则匹配服务；未命中生效计费规则时不得创建会话。
+- 开始会话写入 `energy_charge_session` 前必须校验 `deviceId` 对应设备存在、`pricingRuleId` 对应计费规则存在；不得写入孤儿设备或孤儿计费规则引用。
 - 开始会话必须校验设备已绑定客户；手动传入 `pricingRuleId` 时也必须确认该计费规则适用于当前设备、项目或客户，不能绕过自动匹配规则直接写入会话。
 - 结束会话必须计算总电量、时长、电量费用、时间费用和总费用；结束读数不能小于开始读数。
 - 当前 EIOT 真实实时字段只有 `EPI`，第一版会话使用 `start_energy/end_energy` 保存通用电能读数；不得把未收到的 `EPE` 或 BMS/PCS 放电电能字段伪装成真实结算依据。
@@ -301,6 +302,7 @@ POST /infra-api/energy/eiot/alarm
 - 当业务记录未直接保存 `customer_id` 时，必须通过项目或设备反查客户归属，例如 `COALESCE(record.customer_id, project.customer_id, device.customer_id, device_project.customer_id)`，避免客户账号通过直接请求 ID 越权读取其他客户数据。
 - 客户老板账号默认只允许查询、导出自己客户范围内的数据；客户资料、项目、设备、车辆、扫码刷卡记录、用户授权、计费规则、充放电任务、客户账号权限等维护类写操作必须由平台管理员执行。
 - `/admin-api/system/auth/refresh-token` 必须重新校验 `system_user.status = 0`；用户被禁用或删除后必须撤销对应 session，禁止继续签发新的 access token。
+- `system_session` 必须有过期清理触发点；登录、刷新或其他高频安全入口应执行 `expires_time < now` 的批量清理，避免过期 session 长期堆积。
 
 ## 2026-06-18 报表费用明细标准补充
 

@@ -241,6 +241,7 @@ async function handleAdminApi(request: Request, env: Env, ctx: ExecutionContext)
 }
 
 async function login(request: Request, env: Env) {
+  await cleanupExpiredSessions(env)
   const body = await readJson(request)
   const username = String(body.username || '')
   const password = String(body.password || '')
@@ -305,6 +306,10 @@ async function logout(request: Request, env: Env) {
   const accessToken = bearer(request)
   if (accessToken) await env.DB.prepare('DELETE FROM system_session WHERE access_token = ?').bind(accessToken).run()
   return ok(true)
+}
+
+async function cleanupExpiredSessions(env: Env) {
+  await env.DB.prepare('DELETE FROM system_session WHERE expires_time < ?').bind(Date.now()).run()
 }
 
 async function refreshToken(request: Request, env: Env) {
@@ -1310,12 +1315,24 @@ async function chargeSessionApi(request: Request, url: URL, env: Env, path: stri
   if (accessScope.isCustomerAccount) return customerAccountForbidden()
   if (path === '/energy/charge-session/start' && request.method === 'POST') {
     const body = await readJson(request)
+    const deviceId = positiveId(body.deviceId)
+    const pricingRuleId = positiveId(body.pricingRuleId)
+    if (body.deviceId && !deviceId) return fail('设备ID格式不正确', 400)
+    if (body.pricingRuleId && !pricingRuleId) return fail('计费规则ID格式不正确', 400)
+    if (deviceId) {
+      const device = await env.DB.prepare('SELECT id FROM energy_device WHERE id = ?').bind(deviceId).first<AnyRecord>()
+      if (!device) return fail('设备不存在', 400)
+    }
+    if (pricingRuleId) {
+      const rule = await env.DB.prepare('SELECT id FROM energy_pricing_rule WHERE id = ?').bind(pricingRuleId).first<AnyRecord>()
+      if (!rule) return fail('计费规则不存在', 400)
+    }
     const sessionNo = `CS${Date.now()}`
     const row = await env.DB.prepare(
       `INSERT INTO energy_charge_session(session_no, device_id, pricing_rule_id, session_type, start_time, status, create_time)
        VALUES (?, ?, ?, ?, ?, 1, ?) RETURNING id`
     )
-      .bind(sessionNo, body.deviceId || null, body.pricingRuleId || null, body.sessionType || 1, nowText(), nowText())
+      .bind(sessionNo, deviceId, pricingRuleId, body.sessionType || 1, nowText(), nowText())
       .first<AnyRecord>()
     return ok(Number(row?.id))
   }
