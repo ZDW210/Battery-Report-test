@@ -142,7 +142,6 @@
             <el-table-column label="期末累计电能" prop="endEpiText" align="right" width="140" />
             <el-table-column label="本期电量" prop="purchasedEnergyText" align="right" width="120" />
             <el-table-column label="放出电量" prop="dischargeEnergyText" align="right" width="120" />
-            <el-table-column label="购电单价" prop="buyRateText" align="right" width="110" />
             <el-table-column label="购电成本" prop="purchaseCostText" align="right" width="120" />
           </el-table>
         </section>
@@ -286,13 +285,11 @@ const deviceRows = computed(() => {
       endEpi: item.endEpi ?? null,
       purchasedEnergy: Number(item.chargeEnergy || 0),
       dischargeEnergy: Number(item.dischargeEnergy || 0),
-      buyRate: item.energyRate ?? null,
       purchaseCost: item.purchaseCost ?? null,
       startEpiText: item.startEpi === null || item.startEpi === undefined ? '--' : kwhText(item.startEpi),
       endEpiText: item.endEpi === null || item.endEpi === undefined ? '--' : kwhText(item.endEpi),
       purchasedEnergyText: kwhText(Number(item.chargeEnergy || 0)),
       dischargeEnergyText: kwhText(Number(item.dischargeEnergy || 0)),
-      buyRateText: item.energyRate === null || item.energyRate === undefined ? '待录入' : `${numText(item.energyRate)} 元/kWh`,
       purchaseCostText: item.purchaseCost === null || item.purchaseCost === undefined ? '待录入' : moneyText(item.purchaseCost)
     }))
   }
@@ -312,8 +309,15 @@ const deviceRows = computed(() => {
     const dischargeEnergy = epeDelta !== null ? epeDelta : sessionDischargeEnergy
     const purchasedEnergy = Number(epiDelta.toFixed(2))
     const rule = matchRuleForDevice(device)
-    const buyRate = numberOrNull(rule?.energyRate)
-    const purchaseCost = buyRate !== null ? Number((purchasedEnergy * buyRate).toFixed(2)) : null
+    const chargeTou = calcDeviceTouEnergy(device, ['epij', 'epif', 'epip', 'epig'])
+    const purchaseCost = rule && Object.values(chargeTou).some((value) => value > 0)
+      ? Number((
+          chargeTou.sharp * (numberOrNull(rule.sharpPeakRate) || 0)
+          + chargeTou.peak * (numberOrNull(rule.peakRate) || 0)
+          + chargeTou.flat * (numberOrNull(rule.flatRate) || 0)
+          + chargeTou.valley * (numberOrNull(rule.valleyRate) || 0)
+        ).toFixed(2))
+      : null
     return {
       deviceId: device.id,
       deviceName: device.deviceName || device.deviceNo || `电表 ${device.id}`,
@@ -323,13 +327,11 @@ const deviceRows = computed(() => {
       endEpi,
       purchasedEnergy,
       dischargeEnergy,
-      buyRate,
       purchaseCost,
       startEpiText: startEpi === null ? '--' : kwhText(startEpi),
       endEpiText: endEpi === null ? '--' : kwhText(endEpi),
       purchasedEnergyText: kwhText(purchasedEnergy),
       dischargeEnergyText: kwhText(dischargeEnergy),
-      buyRateText: buyRate === null ? '待录入' : `${numText(buyRate)} 元/kWh`,
       purchaseCostText: purchaseCost === null ? '待录入' : moneyText(purchaseCost)
     }
   })
@@ -631,7 +633,7 @@ const buildPrintableBillHtml = () => {
   const header = billHeaderInfo.value
   const detailRows = deviceRows.value
     .map(
-      (row) => `<tr><td>${escapeHtml(row.deviceName)}</td><td>${escapeHtml(row.projectName)}</td><td>${escapeHtml(row.meterNo)}</td><td>${row.startEpiText}</td><td>${row.endEpiText}</td><td>${row.purchasedEnergyText}</td><td>${row.buyRateText}</td><td>${row.purchaseCostText}</td></tr>`
+      (row) => `<tr><td>${escapeHtml(row.deviceName)}</td><td>${escapeHtml(row.projectName)}</td><td>${escapeHtml(row.meterNo)}</td><td>${row.startEpiText}</td><td>${row.endEpiText}</td><td>${row.purchasedEnergyText}</td><td>${row.purchaseCostText}</td></tr>`
     )
     .join('')
   const energyHtml = energyDetailRows.value
@@ -787,7 +789,7 @@ const buildPrintableBillHtml = () => {
   <div class="section-title">电量明细</div>
   <table><thead><tr><th>示数类型</th><th>上期示数</th><th>本期示数</th><th>倍率</th><th>抄见电量</th><th>变损</th><th>线损</th><th>加减</th><th>计费电量</th></tr></thead><tbody>${energyHtml}</tbody></table>
   <div class="section-title">电表用电明细</div>
-  <table><thead><tr><th>电表</th><th>项目场地</th><th>仪表编号</th><th>期初累计</th><th>期末累计</th><th>本期电量</th><th>购电单价</th><th>购电成本</th></tr></thead><tbody>${detailRows}</tbody></table>
+  <table><thead><tr><th>电表</th><th>项目场地</th><th>仪表编号</th><th>期初累计</th><th>期末累计</th><th>本期电量</th><th>购电成本</th></tr></thead><tbody>${detailRows}</tbody></table>
   <div class="section-title">电费明细</div>
   <table><thead><tr><th>费用类别</th><th>费用组成</th><th>分时时段</th><th>计费电量</th><th>计费标准</th><th>电费</th></tr></thead><tbody>${feeHtml}</tbody></table>
   <div class="note">备注：当前项目未接入电网账单中的上期示数、倍率、变损、线损、峰平谷真实分项、功率因数调整等字段，因此导出报表仅展示项目已接入和已录入的数据。</div>

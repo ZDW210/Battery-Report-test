@@ -1046,7 +1046,16 @@ async function buildReportDeviceDetail(env: Env, device: AnyRecord, rule: AnyRec
   const endEpe = numberOrNull(last?.epe)
   const chargeEnergy = startEpi !== null && endEpi !== null ? round4(Math.max(0, endEpi - startEpi)) : 0
   const dischargeEnergy = startEpe !== null && endEpe !== null ? round4(Math.max(0, endEpe - startEpe)) : 0
-  const energyRate = numberOrNull(rule?.energy_rate)
+  let chargeTou = await reportDeviceChargeTouEnergy(env, Number(device.id), start, end)
+  if (sumTouEnergy(chargeTou) <= 0 && chargeEnergy > 0) {
+    chargeTou = splitEnergyByPricingTime(
+      cleanText(first?.collect_time) || start,
+      cleanText(last?.collect_time) || end,
+      chargeEnergy,
+      parseTouPeriods(rule?.tou_periods)
+    )
+  }
+  const hasChargeTou = sumTouEnergy(chargeTou) > 0
   return {
     deviceId: device.id,
     deviceName: device.device_name || device.device_no || `电表 ${device.id}`,
@@ -1062,10 +1071,25 @@ async function buildReportDeviceDetail(env: Env, device: AnyRecord, rule: AnyRec
     endEpe,
     chargeEnergy,
     dischargeEnergy,
-    energyRate,
-    purchaseCost: energyRate === null ? null : round2(chargeEnergy * energyRate),
+    purchaseCost: rule && hasChargeTou ? sumByTou(chargeTou, averageTouRates([rule])) : null,
     pricingRuleId: rule?.id || null
   }
+}
+
+async function reportDeviceChargeTouEnergy(env: Env, deviceId: number, start: string, end: string) {
+  const intervals = await reportIntervals(env, [deviceId], start, end)
+  const intervalSummary = summarizeIntervals(intervals)
+  if (sumTouEnergy(intervalSummary.charge) > 0) return intervalSummary.charge
+
+  const first = await firstTelemetryInRange(env, deviceId, start, end)
+  const last = await lastTelemetryInRange(env, deviceId, start, end)
+  return roundTouEnergy({
+    sharpPeak: positiveEnergyDelta(first || {}, last || {}, 'epij'),
+    peak: positiveEnergyDelta(first || {}, last || {}, 'epif'),
+    flat: positiveEnergyDelta(first || {}, last || {}, 'epip'),
+    valley: positiveEnergyDelta(first || {}, last || {}, 'epig'),
+    deepValley: 0
+  })
 }
 
 async function firstTelemetryInRange(env: Env, deviceId: number, start: string, end: string) {

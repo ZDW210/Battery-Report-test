@@ -34,7 +34,6 @@ export interface EnergyReportDeviceDetailVO {
   endEpe?: number | null
   chargeEnergy: number
   dischargeEnergy: number
-  energyRate?: number | null
   purchaseCost?: number | null
   pricingRuleId?: number | null
 }
