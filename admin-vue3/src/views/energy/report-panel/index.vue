@@ -162,7 +162,6 @@
             <el-table-column label="线损" prop="lineLossText" align="right" width="90" />
             <el-table-column label="加减" prop="adjustmentText" align="right" width="90" />
             <el-table-column label="计费电量" prop="billingEnergyText" align="right" width="120" />
-            <el-table-column label="数据来源" prop="sourceField" min-width="120" />
           </el-table>
         </section>
 
@@ -178,7 +177,6 @@
             <el-table-column label="计费电量" prop="billingEnergyText" align="right" width="130" />
             <el-table-column label="计费标准" prop="rateText" align="right" width="130" />
             <el-table-column label="电费" prop="amountText" align="right" width="130" />
-            <el-table-column label="参数来源" prop="source" min-width="220" />
           </el-table>
         </section>
       </div>
@@ -637,10 +635,10 @@ const buildPrintableBillHtml = () => {
     )
     .join('')
   const energyHtml = energyDetailRows.value
-    .map((row) => `<tr><td>${escapeHtml(row.label)}</td><td>${escapeHtml(row.startReadingText)}</td><td>${escapeHtml(row.endReadingText)}</td><td>${escapeHtml(row.multiplierText)}</td><td>${escapeHtml(row.copiedEnergyText)}</td><td>${escapeHtml(row.transformerLossText)}</td><td>${escapeHtml(row.lineLossText)}</td><td>${escapeHtml(row.adjustmentText)}</td><td>${escapeHtml(row.billingEnergyText)}</td><td>${escapeHtml(row.sourceField)}</td></tr>`)
+    .map((row) => `<tr><td>${escapeHtml(row.label)}</td><td>${escapeHtml(row.startReadingText)}</td><td>${escapeHtml(row.endReadingText)}</td><td>${escapeHtml(row.multiplierText)}</td><td>${escapeHtml(row.copiedEnergyText)}</td><td>${escapeHtml(row.transformerLossText)}</td><td>${escapeHtml(row.lineLossText)}</td><td>${escapeHtml(row.adjustmentText)}</td><td>${escapeHtml(row.billingEnergyText)}</td></tr>`)
     .join('')
   const feeHtml = feeDetailRows.value
-    .map((row) => `<tr class="${row.category === '合计' ? 'total' : row.source === '分组标题' ? 'group' : ''}"><td>${escapeHtml(row.category)}</td><td>${escapeHtml(row.component)}</td><td>${escapeHtml(row.period)}</td><td>${escapeHtml(row.billingEnergyText)}</td><td>${escapeHtml(row.rateText)}</td><td>${escapeHtml(row.amountText)}</td><td>${escapeHtml(row.source)}</td></tr>`)
+    .map((row) => `<tr class="${row.category === '合计' ? 'total' : row.source === '分组标题' ? 'group' : ''}"><td>${escapeHtml(row.category)}</td><td>${escapeHtml(row.component)}</td><td>${escapeHtml(row.period)}</td><td>${escapeHtml(row.billingEnergyText)}</td><td>${escapeHtml(row.rateText)}</td><td>${escapeHtml(row.amountText)}</td></tr>`)
     .join('')
   const overviewHtml = billOverviewRows.value
     .map((row) => `<tr class="${row.category === '合计' ? 'total' : ''}"><td>${escapeHtml(row.category)}</td><td>${escapeHtml(row.quantity)}</td><td>${escapeHtml(row.rate)}</td><td>${escapeHtml(row.amount)}</td></tr>`)
@@ -776,11 +774,11 @@ const buildPrintableBillHtml = () => {
     </section>
   </div>
   <div class="section-title">电量明细</div>
-  <table><thead><tr><th>示数类型</th><th>上期示数</th><th>本期示数</th><th>倍率</th><th>抄见电量</th><th>变损</th><th>线损</th><th>加减</th><th>计费电量</th><th>数据来源</th></tr></thead><tbody>${energyHtml}</tbody></table>
+  <table><thead><tr><th>示数类型</th><th>上期示数</th><th>本期示数</th><th>倍率</th><th>抄见电量</th><th>变损</th><th>线损</th><th>加减</th><th>计费电量</th></tr></thead><tbody>${energyHtml}</tbody></table>
   <div class="section-title">电表用电明细</div>
   <table><thead><tr><th>电表</th><th>项目场地</th><th>仪表编号</th><th>期初累计</th><th>期末累计</th><th>本期电量</th><th>购电单价</th><th>购电成本</th></tr></thead><tbody>${detailRows}</tbody></table>
   <div class="section-title">电费明细</div>
-  <table><thead><tr><th>费用类别</th><th>费用组成</th><th>分时时段</th><th>计费电量</th><th>计费标准</th><th>电费</th><th>参数来源</th></tr></thead><tbody>${feeHtml}</tbody></table>
+  <table><thead><tr><th>费用类别</th><th>费用组成</th><th>分时时段</th><th>计费电量</th><th>计费标准</th><th>电费</th></tr></thead><tbody>${feeHtml}</tbody></table>
   <div class="note">备注：当前项目未接入电网账单中的上期示数、倍率、变损、线损、峰平谷真实分项、功率因数调整等字段，因此导出报表仅展示项目已接入和已录入的数据。</div>
 </body>
 </html>`

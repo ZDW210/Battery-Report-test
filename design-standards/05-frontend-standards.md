@@ -202,8 +202,8 @@ AI、BPM、CRM、ERP、IoT、商城、会员、公众号、支付、报表、WMS
 
 - 报表面板的账单数据必须统一调用 `/admin-api/energy/report/bill`，前端只负责展示接口返回结果，不得再自行拼凑最终费用口径。
 - `/energy/report/bill` 必须按 `scopeType=all|project|device`、`projectId`、`deviceId`、`billMonth` 返回当前账号有权查看的电表范围；客户账号权限必须在后端过滤，不能只依赖前端菜单隐藏。
-- 报表接口返回的 `energyDetails` 对应导出 PDF 的“电量明细”，字段映射为：`label=示数类型`、`startReading=上期示数`、`endReading=本期示数`、`multiplier=倍率`、`copiedEnergy=抄见电量`、`transformerLoss=变损`、`lineLoss=线损`、`adjustment=加减`、`billingEnergy=计费电量`、`sourceField=数据来源`。
-- 报表接口返回的 `feeDetails` 对应页面和 PDF 的“电费明细”，字段映射为：`category=费用类别`、`component=费用组成`、`period=分时时段`、`billingEnergy=计费电量/需量/容量`、`rate=计费标准`、`amount=电费`、`source=参数来源`。
+- 报表接口返回的 `energyDetails` 对应导出 PDF 的“电量明细”，字段映射为：`label=示数类型`、`startReading=上期示数`、`endReading=本期示数`、`multiplier=倍率`、`copiedEnergy=抄见电量`、`transformerLoss=变损`、`lineLoss=线损`、`adjustment=加减`、`billingEnergy=计费电量`。接口内部可保留 `sourceField` 便于排查，但页面和导出 PDF 不展示“数据来源”列。
+- 报表接口返回的 `feeDetails` 对应页面和 PDF 的“电费明细”，字段映射为：`category=费用类别`、`component=费用组成`、`period=分时时段`、`billingEnergy=计费电量/需量/容量`、`rate=计费标准`、`amount=电费`。接口内部可保留 `source` 便于排查，但页面和导出 PDF 不展示“参数来源”列。
 - 电量明细优先使用 EIOT 已接收字段：总充入电量用 `EPI` 首末差，分时充入电量用 `EPIJ/EPIF/EPIP/EPIG` 差值；总放出电量用 `EPE` 首末差，分时放出电量用 `EPEJ/EPEF/EPEP/EPEG` 差值。分时字段缺失时才按计费规则时段兜底归类。
 - 电费明细中的购电费用、线损费用、输配电量电费、系统运行费用、政府性基金及附加必须使用当前命中的计费规则单价乘以对应计费电量。售电收入必须使用 `EPEJ × 尖电价 + EPEF × 峰电价 + EPEP × 平电价 + EPEG × 谷电价`，并作为独立明细展示。
 - 最大需量费用必须由接口按所选范围内遥测 `P` 聚合后取约 15 分钟窗口平均最大值计算：`最大需量费用 = 最大需量(kW) × 最大需量单价(元/kW·月)`。变压器容量费用按计费规则维护的容量计算：`变压器容量费用 = 变压器容量(kVA) × 容量单价(元/kVA·月)`。
