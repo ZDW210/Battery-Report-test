@@ -178,6 +178,22 @@
             <el-table-column label="电费" prop="amountText" align="right" width="130" />
           </el-table>
         </section>
+
+        <section v-if="unmatchedPricingRows.length" class="report-section">
+          <div class="section-title">
+            <h3>未匹配计费规则电量</h3>
+            <span>以下场地或电表存在电量，但没有匹配到计费规则，暂不进入电费明细计算</span>
+          </div>
+          <el-table :data="unmatchedPricingRows" border size="small" show-overflow-tooltip>
+            <el-table-column label="项目场地" prop="projectName" min-width="150" />
+            <el-table-column label="电表" prop="deviceName" min-width="160" />
+            <el-table-column label="仪表编号" prop="meterNo" min-width="160" />
+            <el-table-column label="分时时段" prop="period" align="center" width="100" />
+            <el-table-column label="充电电量" prop="chargeEnergyText" align="right" width="130" />
+            <el-table-column label="放电电量" prop="dischargeEnergyText" align="right" width="130" />
+            <el-table-column label="原因" prop="reason" min-width="140" />
+          </el-table>
+        </section>
       </div>
     </ContentWrap>
   </div>
@@ -491,6 +507,15 @@ const feeDetailRows = computed(() => {
     source: '前端兼容测算'
   }))
 })
+const unmatchedPricingRows = computed(() => (billReport.value?.unmatchedPricingDetails || []).map((row) => ({
+  projectName: row.projectName || '--',
+  deviceName: row.deviceName || row.deviceNo || '--',
+  meterNo: row.meterNo || '--',
+  period: row.period || '--',
+  chargeEnergyText: kwhText(Number(row.chargeEnergy || 0)),
+  dischargeEnergyText: kwhText(Number(row.dischargeEnergy || 0)),
+  reason: row.reason || '未匹配计费规则'
+})))
 
 const feeRows = computed(() => [
   ...(billReport.value?.feeDetails?.length
@@ -648,6 +673,12 @@ const buildPrintableBillHtml = () => {
   const feeHtml = feeDetailRows.value
     .map((row) => `<tr class="${row.category === '合计' ? 'total' : row.source === '分组标题' ? 'group' : ''}"><td>${escapeHtml(row.category)}</td><td>${escapeHtml(row.component)}</td><td>${escapeHtml(row.period)}</td><td>${escapeHtml(row.billingEnergyText)}</td><td>${escapeHtml(row.rateText)}</td><td>${escapeHtml(row.amountText)}</td></tr>`)
     .join('')
+  const unmatchedHtml = unmatchedPricingRows.value
+    .map((row) => `<tr><td>${escapeHtml(row.projectName)}</td><td>${escapeHtml(row.deviceName)}</td><td>${escapeHtml(row.meterNo)}</td><td>${escapeHtml(row.period)}</td><td>${escapeHtml(row.chargeEnergyText)}</td><td>${escapeHtml(row.dischargeEnergyText)}</td><td>${escapeHtml(row.reason)}</td></tr>`)
+    .join('')
+  const unmatchedSectionHtml = unmatchedHtml
+    ? `<div class="section-title">未匹配计费规则电量</div><table><thead><tr><th>项目场地</th><th>电表</th><th>仪表编号</th><th>分时时段</th><th>充电电量</th><th>放电电量</th><th>原因</th></tr></thead><tbody>${unmatchedHtml}</tbody></table>`
+    : ''
   const overviewHtml = billOverviewRows.value
     .map((row) => `<tr class="${row.category === '合计' ? 'total' : ''}"><td>${escapeHtml(row.category)}</td><td>${escapeHtml(row.quantity)}</td><td>${escapeHtml(row.rate)}</td><td>${escapeHtml(row.amount)}</td></tr>`)
     .join('')
@@ -798,6 +829,7 @@ const buildPrintableBillHtml = () => {
   <table><thead><tr><th>电表</th><th>项目场地</th><th>仪表编号</th><th>期初累计</th><th>期末累计</th><th>本期电量</th><th>购电成本</th></tr></thead><tbody>${detailRows}</tbody></table>
   <div class="section-title">电费明细</div>
   <table><thead><tr><th>费用类别</th><th>费用组成</th><th>分时时段</th><th>计费电量</th><th>计费标准</th><th>电费</th></tr></thead><tbody>${feeHtml}</tbody></table>
+  ${unmatchedSectionHtml}
   <div class="note">备注：当前项目未接入电网账单中的上期示数、倍率、变损、线损、峰平谷真实分项、功率因数调整等字段，因此导出报表仅展示项目已接入和已录入的数据。</div>
 </body>
 </html>`

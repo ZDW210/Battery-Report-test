@@ -1474,6 +1474,7 @@ async function reportBill(url: URL, env: Env, accessScope: AccessScope) {
   const totalDischargeEnergy = round4(sumTouEnergy(dischargeEnergy) || deviceDetails.reduce((sum, item) => sum + item.dischargeEnergy, 0))
   const ruleRows = uniqueRules(Array.from(rulesByDevice.values()).filter(Boolean) as AnyRecord[])
   const feeDetails = buildReportFeeDetails(deviceDetails, ruleRows, telemetryRows)
+  const unmatchedPricingDetails = buildUnmatchedPricingDetails(deviceDetails)
   const totalFee = reportBillingFeeTotal(feeDetails)
   const purchaseCosts = deviceDetails.map((item) => numberOrNull(item.purchaseCost))
   const chargeCost = purchaseCosts.some((value) => value !== null)
@@ -1502,6 +1503,7 @@ async function reportBill(url: URL, env: Env, accessScope: AccessScope) {
     deviceDetails,
     energyDetails: buildReportEnergyDetails(deviceDetails, chargeEnergy, dischargeEnergy),
     feeDetails,
+    unmatchedPricingDetails,
     analysis: {
       chargeTou: chargeEnergy,
       dischargeTou: dischargeEnergy,
@@ -1746,6 +1748,37 @@ function buildReportFeeDetails(deviceDetails: AnyRecord[], rules: AnyRecord[], t
   return rows
 }
 
+function buildUnmatchedPricingDetails(deviceDetails: AnyRecord[]) {
+  const periods: Array<{ key: TouKey; label: string }> = [
+    { key: 'sharpPeak', label: '尖' },
+    { key: 'peak', label: '峰' },
+    { key: 'flat', label: '平' },
+    { key: 'valley', label: '谷' },
+    { key: 'deepValley', label: '深谷' }
+  ]
+  return deviceDetails
+    .filter((detail) => !detail.pricingRuleId)
+    .flatMap((detail) => periods.map((period) => {
+      const chargeEnergy = Number(detail?.chargeTou?.[period.key] || 0)
+      const dischargeEnergy = Number(detail?.dischargeTou?.[period.key] || 0)
+      return {
+        customerId: detail.customerId || null,
+        customerName: detail.customerName || '',
+        projectId: detail.projectId || null,
+        projectName: detail.projectName || '',
+        deviceId: detail.deviceId || null,
+        deviceName: detail.deviceName || '',
+        deviceNo: detail.deviceNo || '',
+        meterNo: detail.meterNo || '',
+        period: period.label,
+        chargeEnergy: round4(chargeEnergy),
+        dischargeEnergy: round4(dischargeEnergy),
+        reason: '未匹配计费规则'
+      }
+    }))
+    .filter((row) => Number(row.chargeEnergy || 0) > 0 || Number(row.dischargeEnergy || 0) > 0)
+}
+
 function feeDetailHeader(category: string) {
   return { category, component: '', period: '', billingEnergy: null, rate: null, amount: null, source: '分组标题' }
 }
@@ -1770,16 +1803,12 @@ function touFeeRowsByDevice(
   return periods
     .flatMap((period) => {
       let matchedEnergy = 0
-      let unmatchedEnergy = 0
       let amount = 0
       const fallbackRates: Array<number | null> = []
       deviceDetails.forEach((detail) => {
         const rule = findRuleById(rules, detail.pricingRuleId)
         const energy = Number(detail?.[energyField]?.[period.key] || 0)
-        if (!rule) {
-          unmatchedEnergy += energy
-          return
-        }
+        if (!rule) return
         const rate = rateGetter(rule, period.key)
         matchedEnergy += energy
         amount += energy * rate * sign
@@ -1795,15 +1824,6 @@ function touFeeRowsByDevice(
         rate: round8(displayRate),
         amount: round2(amount),
         source: '计费规则 × EIOT分时电量'
-      })
-      if (unmatchedEnergy > 0) rows.push({
-        category,
-        component: `${component}（未匹配计费规则）`,
-        period: period.label,
-        billingEnergy: round4(unmatchedEnergy),
-        rate: null,
-        amount: 0,
-        source: '未匹配计费规则，未计入费用'
       })
       return rows
     })

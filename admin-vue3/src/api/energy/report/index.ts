@@ -66,6 +66,21 @@ export interface EnergyReportFeeDetailVO {
   source?: string
 }
 
+export interface EnergyReportUnmatchedPricingVO {
+  customerId?: number | null
+  customerName?: string
+  projectId?: number | null
+  projectName?: string
+  deviceId?: number | null
+  deviceName?: string
+  deviceNo?: string
+  meterNo?: string
+  period?: string
+  chargeEnergy?: number
+  dischargeEnergy?: number
+  reason?: string
+}
+
 export interface EnergyReportBillVO {
   billMonth: string
   billRange: { start: string; end: string }
@@ -76,6 +91,7 @@ export interface EnergyReportBillVO {
   deviceDetails: EnergyReportDeviceDetailVO[]
   energyDetails: EnergyReportEnergyDetailVO[]
   feeDetails: EnergyReportFeeDetailVO[]
+  unmatchedPricingDetails?: EnergyReportUnmatchedPricingVO[]
   analysis: {
     chargeTou: EnergyReportTouVO
     dischargeTou: EnergyReportTouVO

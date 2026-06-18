@@ -581,7 +581,23 @@
 ```
 ```text
 日期：2026-06-18
-变更内容：修正报表面板电费明细计费标准展示；零售交易电费改为使用计费规则的尖/峰/平/谷/深谷分时电价，未匹配计费规则的设备电量单独列为“未匹配计费规则”，不再混入费用行按 0 单价冲低平、谷等分时时段计费标准。
+变更内容：按业务口径调整未匹配计费规则数据展示；报表接口新增 unmatchedPricingDetails，电费明细主表只展示已匹配规则并可正常计费的费用行，未匹配规则的场地或设备在独立“未匹配计费规则电量”板块展示项目、电表、仪表编号、分时时段、充电电量和放电电量。
+影响范围：worker/src/index.ts，admin-vue3/src/api/energy/report/index.ts，admin-vue3/src/views/energy/report-panel/index.vue，design-standards/04-api-standards.md，design-standards/06-change-sync-rules.md
+已同步标准：04-api-standards.md 明确未匹配规则电量不得混入电费明细主表，必须单独返回并展示。
+备注：该板块用于提示运营人员给对应场地或设备补计费规则。
+```
+
+```text
+日期：2026-06-18
+变更内容：调整报表面板电费明细未匹配计费规则的展示方式；电费明细主表只展示已匹配计费规则且可计费的费用行，未匹配规则的设备电量不再输出为同表重复行，也不会按 0 单价混入正常计费标准。
+影响范围：worker/src/index.ts，design-standards/04-api-standards.md，design-standards/06-change-sync-rules.md
+已同步标准：04-api-standards.md 明确未匹配计费规则电量不得混入电费明细主表，也不得生成重复的未匹配规则行。
+备注：后续如需要展示未匹配设备，应单独做“数据完整性提示/待配置设备”板块，而不是放入电费明细。
+```
+
+```text
+日期：2026-06-18
+变更内容：修正报表面板电费明细计费标准展示；零售交易电费改为使用计费规则的尖/峰/平/谷/深谷分时电价，未匹配计费规则的设备电量不再混入费用行按 0 单价冲低平、谷等分时时段计费标准。
 影响范围：worker/src/index.ts，design-standards/04-api-standards.md，design-standards/06-change-sync-rules.md
 已同步标准：04-api-standards.md 补充报表费用明细分时电价来源和未匹配规则电量处理要求。
 备注：远端 D1 中平/谷电价已保存；截图中的 0 主要来自未匹配计费规则设备电量被混算到费用明细。
