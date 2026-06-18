@@ -7,6 +7,7 @@ worker/public/*
 .wrangler/
 .dev.vars
 .env.local
+admin-vue3/.env
 admin-vue3/.env.local
 admin-vue3/.env.*.local
 *.log

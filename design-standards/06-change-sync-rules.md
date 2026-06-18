@@ -42,6 +42,14 @@
 
 ```text
 日期：2026-06-18
+变更内容：进一步保护前端环境文件；将 admin-vue3/.env 加入 .gitignore，并从 Git 索引移除该文件，避免后续本地填写真实密钥后再次提交到仓库。
+影响范围：cloudflare-worker-package/.gitignore，cloudflare-worker-package/admin-vue3/.env，cloudflare-worker-package/design-standards/06-change-sync-rules.md
+已同步标准：沿用 05-frontend-standards.md 中“不在 Git 跟踪环境文件提交真实凭据”的要求。
+备注：本地 admin-vue3/.env 文件保留但不再由 Git 跟踪。
+```
+
+```text
+日期：2026-06-18
 变更内容：清理前端仓库中的敏感默认值；admin-vue3/.env 不再提交默认登录账号密码、API 加密密钥和百度地图 Key；移除浏览器本地密码缓存用 RSA 私钥，登录记住信息只保留账号类非密码字段；.gitignore 补充 admin-vue3 本地环境覆盖文件。
 影响范围：cloudflare-worker-package/.gitignore，cloudflare-worker-package/admin-vue3/.env，cloudflare-worker-package/admin-vue3/src/utils/auth.ts，cloudflare-worker-package/admin-vue3/src/utils/jsencrypt.ts，cloudflare-worker-package/design-standards/05-frontend-standards.md，cloudflare-worker-package/design-standards/06-change-sync-rules.md
 已同步标准：05-frontend-standards.md 补充前端环境密钥提交限制、禁止内置密码解密私钥和禁止本地缓存密码要求。
