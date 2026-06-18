@@ -779,6 +779,8 @@ import { EnergyChargeSessionApi } from '@/api/energy/chargeSession'
 import type { EnergyChargeSessionVO } from '@/api/energy/chargeSession'
 import { EnergyPricingRuleApi } from '@/api/energy/pricingRule'
 import type { EnergyPricingRuleVO } from '@/api/energy/pricingRule'
+import { EnergyReportApi } from '@/api/energy/report'
+import type { EnergyReportBillVO } from '@/api/energy/report'
 import { EnergyAlarmApi } from '@/api/energy/alarm'
 import type { EnergyAlarmVO } from '@/api/energy/alarm'
 import { DICT_TYPE } from '@/utils/dict'
@@ -827,6 +829,7 @@ const detailLoading = ref(false)
 const devices = ref<EnergyDeviceVO[]>([])
 const selectedDeviceId = ref<number>()
 const latestTelemetry = ref<EnergyTelemetryVO>()
+const billReport = ref<EnergyReportBillVO>()
 const billTelemetryRows = ref<EnergyTelemetryVO[]>([])
 const chargeSessionRows = ref<EnergyChargeSessionVO[]>([])
 const pricingRuleRows = ref<EnergyPricingRuleVO[]>([])
@@ -1166,8 +1169,8 @@ const sortedBillTelemetry = computed(() => {
 })
 const billTelemetryIntervals = computed(() => buildTelemetryIntervals(sortedBillTelemetry.value))
 
-const startEpi = computed(() => calculateEpiBoundary(sortedBillTelemetry.value, 'start'))
-const endEpi = computed(() => calculateEpiBoundary(sortedBillTelemetry.value, 'end'))
+const startEpi = computed(() => billReport.value?.deviceDetails?.length ? sumNullableReportDeviceField('startEpi') : calculateEpiBoundary(sortedBillTelemetry.value, 'start'))
+const endEpi = computed(() => billReport.value?.deviceDetails?.length ? sumNullableReportDeviceField('endEpi') : calculateEpiBoundary(sortedBillTelemetry.value, 'end'))
 const epiDelta = computed(() => sumIntervals(billTelemetryIntervals.value, 'chargeTotal'))
 
 const billSessions = computed(() => {
@@ -1203,18 +1206,18 @@ const touRates = computed<TouEnergy>(() => ({
 }))
 
 const dischargeSessions = computed(() => billSessions.value.filter((item) => Number(item.sessionType) === 1))
-const monthlyPurchasedEnergy = computed(() => Number(epiDelta.value.toFixed(2)))
-const monthlySoldEnergy = computed(() => sumIntervals(billTelemetryIntervals.value, 'dischargeTotal'))
-const chargeTouEnergy = computed(() => buildTouEnergy('epi'))
-const dischargeTouEnergy = computed(() => buildTouEnergy('epe'))
+const monthlyPurchasedEnergy = computed(() => Number((billReport.value?.summary?.totalChargeEnergy ?? epiDelta.value).toFixed(2)))
+const monthlySoldEnergy = computed(() => Number((billReport.value?.summary?.totalDischargeEnergy ?? sumIntervals(billTelemetryIntervals.value, 'dischargeTotal')).toFixed(2)))
+const chargeTouEnergy = computed(() => billReport.value?.analysis?.chargeTou ? normalizeReportTou(billReport.value.analysis.chargeTou) : buildTouEnergy('epi'))
+const dischargeTouEnergy = computed(() => billReport.value?.analysis?.dischargeTou ? normalizeReportTou(billReport.value.analysis.dischargeTou) : buildTouEnergy('epe'))
 const chargeTouSum = computed(() => sumTouEnergy(chargeTouEnergy.value))
 const dischargeTouSum = computed(() => sumTouEnergy(dischargeTouEnergy.value))
-const chargeConsistencyText = computed(() => consistencyText(chargeTouSum.value, monthlyPurchasedEnergy.value, 'EPI'))
-const dischargeConsistencyText = computed(() => consistencyText(dischargeTouSum.value, monthlySoldEnergy.value, 'EPE'))
-const chargeTotalCost = computed(() => calculateTouAmount(chargeTouEnergy.value))
-const dischargeEquivalentFee = computed(() => calculateTouAmount(dischargeTouEnergy.value))
-const savedCost = computed(() => Number((dischargeEquivalentFee.value - chargeTotalCost.value).toFixed(2)))
-const averageBuyRate = computed(() => averageNumber(applicablePricingRules.value.map((item) => normalizeNumber(item.energyRate))))
+const chargeConsistencyText = computed(() => billReport.value?.analysis?.chargeConsistency || consistencyText(chargeTouSum.value, monthlyPurchasedEnergy.value, 'EPI'))
+const dischargeConsistencyText = computed(() => billReport.value?.analysis?.dischargeConsistency || consistencyText(dischargeTouSum.value, monthlySoldEnergy.value, 'EPE'))
+const chargeTotalCost = computed(() => Number((billReport.value?.summary?.chargeCost ?? calculateTouAmount(chargeTouEnergy.value)).toFixed(2)))
+const dischargeEquivalentFee = computed(() => Number((billReport.value?.summary?.salesRevenue ?? calculateTouAmount(dischargeTouEnergy.value)).toFixed(2)))
+const savedCost = computed(() => Number((billReport.value?.summary?.savedCost ?? (dischargeEquivalentFee.value - chargeTotalCost.value)).toFixed(2)))
+const averageBuyRate = computed(() => billReport.value?.summary?.averageBuyRate ?? averageNumber(applicablePricingRules.value.map((item) => normalizeNumber(item.energyRate))))
 const averageBuyRateText = computed(() => averageBuyRate.value > 0 ? `${averageBuyRate.value.toFixed(2)} 元/kWh` : '待录入')
 const uniqueApplicablePricingRules = computed(() => uniqueRowsById(applicablePricingRules.value))
 const siteFee = computed(() => sumPricingRuleField('siteFee'))
@@ -1285,7 +1288,9 @@ const energyStatRows = computed(() => [
   { label: '谷电量校验', value: formatKwh(chargeTouEnergy.value.valley) }
 ])
 
-const costRows = computed(() => touRows(chargeTouEnergy.value, 'charge'))
+const costRows = computed(() => {
+  return reportTouCostRows('市场化购电费', '零售交易电费') || touRows(chargeTouEnergy.value, 'charge')
+})
 
 const revenueRows = computed(() => [
   { label: 'EPE放出电量合计', value: formatKwh(monthlySoldEnergy.value) },
@@ -1588,6 +1593,7 @@ const loadLatestTelemetry = async () => {
 const loadBillReport = async () => {
   ensureBillScopeSelection()
   if (!billQuery.billMonth || selectedBillDevices.value.length === 0) {
+    billReport.value = undefined
     billTelemetryRows.value = []
     chargeSessionRows.value = []
     pricingRuleRows.value = []
@@ -1602,15 +1608,24 @@ const loadBillReport = async () => {
     if (billQuery.scopeType === 'device' && billQuery.deviceId) {
       telemetryParams.deviceId = billQuery.deviceId
     }
-    const [telemetryRows, chargeSessions, pricingRules] = await Promise.all([
+    const reportParams = {
+      scopeType: billQuery.scopeType,
+      projectId: billQuery.scopeType === 'project' ? billQuery.projectId : undefined,
+      deviceId: billQuery.scopeType === 'device' ? billQuery.deviceId : undefined,
+      billMonth: billQuery.billMonth
+    }
+    const [telemetryRows, chargeSessions, pricingRules, report] = await Promise.all([
       EnergyTelemetryApi.getTelemetryChart(telemetryParams),
       EnergyChargeSessionApi.getChargeSessionPage({ pageNo: 1, pageSize: 5000 }),
-      EnergyPricingRuleApi.getPricingRulePage({ pageNo: 1, pageSize: 5000 })
+      EnergyPricingRuleApi.getPricingRulePage({ pageNo: 1, pageSize: 5000 }),
+      EnergyReportApi.getBillReport(reportParams)
     ])
     billTelemetryRows.value = telemetryRows || []
     chargeSessionRows.value = chargeSessions?.list || []
     pricingRuleRows.value = pricingRules?.list || []
+    billReport.value = report
   } catch (error) {
+    billReport.value = undefined
     billTelemetryRows.value = []
     chargeSessionRows.value = []
     pricingRuleRows.value = []
@@ -2021,6 +2036,27 @@ const emptyTouEnergy = (): TouEnergy => ({
   deepValley: 0
 })
 
+const normalizeReportTou = (energy?: Partial<TouEnergy>): TouEnergy => ({
+  sharpPeak: normalizeNumber(energy?.sharpPeak) || 0,
+  peak: normalizeNumber(energy?.peak) || 0,
+  flat: normalizeNumber(energy?.flat) || 0,
+  valley: normalizeNumber(energy?.valley) || 0,
+  deepValley: normalizeNumber(energy?.deepValley) || 0
+})
+
+const sumNullableReportDeviceField = (field: 'startEpi' | 'endEpi') => {
+  let total = 0
+  let hasValue = false
+  ;(billReport.value?.deviceDetails || []).forEach((item) => {
+    const value = normalizeNumber(item[field])
+    if (value !== null) {
+      total += value
+      hasValue = true
+    }
+  })
+  return hasValue ? Number(total.toFixed(2)) : null
+}
+
 const buildTelemetryIntervals = (rows: EnergyTelemetryVO[]): TelemetryInterval[] => {
   const intervals: TelemetryInterval[] = []
   const groups = groupTelemetryByDevice(rows)
@@ -2262,6 +2298,18 @@ const formatTouRate = (value: number) => {
 
 const formatTouAmount = (energy: number, rate: number) => {
   return uniqueApplicablePricingRules.value.length > 0 ? formatCurrency(Number((energy * rate).toFixed(2))) : '待录入'
+}
+
+const reportTouCostRows = (category: string, component: string) => {
+  const rows = billReport.value?.feeDetails
+    ?.filter((row) => row.category === category && row.component === component)
+    ?.map((row) => ({
+      period: `${row.period || '--'}充电`,
+      energy: formatKwh(Number(row.billingEnergy || 0)),
+      rate: row.rate === null || row.rate === undefined ? '待录入' : `${numberText(Number(row.rate))} 元/kWh`,
+      amount: row.amount === null || row.amount === undefined ? '待录入' : formatCurrency(Number(row.amount))
+    }))
+  return rows?.length ? rows : null
 }
 
 const touRows = (energy: TouEnergy, type: 'charge' | 'discharge') => {

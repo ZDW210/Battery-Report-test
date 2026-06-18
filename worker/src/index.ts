@@ -969,18 +969,19 @@ async function reportBill(url: URL, env: Env, accessScope: AccessScope) {
   }
 
   const deviceDetails = await Promise.all(devices.map((device) => buildReportDeviceDetail(env, device, rulesByDevice.get(Number(device.id)) || null, monthStart, monthEnd)))
-  const intervals = await reportIntervals(env, deviceIds, monthStart, monthEnd)
   const telemetryRows = await reportTelemetryRows(env, deviceIds, monthStart, monthEnd)
-  const intervalSummary = summarizeIntervals(intervals)
-  const telemetryFallback = await reportTelemetryFallback(env, deviceIds, monthStart, monthEnd)
-  const chargeEnergy = sumTouEnergy(intervalSummary.charge) > 0 ? intervalSummary.charge : telemetryFallback.charge
-  const dischargeEnergy = sumTouEnergy(intervalSummary.discharge) > 0 ? intervalSummary.discharge : telemetryFallback.discharge
+  const chargeEnergy = sumDeviceTouEnergy(deviceDetails, 'chargeTou')
+  const dischargeEnergy = sumDeviceTouEnergy(deviceDetails, 'dischargeTou')
   const totalChargeEnergy = round4(sumTouEnergy(chargeEnergy) || deviceDetails.reduce((sum, item) => sum + item.chargeEnergy, 0))
   const totalDischargeEnergy = round4(sumTouEnergy(dischargeEnergy) || deviceDetails.reduce((sum, item) => sum + item.dischargeEnergy, 0))
   const ruleRows = uniqueRules(Array.from(rulesByDevice.values()).filter(Boolean) as AnyRecord[])
-  const feeDetails = buildReportFeeDetails(chargeEnergy, dischargeEnergy, ruleRows, devices, telemetryRows)
+  const feeDetails = buildReportFeeDetails(deviceDetails, ruleRows, telemetryRows)
   const totalFee = reportBillingFeeTotal(feeDetails)
-  const salesRevenue = round2(sumByTou(dischargeEnergy, averageTouRates(ruleRows)))
+  const purchaseCosts = deviceDetails.map((item) => numberOrNull(item.purchaseCost))
+  const chargeCost = purchaseCosts.some((value) => value !== null)
+    ? round2(purchaseCosts.reduce((sum, value) => sum + Number(value || 0), 0))
+    : null
+  const salesRevenue = round2(deviceDetails.reduce((sum, item) => sum + Number(item.salesRevenue || 0), 0))
 
   return ok({
     billMonth,
@@ -993,10 +994,12 @@ async function reportBill(url: URL, env: Env, accessScope: AccessScope) {
       totalChargeEnergy,
       totalDischargeEnergy,
       totalFee,
-      averageBuyRate: totalChargeEnergy > 0 ? round4(totalFee / totalChargeEnergy) : null,
+      chargeCost,
+      averageBuyRate: chargeCost !== null && totalChargeEnergy > 0 ? round4(chargeCost / totalChargeEnergy) : null,
       salesRevenue,
       averageSellRate: totalDischargeEnergy > 0 ? round4(salesRevenue / totalDischargeEnergy) : null,
-      touSource: intervalSummary.count > 0 ? 'interval' : 'telemetry'
+      savedCost: chargeCost !== null ? round2(salesRevenue - chargeCost) : null,
+      touSource: deviceDetails.some((item) => item.touSource === 'interval') ? 'interval' : 'telemetry'
     },
     deviceDetails,
     energyDetails: buildReportEnergyDetails(deviceDetails, chargeEnergy, dischargeEnergy),
@@ -1046,7 +1049,9 @@ async function buildReportDeviceDetail(env: Env, device: AnyRecord, rule: AnyRec
   const endEpe = numberOrNull(last?.epe)
   const chargeEnergy = startEpi !== null && endEpi !== null ? round4(Math.max(0, endEpi - startEpi)) : 0
   const dischargeEnergy = startEpe !== null && endEpe !== null ? round4(Math.max(0, endEpe - startEpe)) : 0
-  let chargeTou = await reportDeviceChargeTouEnergy(env, Number(device.id), start, end)
+  let chargeTou = await reportDeviceTouEnergy(env, Number(device.id), start, end, 'charge')
+  let dischargeTou = await reportDeviceTouEnergy(env, Number(device.id), start, end, 'discharge')
+  let touSource = sumTouEnergy(chargeTou) > 0 || sumTouEnergy(dischargeTou) > 0 ? 'interval' : 'telemetry'
   if (sumTouEnergy(chargeTou) <= 0 && chargeEnergy > 0) {
     chargeTou = splitEnergyByPricingTime(
       cleanText(first?.collect_time) || start,
@@ -1054,8 +1059,20 @@ async function buildReportDeviceDetail(env: Env, device: AnyRecord, rule: AnyRec
       chargeEnergy,
       parseTouPeriods(rule?.tou_periods)
     )
+    touSource = 'timeRule'
+  }
+  if (sumTouEnergy(dischargeTou) <= 0 && dischargeEnergy > 0) {
+    dischargeTou = splitEnergyByPricingTime(
+      cleanText(first?.collect_time) || start,
+      cleanText(last?.collect_time) || end,
+      dischargeEnergy,
+      parseTouPeriods(rule?.tou_periods)
+    )
+    touSource = 'timeRule'
   }
   const hasChargeTou = sumTouEnergy(chargeTou) > 0
+  const hasDischargeTou = sumTouEnergy(dischargeTou) > 0
+  const rates = rule ? averageTouRates([rule]) : emptyTouEnergy()
   return {
     deviceId: device.id,
     deviceName: device.device_name || device.device_no || `电表 ${device.id}`,
@@ -1069,27 +1086,46 @@ async function buildReportDeviceDetail(env: Env, device: AnyRecord, rule: AnyRec
     endEpi,
     startEpe,
     endEpe,
-    chargeEnergy,
-    dischargeEnergy,
-    purchaseCost: rule && hasChargeTou ? sumByTou(chargeTou, averageTouRates([rule])) : null,
+    chargeEnergy: hasChargeTou ? sumTouEnergy(chargeTou) : chargeEnergy,
+    dischargeEnergy: hasDischargeTou ? sumTouEnergy(dischargeTou) : dischargeEnergy,
+    chargeTou,
+    dischargeTou,
+    purchaseCost: rule && hasChargeTou ? sumByTou(chargeTou, rates) : null,
+    salesRevenue: rule && hasDischargeTou ? sumByTou(dischargeTou, rates) : 0,
+    touSource,
     pricingRuleId: rule?.id || null
   }
 }
 
-async function reportDeviceChargeTouEnergy(env: Env, deviceId: number, start: string, end: string) {
+async function reportDeviceTouEnergy(env: Env, deviceId: number, start: string, end: string, type: 'charge' | 'discharge') {
   const intervals = await reportIntervals(env, [deviceId], start, end)
   const intervalSummary = summarizeIntervals(intervals)
-  if (sumTouEnergy(intervalSummary.charge) > 0) return intervalSummary.charge
+  const intervalEnergy = type === 'charge' ? intervalSummary.charge : intervalSummary.discharge
+  if (sumTouEnergy(intervalEnergy) > 0) return intervalEnergy
 
   const first = await firstTelemetryInRange(env, deviceId, start, end)
   const last = await lastTelemetryInRange(env, deviceId, start, end)
+  const fields = type === 'charge'
+    ? ['epij', 'epif', 'epip', 'epig']
+    : ['epej', 'epef', 'epep', 'epeg']
   return roundTouEnergy({
-    sharpPeak: positiveEnergyDelta(first || {}, last || {}, 'epij'),
-    peak: positiveEnergyDelta(first || {}, last || {}, 'epif'),
-    flat: positiveEnergyDelta(first || {}, last || {}, 'epip'),
-    valley: positiveEnergyDelta(first || {}, last || {}, 'epig'),
+    sharpPeak: positiveEnergyDelta(first || {}, last || {}, fields[0]),
+    peak: positiveEnergyDelta(first || {}, last || {}, fields[1]),
+    flat: positiveEnergyDelta(first || {}, last || {}, fields[2]),
+    valley: positiveEnergyDelta(first || {}, last || {}, fields[3]),
     deepValley: 0
   })
+}
+
+function sumDeviceTouEnergy(rows: AnyRecord[], field: 'chargeTou' | 'dischargeTou') {
+  const total = emptyTouEnergy()
+  rows.forEach((row) => {
+    const energy = row[field] || {}
+    ;(Object.keys(total) as TouKey[]).forEach((key) => {
+      total[key] += Number(energy[key] || 0)
+    })
+  })
+  return roundTouEnergy(total)
 }
 
 async function firstTelemetryInRange(env: Env, deviceId: number, start: string, end: string) {
@@ -1147,24 +1183,6 @@ function summarizeIntervals(intervals: AnyRecord[]) {
   return { charge: roundTouEnergy(charge), discharge: roundTouEnergy(discharge), count: intervals.length }
 }
 
-async function reportTelemetryFallback(env: Env, deviceIds: number[], start: string, end: string) {
-  const charge = emptyTouEnergy()
-  const discharge = emptyTouEnergy()
-  for (const deviceId of deviceIds) {
-    const first = await firstTelemetryInRange(env, deviceId, start, end)
-    const last = await lastTelemetryInRange(env, deviceId, start, end)
-    charge.sharpPeak += positiveEnergyDelta(first || {}, last || {}, 'epij')
-    charge.peak += positiveEnergyDelta(first || {}, last || {}, 'epif')
-    charge.flat += positiveEnergyDelta(first || {}, last || {}, 'epip')
-    charge.valley += positiveEnergyDelta(first || {}, last || {}, 'epig')
-    discharge.sharpPeak += positiveEnergyDelta(first || {}, last || {}, 'epej')
-    discharge.peak += positiveEnergyDelta(first || {}, last || {}, 'epef')
-    discharge.flat += positiveEnergyDelta(first || {}, last || {}, 'epep')
-    discharge.valley += positiveEnergyDelta(first || {}, last || {}, 'epeg')
-  }
-  return { charge: roundTouEnergy(charge), discharge: roundTouEnergy(discharge) }
-}
-
 function buildReportEnergyDetails(deviceDetails: AnyRecord[], charge: TouEnergy, discharge: TouEnergy) {
   const totalStartEpi = nullableNumberSum(deviceDetails.map((row) => row.startEpi))
   const totalEndEpi = nullableNumberSum(deviceDetails.map((row) => row.endEpi))
@@ -1201,30 +1219,29 @@ function energyDetailRow(label: string, startReading: number | null, endReading:
   }
 }
 
-function buildReportFeeDetails(charge: TouEnergy, discharge: TouEnergy, rules: AnyRecord[], devices: AnyRecord[], telemetryRows: AnyRecord[]) {
-  const rates = averageReportRates(rules)
+function buildReportFeeDetails(deviceDetails: AnyRecord[], rules: AnyRecord[], telemetryRows: AnyRecord[]) {
   const rows = [
     feeDetailHeader('市场化购电费'),
-    ...touFeeRows('市场化购电费', '零售交易电费', charge, rates.agentPurchasePrice),
+    ...touFeeRowsByDevice(deviceDetails, rules, '市场化购电费', '零售交易电费', 'chargeTou', (rule) => numberOrNull(rule?.agent_purchase_price) || 0, 1, true),
     feeDetailHeader('上网环节线损费用'),
-    ...touFeeRows('上网环节线损费用', '上网环节线损费用', charge, rates.lineLossPrice),
+    ...touFeeRowsByDevice(deviceDetails, rules, '上网环节线损费用', '上网环节线损费用', 'chargeTou', (rule) => numberOrNull(rule?.line_loss_price) || 0),
     feeDetailHeader('输配电量电费'),
-    ...touFeeRows('输配电量电费', '电量电费', charge, rates.transmissionDistributionPrice),
+    ...touFeeRowsByDevice(deviceDetails, rules, '输配电量电费', '电量电费', 'chargeTou', (rule) => numberOrNull(rule?.transmission_distribution_price) || 0, 1, true),
     feeDetailHeader('系统运行费用'),
-    ...touFeeRows('系统运行费用', '煤电容量电费', charge, rates.systemOperationFee),
-    ...touFeeRows('系统运行费用', '上网环节线损代理采购损益', charge, 0),
-    ...touFeeRows('系统运行费用', '力调电费损益', charge, 0),
-    ...touFeeRows('系统运行费用', '峰谷分时电价损益', charge, 0),
-    ...touFeeRows('系统运行费用', '电价交叉补贴新增损益', charge, 0),
-    ...touFeeRows('系统运行费用', '天然气发电容量电费（含气电联动）', charge, 0),
-    ...touFeeRows('系统运行费用', '抽水蓄能容量电费', charge, 0),
+    ...touFeeRowsByDevice(deviceDetails, rules, '系统运行费用', '煤电容量电费', 'chargeTou', (rule) => numberOrNull(rule?.system_operation_fee) || 0),
+    ...touFeeRowsByDevice(deviceDetails, rules, '系统运行费用', '上网环节线损代理采购损益', 'chargeTou', () => 0),
+    ...touFeeRowsByDevice(deviceDetails, rules, '系统运行费用', '力调电费损益', 'chargeTou', () => 0),
+    ...touFeeRowsByDevice(deviceDetails, rules, '系统运行费用', '峰谷分时电价损益', 'chargeTou', () => 0),
+    ...touFeeRowsByDevice(deviceDetails, rules, '系统运行费用', '电价交叉补贴新增损益', 'chargeTou', () => 0),
+    ...touFeeRowsByDevice(deviceDetails, rules, '系统运行费用', '天然气发电容量电费（含气电联动）', 'chargeTou', () => 0),
+    ...touFeeRowsByDevice(deviceDetails, rules, '系统运行费用', '抽水蓄能容量电费', 'chargeTou', () => 0),
     feeDetailHeader('政府性基金及附加'),
-    ...touFeeRows('政府性基金及附加', '库区移民基金', charge, rates.governmentFundSurcharge),
-    ...touFeeRows('政府性基金及附加', '可再生能源附加', charge, 0),
-    ...touFeeRows('政府性基金及附加', '国家重大水利工程建设基金', charge, 0),
+    ...touFeeRowsByDevice(deviceDetails, rules, '政府性基金及附加', '库区移民基金', 'chargeTou', (rule) => numberOrNull(rule?.government_fund_surcharge) || 0),
+    ...touFeeRowsByDevice(deviceDetails, rules, '政府性基金及附加', '可再生能源附加', 'chargeTou', () => 0),
+    ...touFeeRowsByDevice(deviceDetails, rules, '政府性基金及附加', '国家重大水利工程建设基金', 'chargeTou', () => 0),
     feeDetailHeader('售电收入'),
-    ...touFeeRows('售电收入', '放电售电收入', discharge, averageTouRates(rules), -1),
-    demandFeeDetailRow(rules, devices, telemetryRows),
+    ...touFeeRowsByDevice(deviceDetails, rules, '售电收入', '放电售电收入', 'dischargeTou', (rule, key) => Number(averageTouRates(rule ? [rule] : [])[key] || 0), -1),
+    demandFeeDetailRow(rules, deviceDetails, telemetryRows),
     transformerFeeDetailRow(rules)
   ].filter(Boolean)
   rows.push({ category: '合计', component: '本期电费合计', period: '', billingEnergy: null, rate: null, amount: reportBillingFeeTotal(rows), source: '汇总，不含售电收入' })
@@ -1235,7 +1252,16 @@ function feeDetailHeader(category: string) {
   return { category, component: '', period: '', billingEnergy: null, rate: null, amount: null, source: '分组标题' }
 }
 
-function touFeeRows(category: string, component: string, energy: TouEnergy, rateOrRates: number | TouEnergy, sign = 1) {
+function touFeeRowsByDevice(
+  deviceDetails: AnyRecord[],
+  rules: AnyRecord[],
+  category: string,
+  component: string,
+  energyField: 'chargeTou' | 'dischargeTou',
+  rateGetter: (rule: AnyRecord | null, key: TouKey) => number,
+  sign = 1,
+  includeZeroRows = false
+) {
   const periods: Array<{ key: TouKey; label: string }> = [
     { key: 'sharpPeak', label: '尖' },
     { key: 'peak', label: '峰' },
@@ -1244,27 +1270,55 @@ function touFeeRows(category: string, component: string, energy: TouEnergy, rate
     { key: 'deepValley', label: '深谷' }
   ]
   return periods
-    .filter((period) => Number(energy[period.key] || 0) > 0 || component === '零售交易电费' || component === '电量电费')
     .map((period) => {
-      const rate = typeof rateOrRates === 'number' ? rateOrRates : Number(rateOrRates[period.key] || 0)
-      const billingEnergy = round4(Number(energy[period.key] || 0))
+      let billingEnergy = 0
+      let amount = 0
+      const fallbackRates: Array<number | null> = []
+      deviceDetails.forEach((detail) => {
+        const rule = findRuleById(rules, detail.pricingRuleId)
+        const energy = Number(detail?.[energyField]?.[period.key] || 0)
+        const rate = rateGetter(rule, period.key)
+        billingEnergy += energy
+        amount += energy * rate * sign
+        fallbackRates.push(Number.isFinite(rate) ? rate : null)
+      })
+      const displayRate = billingEnergy > 0 ? Math.abs(amount) / billingEnergy : averageNumber(fallbackRates)
       return {
         category,
         component,
         period: period.label,
-        billingEnergy,
-        rate: round8(rate),
-        amount: round2(billingEnergy * rate * sign),
+        billingEnergy: round4(billingEnergy),
+        rate: round8(displayRate),
+        amount: round2(amount),
         source: '计费规则 × EIOT分时电量'
       }
     })
+    .filter((row) => includeZeroRows || Number(row.billingEnergy || 0) > 0)
 }
 
-function demandFeeDetailRow(rules: AnyRecord[], devices: AnyRecord[], telemetryRows: AnyRecord[]) {
+function findRuleById(rules: AnyRecord[], id: unknown) {
+  const ruleId = Number(id)
+  if (!Number.isFinite(ruleId)) return null
+  return rules.find((rule) => Number(rule.id) === ruleId) || null
+}
+
+function demandFeeDetailRow(rules: AnyRecord[], deviceDetails: AnyRecord[], telemetryRows: AnyRecord[]) {
   const enabled = rules.filter((rule) => rule.capacity_billing_mode === 'maxDemand')
   if (!enabled.length) return { category: '容需量费用', component: '最大需量费用', period: '', billingEnergy: 0, rate: null, amount: 0, source: '未启用' }
-  const demand = round4(maxDemandFromTelemetry(telemetryRows))
-  const rate = averageNumber(enabled.map((rule) => numberOrNull(rule.max_demand_price)))
+  let demand = 0
+  let amount = 0
+  enabled.forEach((rule) => {
+    const deviceIds = deviceDetails
+      .filter((detail) => Number(detail.pricingRuleId) === Number(rule.id))
+      .map((detail) => Number(detail.deviceId))
+      .filter(Number.isFinite)
+    const rows = telemetryRows.filter((row) => deviceIds.includes(Number(row.device_id)))
+    const ruleDemand = round4(maxDemandFromTelemetry(rows))
+    const price = numberOrNull(rule.max_demand_price) || 0
+    demand += ruleDemand
+    amount += ruleDemand * price
+  })
+  const rate = demand > 0 ? amount / demand : averageNumber(enabled.map((rule) => numberOrNull(rule.max_demand_price)))
   return { category: '容需量费用', component: '最大需量费用', period: '', billingEnergy: demand, rate, amount: round2(demand * rate), source: '遥测P按15分钟窗口聚合最大需量 × 单价' }
 }
 
@@ -1272,18 +1326,9 @@ function transformerFeeDetailRow(rules: AnyRecord[]) {
   const enabled = rules.filter((rule) => rule.capacity_billing_mode === 'transformerCapacity')
   if (!enabled.length) return { category: '容需量费用', component: '变压器容量费用', period: '', billingEnergy: 0, rate: null, amount: 0, source: '未启用' }
   const capacity = round4(enabled.reduce((sum, rule) => sum + Number(rule.transformer_capacity_kva || 0), 0))
-  const rate = averageNumber(enabled.map((rule) => numberOrNull(rule.transformer_capacity_price)))
-  return { category: '容需量费用', component: '变压器容量费用', period: '', billingEnergy: capacity, rate, amount: round2(capacity * rate), source: '容量 × 单价' }
-}
-
-function averageReportRates(rules: AnyRecord[]) {
-  return {
-    agentPurchasePrice: averageNumber(rules.map((rule) => numberOrNull(rule.agent_purchase_price))),
-    lineLossPrice: averageNumber(rules.map((rule) => numberOrNull(rule.line_loss_price))),
-    transmissionDistributionPrice: averageNumber(rules.map((rule) => numberOrNull(rule.transmission_distribution_price))),
-    systemOperationFee: averageNumber(rules.map((rule) => numberOrNull(rule.system_operation_fee))),
-    governmentFundSurcharge: averageNumber(rules.map((rule) => numberOrNull(rule.government_fund_surcharge)))
-  }
+  const amount = enabled.reduce((sum, rule) => sum + Number(rule.transformer_capacity_kva || 0) * Number(rule.transformer_capacity_price || 0), 0)
+  const rate = capacity > 0 ? amount / capacity : averageNumber(enabled.map((rule) => numberOrNull(rule.transformer_capacity_price)))
+  return { category: '容需量费用', component: '变压器容量费用', period: '', billingEnergy: capacity, rate, amount: round2(amount), source: '容量 × 单价' }
 }
 
 function averageTouRates(rules: AnyRecord[]): TouEnergy {
@@ -1333,7 +1378,7 @@ function emptyReportBill(billMonth: string, start: string, end: string, scopeTyp
     scopeType,
     scopeName: '暂无电表',
     billHeader: buildReportHeader([], [], billMonth, start, end, scopeType),
-    summary: { deviceCount: 0, totalChargeEnergy: 0, totalDischargeEnergy: 0, totalFee: 0, averageBuyRate: null, salesRevenue: 0, averageSellRate: null, touSource: 'empty' },
+    summary: { deviceCount: 0, totalChargeEnergy: 0, totalDischargeEnergy: 0, totalFee: 0, chargeCost: 0, averageBuyRate: null, salesRevenue: 0, averageSellRate: null, savedCost: 0, touSource: 'empty' },
     deviceDetails: [],
     energyDetails: [],
     feeDetails: [],
@@ -1662,7 +1707,12 @@ function payloadTouDelta(previous: AnyRecord, current: AnyRecord, source: TouSou
 }
 
 async function findPricingRuleForDevice(env: Env, deviceId: number, billingTime: string) {
-  const device = await env.DB.prepare('SELECT id, customer_id, project_id FROM energy_device WHERE id = ?')
+  const device = await env.DB.prepare(
+    `SELECT d.id, COALESCE(d.customer_id, p.customer_id) AS customer_id, d.project_id
+     FROM energy_device d
+     LEFT JOIN energy_project p ON p.id = d.project_id
+     WHERE d.id = ?`
+  )
     .bind(deviceId)
     .first<AnyRecord>()
   if (!device) return null

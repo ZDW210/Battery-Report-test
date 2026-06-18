@@ -13,9 +13,11 @@ export interface EnergyReportBillSummaryVO {
   totalChargeEnergy: number
   totalDischargeEnergy: number
   totalFee: number
+  chargeCost?: number | null
   averageBuyRate?: number | null
   salesRevenue: number
   averageSellRate?: number | null
+  savedCost?: number | null
   touSource?: string
 }
 
@@ -34,7 +36,10 @@ export interface EnergyReportDeviceDetailVO {
   endEpe?: number | null
   chargeEnergy: number
   dischargeEnergy: number
+  chargeTou?: EnergyReportTouVO
+  dischargeTou?: EnergyReportTouVO
   purchaseCost?: number | null
+  salesRevenue?: number | null
   pricingRuleId?: number | null
 }
 

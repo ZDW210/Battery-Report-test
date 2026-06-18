@@ -339,7 +339,10 @@ const deviceRows = computed(() => {
 
 const totalPurchasedEnergy = computed(() => billReport.value?.summary ? Number(billReport.value.summary.totalChargeEnergy || 0) : Number(deviceRows.value.reduce((sum, row) => sum + row.purchasedEnergy, 0).toFixed(2)))
 const totalDischargeEnergy = computed(() => billReport.value?.summary ? Number(billReport.value.summary.totalDischargeEnergy || 0) : Number(deviceRows.value.reduce((sum, row) => sum + row.dischargeEnergy, 0).toFixed(2)))
-const totalPurchaseCost = computed(() => nullableSum(deviceRows.value.map((row) => row.purchaseCost)))
+const totalPurchaseCost = computed(() => {
+  if (billReport.value?.summary?.chargeCost !== undefined && billReport.value.summary.chargeCost !== null) return Number(billReport.value.summary.chargeCost || 0)
+  return nullableSum(deviceRows.value.map((row) => row.purchaseCost))
+})
 const chargeTouEnergy = computed(() => billReport.value?.analysis?.chargeTou
   ? toLocalTou(billReport.value.analysis.chargeTou)
   : calcTouEnergy(['epij', 'epif', 'epip', 'epig']))
@@ -359,7 +362,10 @@ const averageBuyRate = computed(() => {
   if (!totalPurchasedEnergy.value || totalPurchaseCost.value === null) return null
   return Number((totalPurchaseCost.value / totalPurchasedEnergy.value).toFixed(4))
 })
-const totalRevenue = computed(() => calcDischargeTouRevenue())
+const totalRevenue = computed(() => {
+  if (billReport.value?.summary?.salesRevenue !== undefined) return Number(billReport.value.summary.salesRevenue || 0)
+  return calcDischargeTouRevenue()
+})
 const averageSellRate = computed(() => (totalDischargeEnergy.value ? Number((totalRevenue.value / totalDischargeEnergy.value).toFixed(4)) : null))
 const applicableRules = computed(() => uniqueRowsById(selectedDevices.value.map(matchRuleForDevice).filter(Boolean) as EnergyPricingRuleVO[]))
 const billableFixedFeeRules = computed(() => {

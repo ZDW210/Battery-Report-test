@@ -41,6 +41,14 @@
 ```
 
 ```text
+日期：2026-06-18
+变更内容：统一数据面板“用电量报表”和独立报表面板的账单数据来源；两处同名电量、购电成本、售电收入、放电等效电费和节约成本均以 /admin-api/energy/report/bill 返回值为准。Worker 账单接口改为按电表匹配计费规则后逐表计算分时购电成本、售电收入、最大需量费用和变压器容量费用，再汇总返回，避免按全范围平均电价导致场站/全部汇总失真。
+影响范围：cloudflare-worker-package/worker/src/index.ts，cloudflare-worker-package/admin-vue3/src/api/energy/report/index.ts，cloudflare-worker-package/admin-vue3/src/views/energy/telemetry/index.vue，cloudflare-worker-package/admin-vue3/src/views/energy/report-panel/index.vue，cloudflare-worker-package/design-standards/05-frontend-standards.md
+已同步标准：05-frontend-standards.md 补充数据面板与报表面板同名指标必须共用 /energy/report/bill 的硬约束。
+备注：数据面板仍可使用遥测接口绘制辅助曲线，但不得用前端本地计算覆盖核心账单指标。
+```
+
+```text
 日期：2026-06-01
 变更内容：补齐小程序首页旧统计请求的兼容接口，新增 /app-api/energy/devices/energy-delta、/app-api/energy/charging-sessions、/revenue-overview、/today-energy，当前返回授权范围内的 0 值或空列表
 影响范围：current/backend-ruoyi/yudao-module-energy，current/design/11-api-contracts-v1.md，current/design/13-local-runtime-status.md，current/design-standards/04-api-standards.md
