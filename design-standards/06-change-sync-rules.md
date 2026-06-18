@@ -579,3 +579,10 @@
 已同步标准：04-api-standards.md 补充 miniAdminEnabled 接口和权限边界；05-frontend-standards.md 补充司机首页、我的页和管理入口显示规则。
 备注：本机 MySQL `energy_app_user` 已新增 `mini_admin_enabled` 字段和索引；待执行后端/管理端/小程序构建验证。
 ```
+```text
+日期：2026-06-18
+变更内容：修复 Worker 客户账号权限绕过和刷新令牌状态校验问题；客户老板账号访问 customer、project、device、vehicle、account-event、user-scope、pricing-rule、charge-session 等接口时均按绑定 customer_id 做后端强过滤，维护类写操作由平台管理员执行；refresh-token 重新校验 system_user.status，禁用或删除账号会撤销 session 并拒绝续签。
+影响范围：worker/src/index.ts，design-standards/04-api-standards.md，design-standards/06-change-sync-rules.md
+已同步标准：04-api-standards.md 补充客户账号后端强隔离、关联客户归属反查、客户账号只读边界和 refresh-token 禁用用户校验要求。
+备注：客户账号权限不能只依赖菜单隐藏；后续新增客户可访问的 API 必须同时补后端 accessScope 过滤。
+```

@@ -207,6 +207,9 @@ async function handleAdminApi(request: Request, env: Env, ctx: ExecutionContext)
     const systemCompatResponse = await systemCompatApi(request, url, env, path, user)
     if (systemCompatResponse) return systemCompatResponse
 
+    const accessScope = await getAccessScope(env, user)
+
+    if (path.startsWith('/energy/customer-account/') && accessScope.isCustomerAccount) return customerAccountForbidden()
     if (path === '/energy/customer-account/page' && request.method === 'GET') return customerAccountPage(url, env)
     if (path === '/energy/customer-account/get' && request.method === 'GET') return customerAccountGet(url, env)
     if (path === '/energy/customer-account/create' && request.method === 'POST') return createCustomerAccount(request, env)
@@ -214,17 +217,15 @@ async function handleAdminApi(request: Request, env: Env, ctx: ExecutionContext)
     if (path === '/energy/customer-account/reset-password' && request.method === 'PUT') return resetCustomerPassword(request, env)
     if (path === '/energy/customer-account/menu-options' && request.method === 'GET') return ok(ENERGY_MENUS.map(menuOption))
 
-    if (path.startsWith('/energy/customer/')) return crud(request, url, env, 'energy_customer', ['name', 'contactName', 'contactMobile', 'region', 'status', 'remark'])
-    if (path.startsWith('/energy/project/')) return crud(request, url, env, 'energy_project', ['customerId', 'name', 'code', 'address', 'latitude', 'longitude', 'status', 'remark'])
-    const accessScope = await getAccessScope(env, user)
-
+    if (path.startsWith('/energy/customer/')) return customerApi(request, url, env, path, accessScope)
+    if (path.startsWith('/energy/project/')) return projectApi(request, url, env, path, accessScope)
     if (path.startsWith('/energy/device/')) return deviceApi(request, url, env, path, accessScope)
-    if (path.startsWith('/energy/vehicle/')) return crud(request, url, env, 'energy_vehicle', ['vehicleNo', 'plateNo', 'qrCode', 'deviceId', 'customerId', 'projectId', 'status', 'remark'])
+    if (path.startsWith('/energy/vehicle/')) return vehicleApi(request, url, env, path, accessScope)
     if (path.startsWith('/energy/app-user/')) return crud(request, url, env, 'energy_app_user', ['username', 'nickname', 'mobile', 'cardNo', 'miniAdminEnabled', 'status', 'loginIp', 'loginDate', 'remark'])
-    if (path.startsWith('/energy/account-event/')) return crud(request, url, env, 'energy_account_event', ['eventScene', 'authType', 'scanText', 'cardNo', 'accountKnown', 'accountId', 'accountName', 'accountMobile', 'deviceId', 'customerId', 'projectId', 'resultMessage'])
-    if (path.startsWith('/energy/user-scope/')) return crud(request, url, env, 'energy_user_scope', ['userId', 'userType', 'customerId', 'projectId', 'deviceId', 'status', 'remark'])
-    if (path.startsWith('/energy/pricing-rule/')) return pricingRuleApi(request, url, env, path)
-    if (path.startsWith('/energy/charge-session/')) return chargeSessionApi(request, url, env, path)
+    if (path.startsWith('/energy/account-event/')) return accountEventApi(request, url, env, path, accessScope)
+    if (path.startsWith('/energy/user-scope/')) return userScopeApi(request, url, env, path, accessScope)
+    if (path.startsWith('/energy/pricing-rule/')) return pricingRuleApi(request, url, env, path, accessScope)
+    if (path.startsWith('/energy/charge-session/')) return chargeSessionApi(request, url, env, path, accessScope)
     if (path.startsWith('/energy/eiot-log/')) return crud(request, url, env, 'energy_eiot_sync_log', ['syncType', 'requestId', 'gatewaySn', 'meterSn', 'payloadUrl', 'status', 'errorMsg'])
     if (path.startsWith('/energy/alarm/')) return alarmApi(request, url, env, path, accessScope)
     if (path.startsWith('/energy/telemetry/')) return telemetryApi(request, url, env, path, accessScope)
@@ -310,13 +311,20 @@ async function refreshToken(request: Request, env: Env) {
   const url = new URL(request.url)
   const refresh = url.searchParams.get('refreshToken') || ''
   const session = await env.DB.prepare('SELECT * FROM system_session WHERE refresh_token = ?').bind(refresh).first<AnyRecord>()
-  if (!session) return fail('无效的刷新令牌', 401, 401)
+  if (!session) return fail('Invalid refresh token', 401, 401)
+  const refreshedUser = await env.DB.prepare('SELECT id, user_type, status FROM system_user WHERE id = ? AND status = 0')
+    .bind(session.user_id)
+    .first<AnyRecord>()
+  if (!refreshedUser) {
+    await env.DB.prepare('DELETE FROM system_session WHERE refresh_token = ?').bind(refresh).run()
+    return fail('User disabled or not found', 401, 401)
+  }
   const accessToken = await token('ak')
   const expiresTime = Date.now() + 7 * 24 * 60 * 60 * 1000
   await env.DB.prepare('UPDATE system_session SET access_token = ?, expires_time = ? WHERE refresh_token = ?')
     .bind(accessToken, expiresTime, refresh)
     .run()
-  return ok({ accessToken, refreshToken: refresh, userId: session.user_id, userType: 2, clientId: 'worker-admin', expiresTime })
+  return ok({ accessToken, refreshToken: refresh, userId: refreshedUser.id, userType: Number(refreshedUser.user_type || 2), clientId: 'worker-admin', expiresTime })
 }
 
 async function systemCompatApi(request: Request, url: URL, env: Env, path: string, user: AnyRecord) {
@@ -594,25 +602,148 @@ async function resetCustomerPassword(request: Request, env: Env) {
   return ok(true)
 }
 
+function customerAccountForbidden() {
+  return fail('Customer account has no permission for this operation', 403, 403)
+}
+
+async function customerApi(request: Request, url: URL, env: Env, path: string, accessScope: AccessScope) {
+  if (path === '/energy/customer/page' && request.method === 'GET') return customerPage(url, env, accessScope)
+  if (path === '/energy/customer/simple-list' && request.method === 'GET') return customerSimpleList(url, env, accessScope)
+  if (path === '/energy/customer/get' && request.method === 'GET') return customerGet(url, env, accessScope)
+  if (accessScope.isCustomerAccount) return customerAccountForbidden()
+  return crud(request, url, env, 'energy_customer', ['name', 'contactName', 'contactMobile', 'region', 'status', 'remark'])
+}
+
+async function customerPage(url: URL, env: Env, accessScope: AccessScope) {
+  const pageNo = num(url.searchParams.get('pageNo'), 1)
+  const pageSize = num(url.searchParams.get('pageSize'), 10)
+  const where: string[] = []
+  const args: any[] = []
+  like(url, where, args, 'c.name', 'name')
+  like(url, where, args, 'c.contact_name', 'contactName')
+  like(url, where, args, 'c.contact_mobile', 'contactMobile')
+  like(url, where, args, 'c.region', 'region')
+  exact(url, where, args, 'c.status', 'status')
+  applyCustomerScope(where, args, 'c.id', accessScope)
+  const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : ''
+  const total = await scalar(env, `SELECT COUNT(*) FROM energy_customer c ${whereSql}`, args)
+  const rows = await env.DB.prepare(`SELECT c.* FROM energy_customer c ${whereSql} ORDER BY c.id DESC LIMIT ? OFFSET ?`)
+    .bind(...args, pageSize, (pageNo - 1) * pageSize)
+    .all<AnyRecord>()
+  return ok({ list: camelRows(rows.results), total })
+}
+
+async function customerSimpleList(url: URL, env: Env, accessScope: AccessScope) {
+  const where: string[] = []
+  const args: any[] = []
+  exact(url, where, args, 'c.status', 'status')
+  applyCustomerScope(where, args, 'c.id', accessScope)
+  const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : ''
+  const rows = await env.DB.prepare(`SELECT c.* FROM energy_customer c ${whereSql} ORDER BY c.id DESC LIMIT 200`)
+    .bind(...args)
+    .all<AnyRecord>()
+  return ok(camelRows(rows.results))
+}
+
+async function customerGet(url: URL, env: Env, accessScope: AccessScope) {
+  const where = ['c.id = ?']
+  const args: any[] = [url.searchParams.get('id')]
+  applyCustomerScope(where, args, 'c.id', accessScope)
+  const row = await env.DB.prepare(`SELECT c.* FROM energy_customer c WHERE ${where.join(' AND ')}`).bind(...args).first<AnyRecord>()
+  return ok(row ? camel(row) : null)
+}
+
+async function projectApi(request: Request, url: URL, env: Env, path: string, accessScope: AccessScope) {
+  if (path === '/energy/project/page' && request.method === 'GET') return projectPage(url, env, accessScope)
+  if (path === '/energy/project/simple-list' && request.method === 'GET') return projectSimpleList(url, env, accessScope)
+  if (path === '/energy/project/get' && request.method === 'GET') return projectGet(url, env, accessScope)
+  if (accessScope.isCustomerAccount) return customerAccountForbidden()
+  return crud(request, url, env, 'energy_project', ['customerId', 'name', 'code', 'address', 'latitude', 'longitude', 'status', 'remark'])
+}
+
+async function projectPage(url: URL, env: Env, accessScope: AccessScope) {
+  const pageNo = num(url.searchParams.get('pageNo'), 1)
+  const pageSize = num(url.searchParams.get('pageSize'), 10)
+  const where: string[] = []
+  const args: any[] = []
+  like(url, where, args, 'p.name', 'name')
+  like(url, where, args, 'p.code', 'code')
+  like(url, where, args, 'p.address', 'address')
+  exact(url, where, args, 'p.customer_id', 'customerId')
+  exact(url, where, args, 'p.status', 'status')
+  applyCustomerScope(where, args, 'p.customer_id', accessScope)
+  const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : ''
+  const total = await scalar(env, `SELECT COUNT(*) FROM energy_project p ${whereSql}`, args)
+  const rows = await env.DB.prepare(
+    `SELECT p.*, c.name AS customer_name
+     FROM energy_project p
+     LEFT JOIN energy_customer c ON c.id = p.customer_id
+     ${whereSql}
+     ORDER BY p.id DESC LIMIT ? OFFSET ?`
+  )
+    .bind(...args, pageSize, (pageNo - 1) * pageSize)
+    .all<AnyRecord>()
+  return ok({ list: camelRows(rows.results), total })
+}
+
+async function projectSimpleList(url: URL, env: Env, accessScope: AccessScope) {
+  const where: string[] = []
+  const args: any[] = []
+  exact(url, where, args, 'p.customer_id', 'customerId')
+  exact(url, where, args, 'p.status', 'status')
+  applyCustomerScope(where, args, 'p.customer_id', accessScope)
+  const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : ''
+  const rows = await env.DB.prepare(
+    `SELECT p.*, c.name AS customer_name
+     FROM energy_project p
+     LEFT JOIN energy_customer c ON c.id = p.customer_id
+     ${whereSql}
+     ORDER BY p.id DESC LIMIT 200`
+  )
+    .bind(...args)
+    .all<AnyRecord>()
+  return ok(camelRows(rows.results))
+}
+
+async function projectGet(url: URL, env: Env, accessScope: AccessScope) {
+  const where = ['p.id = ?']
+  const args: any[] = [url.searchParams.get('id')]
+  applyCustomerScope(where, args, 'p.customer_id', accessScope)
+  const row = await env.DB.prepare(
+    `SELECT p.*, c.name AS customer_name
+     FROM energy_project p
+     LEFT JOIN energy_customer c ON c.id = p.customer_id
+     WHERE ${where.join(' AND ')}`
+  )
+    .bind(...args)
+    .first<AnyRecord>()
+  return ok(row ? camel(row) : null)
+}
+
 async function deviceApi(request: Request, url: URL, env: Env, path: string, accessScope: AccessScope) {
   if (path === '/energy/device/page' && request.method === 'GET') return devicePage(url, env, accessScope)
   if (path === '/energy/device/simple-list' && request.method === 'GET') return deviceSimpleList(url, env, accessScope)
+  if (path === '/energy/device/get' && request.method === 'GET') return deviceGet(url, env, accessScope)
   if (path === '/energy/device/control' && request.method === 'POST') {
+    if (accessScope.isCustomerAccount) return customerAccountForbidden()
     const body = await readJson(request)
     return ok({ controlLogId: Date.now(), success: true, message: `已记录 ${body.method || 'CONTROL'} 指令，等待设备网关执行` })
   }
   if (path === '/energy/device/create' && request.method === 'POST') {
+    if (accessScope.isCustomerAccount) return customerAccountForbidden()
     const body = await readJson(request)
     const validation = await validateDeviceUnique(env, body)
     if (validation) return validation
     return createRowFromBody(body, env, 'energy_device', DEVICE_FIELDS)
   }
   if (path === '/energy/device/update' && request.method === 'PUT') {
+    if (accessScope.isCustomerAccount) return customerAccountForbidden()
     const body = await readJson(request)
     const validation = await validateDeviceUnique(env, body, Number(body.id))
     if (validation) return validation
     return updateRowFromBody(body, env, 'energy_device', DEVICE_FIELDS)
   }
+  if (accessScope.isCustomerAccount) return customerAccountForbidden()
   return crud(request, url, env, 'energy_device', DEVICE_FIELDS)
 }
 
@@ -689,6 +820,24 @@ async function deviceSimpleList(url: URL, env: Env, accessScope: AccessScope) {
   return ok(camelRows(applyDeviceOnlineStatus(listRows)))
 }
 
+async function deviceGet(url: URL, env: Env, accessScope: AccessScope) {
+  await refreshStaleOnlineDevices(env, accessScope)
+  const where = ['d.id = ?']
+  const args: any[] = [url.searchParams.get('id')]
+  applyCustomerScope(where, args, 'COALESCE(d.customer_id, p.customer_id)', accessScope)
+  const row = await env.DB.prepare(
+    `SELECT d.*, c.name AS customer_name, p.name AS project_name
+     FROM energy_device d
+     LEFT JOIN energy_customer c ON c.id = d.customer_id
+     LEFT JOIN energy_project p ON p.id = d.project_id
+     WHERE ${where.join(' AND ')}`
+  )
+    .bind(...args)
+    .first<AnyRecord>()
+  if (row?.id) await refreshDeviceOnlineStatus(env, [Number(row.id)])
+  return ok(row ? camel(applyDeviceOnlineStatus([row])[0]) : null)
+}
+
 async function alarmApi(request: Request, url: URL, env: Env, path: string, accessScope: AccessScope) {
   if (path === '/energy/alarm/ack' && request.method === 'PUT') return updateStatus(request, env, 'energy_alarm', 1, 'ack_time')
   if (path === '/energy/alarm/close' && request.method === 'PUT') return updateStatus(request, env, 'energy_alarm', 2, 'close_time')
@@ -736,18 +885,233 @@ async function alarmPage(url: URL, env: Env, accessScope: AccessScope) {
   return ok({ list: camelRows(rows.results), total })
 }
 
-async function pricingRuleApi(request: Request, url: URL, env: Env, path: string) {
+async function vehicleApi(request: Request, url: URL, env: Env, path: string, accessScope: AccessScope) {
+  if (path === '/energy/vehicle/page' && request.method === 'GET') return vehiclePage(url, env, accessScope)
+  if (path === '/energy/vehicle/simple-list' && request.method === 'GET') return vehicleSimpleList(url, env, accessScope)
+  if (path === '/energy/vehicle/get' && request.method === 'GET') return vehicleGet(url, env, accessScope)
+  if (accessScope.isCustomerAccount) return customerAccountForbidden()
+  return crud(request, url, env, 'energy_vehicle', ['vehicleNo', 'plateNo', 'qrCode', 'deviceId', 'customerId', 'projectId', 'status', 'remark'])
+}
+
+async function vehiclePage(url: URL, env: Env, accessScope: AccessScope) {
+  const pageNo = num(url.searchParams.get('pageNo'), 1)
+  const pageSize = num(url.searchParams.get('pageSize'), 10)
+  const where: string[] = []
+  const args: any[] = []
+  like(url, where, args, 'v.vehicle_no', 'vehicleNo')
+  like(url, where, args, 'v.plate_no', 'plateNo')
+  like(url, where, args, 'v.card_no', 'cardNo')
+  exact(url, where, args, 'v.device_id', 'deviceId')
+  exact(url, where, args, 'v.customer_id', 'customerId')
+  exact(url, where, args, 'v.project_id', 'projectId')
+  exact(url, where, args, 'v.status', 'status')
+  applyCustomerScope(where, args, vehicleCustomerColumn(), accessScope)
+  const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : ''
+  const total = await scalar(env, `SELECT COUNT(*) FROM energy_vehicle v ${vehicleScopeJoins()} ${whereSql}`, args)
+  const rows = await env.DB.prepare(
+    `SELECT v.*, c.name AS customer_name, p.name AS project_name, d.device_name, d.device_no
+     FROM energy_vehicle v
+     ${vehicleScopeJoins()}
+     ${whereSql}
+     ORDER BY v.id DESC LIMIT ? OFFSET ?`
+  )
+    .bind(...args, pageSize, (pageNo - 1) * pageSize)
+    .all<AnyRecord>()
+  return ok({ list: camelRows(rows.results), total })
+}
+
+async function vehicleSimpleList(url: URL, env: Env, accessScope: AccessScope) {
+  const where: string[] = []
+  const args: any[] = []
+  exact(url, where, args, 'v.customer_id', 'customerId')
+  exact(url, where, args, 'v.project_id', 'projectId')
+  exact(url, where, args, 'v.status', 'status')
+  applyCustomerScope(where, args, vehicleCustomerColumn(), accessScope)
+  const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : ''
+  const rows = await env.DB.prepare(
+    `SELECT v.*, c.name AS customer_name, p.name AS project_name, d.device_name, d.device_no
+     FROM energy_vehicle v
+     ${vehicleScopeJoins()}
+     ${whereSql}
+     ORDER BY v.id DESC LIMIT 200`
+  )
+    .bind(...args)
+    .all<AnyRecord>()
+  return ok(camelRows(rows.results))
+}
+
+async function vehicleGet(url: URL, env: Env, accessScope: AccessScope) {
+  const where = ['v.id = ?']
+  const args: any[] = [url.searchParams.get('id')]
+  applyCustomerScope(where, args, vehicleCustomerColumn(), accessScope)
+  const row = await env.DB.prepare(
+    `SELECT v.*, c.name AS customer_name, p.name AS project_name, d.device_name, d.device_no
+     FROM energy_vehicle v
+     ${vehicleScopeJoins()}
+     WHERE ${where.join(' AND ')}`
+  )
+    .bind(...args)
+    .first<AnyRecord>()
+  return ok(row ? camel(row) : null)
+}
+
+async function accountEventApi(request: Request, url: URL, env: Env, path: string, accessScope: AccessScope) {
+  if (path === '/energy/account-event/page' && request.method === 'GET') return accountEventPage(url, env, accessScope)
+  if (path === '/energy/account-event/simple-list' && request.method === 'GET') return accountEventSimpleList(url, env, accessScope)
+  if (path === '/energy/account-event/get' && request.method === 'GET') return accountEventGet(url, env, accessScope)
+  if (accessScope.isCustomerAccount) return customerAccountForbidden()
+  return crud(request, url, env, 'energy_account_event', ['eventScene', 'authType', 'scanText', 'cardNo', 'accountKnown', 'accountId', 'accountName', 'accountMobile', 'deviceId', 'customerId', 'projectId', 'resultMessage'])
+}
+
+async function accountEventPage(url: URL, env: Env, accessScope: AccessScope) {
+  const pageNo = num(url.searchParams.get('pageNo'), 1)
+  const pageSize = num(url.searchParams.get('pageSize'), 10)
+  const where: string[] = []
+  const args: any[] = []
+  like(url, where, args, 'e.scan_text', 'scanText')
+  like(url, where, args, 'e.card_no', 'cardNo')
+  like(url, where, args, 'e.account_name', 'accountName')
+  exact(url, where, args, 'e.event_scene', 'eventScene')
+  exact(url, where, args, 'e.auth_type', 'authType')
+  exact(url, where, args, 'e.account_known', 'accountKnown')
+  exact(url, where, args, 'e.device_id', 'deviceId')
+  exact(url, where, args, 'e.customer_id', 'customerId')
+  exact(url, where, args, 'e.project_id', 'projectId')
+  applyCustomerScope(where, args, eventCustomerColumn(), accessScope)
+  const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : ''
+  const total = await scalar(env, `SELECT COUNT(*) FROM energy_account_event e ${eventScopeJoins()} ${whereSql}`, args)
+  const rows = await env.DB.prepare(
+    `SELECT e.*, c.name AS customer_name, p.name AS project_name, d.device_name, d.device_no
+     FROM energy_account_event e
+     ${eventScopeJoins()}
+     ${whereSql}
+     ORDER BY e.id DESC LIMIT ? OFFSET ?`
+  )
+    .bind(...args, pageSize, (pageNo - 1) * pageSize)
+    .all<AnyRecord>()
+  return ok({ list: camelRows(rows.results), total })
+}
+
+async function accountEventSimpleList(url: URL, env: Env, accessScope: AccessScope) {
+  const where: string[] = []
+  const args: any[] = []
+  exact(url, where, args, 'e.customer_id', 'customerId')
+  exact(url, where, args, 'e.project_id', 'projectId')
+  exact(url, where, args, 'e.device_id', 'deviceId')
+  applyCustomerScope(where, args, eventCustomerColumn(), accessScope)
+  const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : ''
+  const rows = await env.DB.prepare(
+    `SELECT e.*, c.name AS customer_name, p.name AS project_name, d.device_name, d.device_no
+     FROM energy_account_event e
+     ${eventScopeJoins()}
+     ${whereSql}
+     ORDER BY e.id DESC LIMIT 200`
+  )
+    .bind(...args)
+    .all<AnyRecord>()
+  return ok(camelRows(rows.results))
+}
+
+async function accountEventGet(url: URL, env: Env, accessScope: AccessScope) {
+  const where = ['e.id = ?']
+  const args: any[] = [url.searchParams.get('id')]
+  applyCustomerScope(where, args, eventCustomerColumn(), accessScope)
+  const row = await env.DB.prepare(
+    `SELECT e.*, c.name AS customer_name, p.name AS project_name, d.device_name, d.device_no
+     FROM energy_account_event e
+     ${eventScopeJoins()}
+     WHERE ${where.join(' AND ')}`
+  )
+    .bind(...args)
+    .first<AnyRecord>()
+  return ok(row ? camel(row) : null)
+}
+
+async function userScopeApi(request: Request, url: URL, env: Env, path: string, accessScope: AccessScope) {
+  if (path === '/energy/user-scope/page' && request.method === 'GET') return userScopePage(url, env, accessScope)
+  if (path === '/energy/user-scope/simple-list' && request.method === 'GET') return userScopeSimpleList(url, env, accessScope)
+  if (path === '/energy/user-scope/get' && request.method === 'GET') return userScopeGet(url, env, accessScope)
+  if (accessScope.isCustomerAccount) return customerAccountForbidden()
+  return crud(request, url, env, 'energy_user_scope', ['userId', 'userType', 'customerId', 'projectId', 'deviceId', 'status', 'remark'])
+}
+
+async function userScopePage(url: URL, env: Env, accessScope: AccessScope) {
+  const pageNo = num(url.searchParams.get('pageNo'), 1)
+  const pageSize = num(url.searchParams.get('pageSize'), 10)
+  const where: string[] = []
+  const args: any[] = []
+  exact(url, where, args, 's.user_id', 'userId')
+  exact(url, where, args, 's.user_type', 'userType')
+  exact(url, where, args, 's.customer_id', 'customerId')
+  exact(url, where, args, 's.project_id', 'projectId')
+  exact(url, where, args, 's.device_id', 'deviceId')
+  exact(url, where, args, 's.status', 'status')
+  applyCustomerScope(where, args, userScopeCustomerColumn(), accessScope)
+  const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : ''
+  const total = await scalar(env, `SELECT COUNT(*) FROM energy_user_scope s ${userScopeJoins()} ${whereSql}`, args)
+  const rows = await env.DB.prepare(
+    `SELECT s.*, c.name AS customer_name, p.name AS project_name, d.device_name, d.device_no
+     FROM energy_user_scope s
+     ${userScopeJoins()}
+     ${whereSql}
+     ORDER BY s.id DESC LIMIT ? OFFSET ?`
+  )
+    .bind(...args, pageSize, (pageNo - 1) * pageSize)
+    .all<AnyRecord>()
+  return ok({ list: camelRows(rows.results), total })
+}
+
+async function userScopeSimpleList(url: URL, env: Env, accessScope: AccessScope) {
+  const where: string[] = []
+  const args: any[] = []
+  exact(url, where, args, 's.customer_id', 'customerId')
+  exact(url, where, args, 's.project_id', 'projectId')
+  exact(url, where, args, 's.device_id', 'deviceId')
+  exact(url, where, args, 's.status', 'status')
+  applyCustomerScope(where, args, userScopeCustomerColumn(), accessScope)
+  const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : ''
+  const rows = await env.DB.prepare(
+    `SELECT s.*, c.name AS customer_name, p.name AS project_name, d.device_name, d.device_no
+     FROM energy_user_scope s
+     ${userScopeJoins()}
+     ${whereSql}
+     ORDER BY s.id DESC LIMIT 200`
+  )
+    .bind(...args)
+    .all<AnyRecord>()
+  return ok(camelRows(rows.results))
+}
+
+async function userScopeGet(url: URL, env: Env, accessScope: AccessScope) {
+  const where = ['s.id = ?']
+  const args: any[] = [url.searchParams.get('id')]
+  applyCustomerScope(where, args, userScopeCustomerColumn(), accessScope)
+  const row = await env.DB.prepare(
+    `SELECT s.*, c.name AS customer_name, p.name AS project_name, d.device_name, d.device_no
+     FROM energy_user_scope s
+     ${userScopeJoins()}
+     WHERE ${where.join(' AND ')}`
+  )
+    .bind(...args)
+    .first<AnyRecord>()
+  return ok(row ? camel(row) : null)
+}
+
+async function pricingRuleApi(request: Request, url: URL, env: Env, path: string, accessScope: AccessScope) {
   await ensurePricingRuleFeeColumns(env)
-  if (path === '/energy/pricing-rule/page' && request.method === 'GET') return pricingRulePage(url, env)
+  if (path === '/energy/pricing-rule/page' && request.method === 'GET') return pricingRulePage(url, env, accessScope)
+  if (path === '/energy/pricing-rule/simple-list' && request.method === 'GET') return pricingRuleSimpleList(url, env, accessScope)
+  if (path === '/energy/pricing-rule/get' && request.method === 'GET') return pricingRuleGet(url, env, accessScope)
   if (path === '/energy/pricing-rule/match') {
-    return matchPricingRule(url, env)
+    return matchPricingRule(url, env, accessScope)
   }
+  if (accessScope.isCustomerAccount) return customerAccountForbidden()
   if (path === '/energy/pricing-rule/create' && request.method === 'POST') return createPricingRule(request, env)
   if (path === '/energy/pricing-rule/update' && request.method === 'PUT') return updatePricingRule(request, env)
   return crud(request, url, env, 'energy_pricing_rule', PRICING_RULE_FIELDS)
 }
 
-async function pricingRulePage(url: URL, env: Env) {
+async function pricingRulePage(url: URL, env: Env, accessScope: AccessScope) {
   const pageNo = num(url.searchParams.get('pageNo'), 1)
   const pageSize = num(url.searchParams.get('pageSize'), 10)
   const where: string[] = []
@@ -758,6 +1122,7 @@ async function pricingRulePage(url: URL, env: Env) {
   exact(url, where, args, 'r.project_id', 'projectId')
   exact(url, where, args, 'r.device_id', 'deviceId')
   exact(url, where, args, 'r.status', 'status')
+  applyCustomerScope(where, args, pricingRuleCustomerColumn(), accessScope)
   if (start) {
     where.push('r.effective_start >= ?')
     args.push(start)
@@ -775,6 +1140,7 @@ async function pricingRulePage(url: URL, env: Env) {
      LEFT JOIN energy_customer c ON c.id = r.customer_id
      LEFT JOIN energy_project p ON p.id = r.project_id
      LEFT JOIN energy_device d ON d.id = r.device_id
+     LEFT JOIN energy_project dp ON dp.id = d.project_id
      ${whereSql}`,
     args
   )
@@ -784,6 +1150,7 @@ async function pricingRulePage(url: URL, env: Env) {
      LEFT JOIN energy_customer c ON c.id = r.customer_id
      LEFT JOIN energy_project p ON p.id = r.project_id
      LEFT JOIN energy_device d ON d.id = r.device_id
+     LEFT JOIN energy_project dp ON dp.id = d.project_id
      ${whereSql}
      ORDER BY r.id DESC
      LIMIT ? OFFSET ?`
@@ -794,14 +1161,62 @@ async function pricingRulePage(url: URL, env: Env) {
   return ok({ list: camelRows(rows.results), total })
 }
 
-async function matchPricingRule(url: URL, env: Env) {
+async function pricingRuleSimpleList(url: URL, env: Env, accessScope: AccessScope) {
+  const where: string[] = []
+  const args: any[] = []
+  exact(url, where, args, 'r.customer_id', 'customerId')
+  exact(url, where, args, 'r.project_id', 'projectId')
+  exact(url, where, args, 'r.device_id', 'deviceId')
+  exact(url, where, args, 'r.status', 'status')
+  applyCustomerScope(where, args, pricingRuleCustomerColumn(), accessScope)
+  const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : ''
+  const rows = await env.DB.prepare(
+    `SELECT r.*, c.name AS customer_name, p.name AS project_name, d.device_name, d.device_no
+     FROM energy_pricing_rule r
+     LEFT JOIN energy_customer c ON c.id = r.customer_id
+     LEFT JOIN energy_project p ON p.id = r.project_id
+     LEFT JOIN energy_device d ON d.id = r.device_id
+     LEFT JOIN energy_project dp ON dp.id = d.project_id
+     ${whereSql}
+     ORDER BY r.id DESC LIMIT 200`
+  )
+    .bind(...args)
+    .all<AnyRecord>()
+  return ok(camelRows(rows.results))
+}
+
+async function pricingRuleGet(url: URL, env: Env, accessScope: AccessScope) {
+  const where = ['r.id = ?']
+  const args: any[] = [url.searchParams.get('id')]
+  applyCustomerScope(where, args, pricingRuleCustomerColumn(), accessScope)
+  const row = await env.DB.prepare(
+    `SELECT r.*, c.name AS customer_name, p.name AS project_name, d.device_name, d.device_no
+     FROM energy_pricing_rule r
+     LEFT JOIN energy_customer c ON c.id = r.customer_id
+     LEFT JOIN energy_project p ON p.id = r.project_id
+     LEFT JOIN energy_device d ON d.id = r.device_id
+     LEFT JOIN energy_project dp ON dp.id = d.project_id
+     WHERE ${where.join(' AND ')}`
+  )
+    .bind(...args)
+    .first<AnyRecord>()
+  return ok(row ? camel(row) : null)
+}
+
+async function matchPricingRule(url: URL, env: Env, accessScope: AccessScope) {
   const deviceId = url.searchParams.get('deviceId')
   if (!deviceId) return ok(null)
 
-  const device = await env.DB.prepare('SELECT id, customer_id, project_id FROM energy_device WHERE id = ?')
+  const device = await env.DB.prepare(
+    `SELECT d.id, d.customer_id, d.project_id, p.customer_id AS project_customer_id
+     FROM energy_device d
+     LEFT JOIN energy_project p ON p.id = d.project_id
+     WHERE d.id = ?`
+  )
     .bind(deviceId)
     .first<AnyRecord>()
   if (!device) return ok(null)
+  if (accessScope.isCustomerAccount && Number(device.customer_id || device.project_customer_id || 0) !== Number(accessScope.customerId || 0)) return ok(null)
 
   const billingTime = cleanText(url.searchParams.get('billingTime')) || nowText()
   const customerId = device.customer_id || null
@@ -886,7 +1301,11 @@ async function ensurePricingRuleFeeColumns(env: Env) {
   }
 }
 
-async function chargeSessionApi(request: Request, url: URL, env: Env, path: string) {
+async function chargeSessionApi(request: Request, url: URL, env: Env, path: string, accessScope: AccessScope) {
+  if (path === '/energy/charge-session/page' && request.method === 'GET') return chargeSessionPage(url, env, accessScope)
+  if (path === '/energy/charge-session/simple-list' && request.method === 'GET') return chargeSessionSimpleList(url, env, accessScope)
+  if (path === '/energy/charge-session/get' && request.method === 'GET') return chargeSessionGet(url, env, accessScope)
+  if (accessScope.isCustomerAccount) return customerAccountForbidden()
   if (path === '/energy/charge-session/start' && request.method === 'POST') {
     const body = await readJson(request)
     const sessionNo = `CS${Date.now()}`
@@ -913,6 +1332,76 @@ async function chargeSessionApi(request: Request, url: URL, env: Env, path: stri
     return ok(true)
   }
   return crud(request, url, env, 'energy_charge_session', ['sessionNo', 'deviceId', 'customerId', 'pricingRuleId', 'sessionType', 'startTime', 'endTime', 'startEnergy', 'endEnergy', 'totalEnergy', 'durationMinutes', 'energyFee', 'timeFee', 'totalFee', 'status'])
+}
+
+async function chargeSessionPage(url: URL, env: Env, accessScope: AccessScope) {
+  const pageNo = num(url.searchParams.get('pageNo'), 1)
+  const pageSize = num(url.searchParams.get('pageSize'), 10)
+  const where: string[] = []
+  const args: any[] = []
+  const { start, end } = rangeParam(url, 'startTime')
+  like(url, where, args, 's.session_no', 'sessionNo')
+  exact(url, where, args, 's.device_id', 'deviceId')
+  exact(url, where, args, 's.customer_id', 'customerId')
+  exact(url, where, args, 's.pricing_rule_id', 'pricingRuleId')
+  exact(url, where, args, 's.session_type', 'sessionType')
+  exact(url, where, args, 's.status', 'status')
+  if (start) {
+    where.push('s.start_time >= ?')
+    args.push(start)
+  }
+  if (end) {
+    where.push('s.start_time <= ?')
+    args.push(end)
+  }
+  applyCustomerScope(where, args, chargeSessionCustomerColumn(), accessScope)
+  const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : ''
+  const total = await scalar(env, `SELECT COUNT(*) FROM energy_charge_session s ${chargeSessionJoins()} ${whereSql}`, args)
+  const rows = await env.DB.prepare(
+    `SELECT s.*, c.name AS customer_name, p.name AS project_name, d.device_name, d.device_no
+     FROM energy_charge_session s
+     ${chargeSessionJoins()}
+     ${whereSql}
+     ORDER BY s.id DESC LIMIT ? OFFSET ?`
+  )
+    .bind(...args, pageSize, (pageNo - 1) * pageSize)
+    .all<AnyRecord>()
+  return ok({ list: camelRows(rows.results), total })
+}
+
+async function chargeSessionSimpleList(url: URL, env: Env, accessScope: AccessScope) {
+  const where: string[] = []
+  const args: any[] = []
+  exact(url, where, args, 's.device_id', 'deviceId')
+  exact(url, where, args, 's.customer_id', 'customerId')
+  exact(url, where, args, 's.status', 'status')
+  applyCustomerScope(where, args, chargeSessionCustomerColumn(), accessScope)
+  const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : ''
+  const rows = await env.DB.prepare(
+    `SELECT s.*, c.name AS customer_name, p.name AS project_name, d.device_name, d.device_no
+     FROM energy_charge_session s
+     ${chargeSessionJoins()}
+     ${whereSql}
+     ORDER BY s.id DESC LIMIT 200`
+  )
+    .bind(...args)
+    .all<AnyRecord>()
+  return ok(camelRows(rows.results))
+}
+
+async function chargeSessionGet(url: URL, env: Env, accessScope: AccessScope) {
+  const where = ['s.id = ?']
+  const args: any[] = [url.searchParams.get('id')]
+  applyCustomerScope(where, args, chargeSessionCustomerColumn(), accessScope)
+  const row = await env.DB.prepare(
+    `SELECT s.*, c.name AS customer_name, p.name AS project_name, d.device_name, d.device_no
+     FROM energy_charge_session s
+     ${chargeSessionJoins()}
+     WHERE ${where.join(' AND ')}`
+  )
+    .bind(...args)
+    .first<AnyRecord>()
+  return ok(row ? camel(row) : null)
 }
 
 async function telemetryApi(request: Request, url: URL, env: Env, path: string, accessScope: AccessScope) {
@@ -2063,6 +2552,57 @@ function applyCustomerScope(where: string[], args: any[], column: string, access
   }
   where.push(`${column} = ?`)
   args.push(accessScope.customerId)
+}
+
+function vehicleCustomerColumn() {
+  return 'COALESCE(v.customer_id, p.customer_id, d.customer_id, dp.customer_id)'
+}
+
+function vehicleScopeJoins() {
+  return `
+     LEFT JOIN energy_device d ON d.id = v.device_id
+     LEFT JOIN energy_project p ON p.id = v.project_id
+     LEFT JOIN energy_project dp ON dp.id = d.project_id
+     LEFT JOIN energy_customer c ON c.id = ${vehicleCustomerColumn()}`
+}
+
+function eventCustomerColumn() {
+  return 'COALESCE(e.customer_id, p.customer_id, d.customer_id, dp.customer_id)'
+}
+
+function eventScopeJoins() {
+  return `
+     LEFT JOIN energy_device d ON d.id = e.device_id
+     LEFT JOIN energy_project p ON p.id = e.project_id
+     LEFT JOIN energy_project dp ON dp.id = d.project_id
+     LEFT JOIN energy_customer c ON c.id = ${eventCustomerColumn()}`
+}
+
+function userScopeCustomerColumn() {
+  return 'COALESCE(s.customer_id, p.customer_id, d.customer_id, dp.customer_id)'
+}
+
+function userScopeJoins() {
+  return `
+     LEFT JOIN energy_device d ON d.id = s.device_id
+     LEFT JOIN energy_project p ON p.id = s.project_id
+     LEFT JOIN energy_project dp ON dp.id = d.project_id
+     LEFT JOIN energy_customer c ON c.id = ${userScopeCustomerColumn()}`
+}
+
+function pricingRuleCustomerColumn() {
+  return 'COALESCE(r.customer_id, p.customer_id, d.customer_id, dp.customer_id)'
+}
+
+function chargeSessionCustomerColumn() {
+  return 'COALESCE(s.customer_id, d.customer_id, p.customer_id)'
+}
+
+function chargeSessionJoins() {
+  return `
+     LEFT JOIN energy_device d ON d.id = s.device_id
+     LEFT JOIN energy_project p ON p.id = d.project_id
+     LEFT JOIN energy_customer c ON c.id = ${chargeSessionCustomerColumn()}`
 }
 
 function menu(id: number, parentId: number, name: string, path: string, component: string, componentName: string, icon: string, sort: number) {

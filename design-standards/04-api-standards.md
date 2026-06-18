@@ -293,3 +293,10 @@ POST /infra-api/energy/eiot/alarm
 - 计费规则新增/修改时必须保证 `customerId`、`projectId`、`deviceId` 三者只能有一个有效值；切换范围保存时必须清空旧范围字段。
 - `GET /admin-api/energy/pricing-rule/match` 必须先读取设备所属客户和项目，再按设备级 > 项目级 > 客户级匹配启用且在生效期内的规则。
 - 数据面板、充放电任务和计费试算使用项目场站汇总时，必须能命中项目级计费规则，不允许只匹配设备级规则。
+## 2026-06-18 安全补充标准：客户账号后端隔离
+
+- 客户老板账号的数据权限必须在 Worker 后端强制执行，不能只依赖菜单隐藏或前端路由隐藏。
+- `/admin-api/energy/customer/**`、`/admin-api/energy/project/**`、`/admin-api/energy/device/**`、`/admin-api/energy/vehicle/**`、`/admin-api/energy/account-event/**`、`/admin-api/energy/user-scope/**`、`/admin-api/energy/pricing-rule/**`、`/admin-api/energy/charge-session/**` 的列表、详情和精简列表接口必须按当前客户账号绑定的 `customer_id` 过滤。
+- 当业务记录未直接保存 `customer_id` 时，必须通过项目或设备反查客户归属，例如 `COALESCE(record.customer_id, project.customer_id, device.customer_id, device_project.customer_id)`，避免客户账号通过直接请求 ID 越权读取其他客户数据。
+- 客户老板账号默认只允许查询、导出自己客户范围内的数据；客户资料、项目、设备、车辆、扫码刷卡记录、用户授权、计费规则、充放电任务、客户账号权限等维护类写操作必须由平台管理员执行。
+- `/admin-api/system/auth/refresh-token` 必须重新校验 `system_user.status = 0`；用户被禁用或删除后必须撤销对应 session，禁止继续签发新的 access token。
