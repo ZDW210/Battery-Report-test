@@ -1,0 +1,92 @@
+import request from '@/config/axios'
+
+export interface EnergyReportTouVO {
+  sharpPeak: number
+  peak: number
+  flat: number
+  valley: number
+  deepValley: number
+}
+
+export interface EnergyReportBillSummaryVO {
+  deviceCount: number
+  totalChargeEnergy: number
+  totalDischargeEnergy: number
+  totalFee: number
+  averageBuyRate?: number | null
+  salesRevenue: number
+  averageSellRate?: number | null
+  touSource?: string
+}
+
+export interface EnergyReportDeviceDetailVO {
+  deviceId?: number
+  deviceName?: string
+  deviceNo?: string
+  meterNo?: string
+  projectId?: number
+  projectName?: string
+  customerId?: number
+  customerName?: string
+  startEpi?: number | null
+  endEpi?: number | null
+  startEpe?: number | null
+  endEpe?: number | null
+  chargeEnergy: number
+  dischargeEnergy: number
+  energyRate?: number | null
+  purchaseCost?: number | null
+  pricingRuleId?: number | null
+}
+
+export interface EnergyReportEnergyDetailVO {
+  label: string
+  startReading?: number | null
+  endReading?: number | null
+  multiplier?: number
+  copiedEnergy?: number
+  transformerLoss?: number
+  lineLoss?: number
+  adjustment?: number
+  billingEnergy: number
+  sourceField?: string
+}
+
+export interface EnergyReportFeeDetailVO {
+  category: string
+  component: string
+  period?: string
+  billingEnergy?: number | null
+  rate?: number | null
+  amount?: number | null
+  source?: string
+}
+
+export interface EnergyReportBillVO {
+  billMonth: string
+  billRange: { start: string; end: string }
+  scopeType: string
+  scopeName: string
+  billHeader: Record<string, string>
+  summary: EnergyReportBillSummaryVO
+  deviceDetails: EnergyReportDeviceDetailVO[]
+  energyDetails: EnergyReportEnergyDetailVO[]
+  feeDetails: EnergyReportFeeDetailVO[]
+  analysis: {
+    chargeTou: EnergyReportTouVO
+    dischargeTou: EnergyReportTouVO
+    chargeConsistency?: string
+    dischargeConsistency?: string
+  }
+}
+
+export const EnergyReportApi = {
+  getBillReport: async (params: {
+    scopeType: 'all' | 'project' | 'device'
+    projectId?: number
+    deviceId?: number
+    billMonth: string
+  }) => {
+    return await request.get({ url: '/energy/report/bill', params })
+  }
+}

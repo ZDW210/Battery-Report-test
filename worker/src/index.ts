@@ -11,6 +11,7 @@ type AnyRecord = Record<string, any>
 type TouKey = 'sharpPeak' | 'peak' | 'flat' | 'valley' | 'deepValley'
 type TouEnergy = Record<TouKey, number>
 type TouSource = 'epi' | 'epe'
+type AccessScope = { isCustomerAccount: boolean; customerId: number | null }
 
 const ADMIN_PREFIX = '/admin-api'
 const DAILY_FIELDS = new Set([
@@ -215,7 +216,9 @@ async function handleAdminApi(request: Request, env: Env, ctx: ExecutionContext)
 
     if (path.startsWith('/energy/customer/')) return crud(request, url, env, 'energy_customer', ['name', 'contactName', 'contactMobile', 'region', 'status', 'remark'])
     if (path.startsWith('/energy/project/')) return crud(request, url, env, 'energy_project', ['customerId', 'name', 'code', 'address', 'latitude', 'longitude', 'status', 'remark'])
-    if (path.startsWith('/energy/device/')) return deviceApi(request, url, env, path)
+    const accessScope = await getAccessScope(env, user)
+
+    if (path.startsWith('/energy/device/')) return deviceApi(request, url, env, path, accessScope)
     if (path.startsWith('/energy/vehicle/')) return crud(request, url, env, 'energy_vehicle', ['vehicleNo', 'plateNo', 'qrCode', 'deviceId', 'customerId', 'projectId', 'status', 'remark'])
     if (path.startsWith('/energy/app-user/')) return crud(request, url, env, 'energy_app_user', ['username', 'nickname', 'mobile', 'cardNo', 'miniAdminEnabled', 'status', 'loginIp', 'loginDate', 'remark'])
     if (path.startsWith('/energy/account-event/')) return crud(request, url, env, 'energy_account_event', ['eventScene', 'authType', 'scanText', 'cardNo', 'accountKnown', 'accountId', 'accountName', 'accountMobile', 'deviceId', 'customerId', 'projectId', 'resultMessage'])
@@ -223,8 +226,9 @@ async function handleAdminApi(request: Request, env: Env, ctx: ExecutionContext)
     if (path.startsWith('/energy/pricing-rule/')) return pricingRuleApi(request, url, env, path)
     if (path.startsWith('/energy/charge-session/')) return chargeSessionApi(request, url, env, path)
     if (path.startsWith('/energy/eiot-log/')) return crud(request, url, env, 'energy_eiot_sync_log', ['syncType', 'requestId', 'gatewaySn', 'meterSn', 'payloadUrl', 'status', 'errorMsg'])
-    if (path.startsWith('/energy/alarm/')) return alarmApi(request, url, env, path)
-    if (path.startsWith('/energy/telemetry/')) return telemetryApi(request, url, env, path)
+    if (path.startsWith('/energy/alarm/')) return alarmApi(request, url, env, path, accessScope)
+    if (path.startsWith('/energy/telemetry/')) return telemetryApi(request, url, env, path, accessScope)
+    if (path.startsWith('/energy/report/')) return reportApi(request, url, env, path, accessScope)
 
     if (path === '/infra/file/upload' && request.method === 'POST') return uploadFile(request, env, ctx)
     if (path.startsWith('/infra/file/get/') && request.method === 'GET') return getFile(path, env)
@@ -586,10 +590,10 @@ async function resetCustomerPassword(request: Request, env: Env) {
   return ok(true)
 }
 
-async function deviceApi(request: Request, url: URL, env: Env, path: string) {
+async function deviceApi(request: Request, url: URL, env: Env, path: string, accessScope: AccessScope) {
   if (request.method === 'GET') await refreshDeviceOnlineStatus(env)
-  if (path === '/energy/device/page' && request.method === 'GET') return devicePage(url, env)
-  if (path === '/energy/device/simple-list' && request.method === 'GET') return deviceSimpleList(url, env)
+  if (path === '/energy/device/page' && request.method === 'GET') return devicePage(url, env, accessScope)
+  if (path === '/energy/device/simple-list' && request.method === 'GET') return deviceSimpleList(url, env, accessScope)
   if (path === '/energy/device/control' && request.method === 'POST') {
     const body = await readJson(request)
     return ok({ controlLogId: Date.now(), success: true, message: `已记录 ${body.method || 'CONTROL'} 指令，等待设备网关执行` })
@@ -609,7 +613,7 @@ async function deviceApi(request: Request, url: URL, env: Env, path: string) {
   return crud(request, url, env, 'energy_device', DEVICE_FIELDS)
 }
 
-async function devicePage(url: URL, env: Env) {
+async function devicePage(url: URL, env: Env, accessScope: AccessScope) {
   const pageNo = num(url.searchParams.get('pageNo'), 1)
   const pageSize = num(url.searchParams.get('pageSize'), 10)
   const where: string[] = []
@@ -624,6 +628,7 @@ async function devicePage(url: URL, env: Env) {
   exact(url, where, args, 'd.status', 'status')
   exact(url, where, args, 'd.customer_id', 'customerId')
   exact(url, where, args, 'd.project_id', 'projectId')
+  applyCustomerScope(where, args, 'COALESCE(d.customer_id, p.customer_id)', accessScope)
 
   const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : ''
   const total = await scalar(
@@ -650,13 +655,14 @@ async function devicePage(url: URL, env: Env) {
   return ok({ list: camelRows(rows.results), total })
 }
 
-async function deviceSimpleList(url: URL, env: Env) {
+async function deviceSimpleList(url: URL, env: Env, accessScope: AccessScope) {
   const where: string[] = []
   const args: any[] = []
 
   exact(url, where, args, 'd.customer_id', 'customerId')
   exact(url, where, args, 'd.project_id', 'projectId')
   exact(url, where, args, 'd.status', 'status')
+  applyCustomerScope(where, args, 'COALESCE(d.customer_id, p.customer_id)', accessScope)
 
   const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : ''
   const rows = await env.DB.prepare(
@@ -674,10 +680,51 @@ async function deviceSimpleList(url: URL, env: Env) {
   return ok(camelRows(rows.results))
 }
 
-async function alarmApi(request: Request, url: URL, env: Env, path: string) {
+async function alarmApi(request: Request, url: URL, env: Env, path: string, accessScope: AccessScope) {
   if (path === '/energy/alarm/ack' && request.method === 'PUT') return updateStatus(request, env, 'energy_alarm', 1, 'ack_time')
   if (path === '/energy/alarm/close' && request.method === 'PUT') return updateStatus(request, env, 'energy_alarm', 2, 'close_time')
+  if (path === '/energy/alarm/page' && request.method === 'GET') return alarmPage(url, env, accessScope)
   return crud(request, url, env, 'energy_alarm', ['alarmNo', 'deviceId', 'code', 'level', 'title', 'content', 'status', 'occurTime'])
+}
+
+async function alarmPage(url: URL, env: Env, accessScope: AccessScope) {
+  const pageNo = num(url.searchParams.get('pageNo'), 1)
+  const pageSize = num(url.searchParams.get('pageSize'), 10)
+  const where: string[] = []
+  const args: any[] = []
+
+  like(url, where, args, 'a.alarm_no', 'alarmNo')
+  like(url, where, args, 'a.code', 'code')
+  like(url, where, args, 'a.title', 'title')
+  exact(url, where, args, 'a.device_id', 'deviceId')
+  exact(url, where, args, 'a.level', 'level')
+  exact(url, where, args, 'a.status', 'status')
+  applyCustomerScope(where, args, 'COALESCE(d.customer_id, p.customer_id)', accessScope)
+
+  const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : ''
+  const total = await scalar(
+    env,
+    `SELECT COUNT(*)
+     FROM energy_alarm a
+     LEFT JOIN energy_device d ON d.id = a.device_id
+     LEFT JOIN energy_project p ON p.id = d.project_id
+     ${whereSql}`,
+    args
+  )
+  const rows = await env.DB.prepare(
+    `SELECT a.*, d.device_name, d.device_no, d.customer_id, d.project_id, c.name AS customer_name, p.name AS project_name
+     FROM energy_alarm a
+     LEFT JOIN energy_device d ON d.id = a.device_id
+     LEFT JOIN energy_customer c ON c.id = d.customer_id
+     LEFT JOIN energy_project p ON p.id = d.project_id
+     ${whereSql}
+     ORDER BY a.id DESC
+     LIMIT ? OFFSET ?`
+  )
+    .bind(...args, pageSize, (pageNo - 1) * pageSize)
+    .all<AnyRecord>()
+
+  return ok({ list: camelRows(rows.results), total })
 }
 
 async function pricingRuleApi(request: Request, url: URL, env: Env, path: string) {
@@ -859,32 +906,415 @@ async function chargeSessionApi(request: Request, url: URL, env: Env, path: stri
   return crud(request, url, env, 'energy_charge_session', ['sessionNo', 'deviceId', 'customerId', 'pricingRuleId', 'sessionType', 'startTime', 'endTime', 'startEnergy', 'endEnergy', 'totalEnergy', 'durationMinutes', 'energyFee', 'timeFee', 'totalFee', 'status'])
 }
 
-async function telemetryApi(request: Request, url: URL, env: Env, path: string) {
+async function telemetryApi(request: Request, url: URL, env: Env, path: string, accessScope: AccessScope) {
   if (path === '/energy/telemetry/chart') {
     const { start, end } = collectTimeRange(url)
+    const where: string[] = ['(? IS NULL OR t.device_id = ?)']
+    const args: any[] = [url.searchParams.get('deviceId'), url.searchParams.get('deviceId')]
+  applyCustomerScope(where, args, 'COALESCE(d.customer_id, p.customer_id)', accessScope)
     const rows = await env.DB.prepare(
-      `SELECT * FROM energy_telemetry
-       WHERE (? IS NULL OR device_id = ?)
+      `SELECT t.*
+       FROM energy_telemetry t
+       LEFT JOIN energy_device d ON d.id = t.device_id
+       LEFT JOIN energy_project p ON p.id = d.project_id
+       WHERE ${where.join(' AND ')}
        AND (? IS NULL OR collect_time >= ?)
        AND (? IS NULL OR collect_time <= ?)
        ORDER BY collect_time ASC LIMIT ?`
     )
-      .bind(url.searchParams.get('deviceId'), url.searchParams.get('deviceId'), start, start, end, end, num(url.searchParams.get('limit'), 288))
+      .bind(...args, start, start, end, end, num(url.searchParams.get('limit'), 288))
       .all<AnyRecord>()
     return ok(camelRows(rows.results))
   }
   if (path === '/energy/telemetry/daily-stat') {
     const requested = snake(String(url.searchParams.get('field') || 'p'))
     const field = DAILY_FIELDS.has(requested) ? requested : 'p'
+    const where: string[] = ['(? IS NULL OR t.device_id = ?)']
+    const args: any[] = [url.searchParams.get('deviceId'), url.searchParams.get('deviceId')]
+  applyCustomerScope(where, args, 'COALESCE(d.customer_id, p.customer_id)', accessScope)
     const rows = await env.DB.prepare(
-      `SELECT substr(collect_time, 1, 10) AS date, MAX(${field}) AS max, MIN(${field}) AS min, AVG(${field}) AS avg
-       FROM energy_telemetry WHERE (? IS NULL OR device_id = ?) GROUP BY substr(collect_time, 1, 10) ORDER BY date DESC LIMIT 31`
+      `SELECT substr(t.collect_time, 1, 10) AS date, MAX(t.${field}) AS max, MIN(t.${field}) AS min, AVG(t.${field}) AS avg
+       FROM energy_telemetry t
+       LEFT JOIN energy_device d ON d.id = t.device_id
+       LEFT JOIN energy_project p ON p.id = d.project_id
+       WHERE ${where.join(' AND ')}
+       GROUP BY substr(t.collect_time, 1, 10) ORDER BY date DESC LIMIT 31`
     )
-      .bind(url.searchParams.get('deviceId'), url.searchParams.get('deviceId'))
+      .bind(...args)
       .all<AnyRecord>()
     return ok(camelRows(rows.results))
   }
   return crud(request, url, env, 'energy_telemetry', ['deviceId', 'gatewaySn', 'meterSn', 'meterNo', 'collectTime', 'timestamp', 'source', 'state', 'pa', 'pb', 'pc', 'ua', 'ub', 'uc', 'ia', 'ib', 'ic', 'p', 'pf', 'epi', 'epij', 'epif', 'epip', 'epig', 'epe', 'epej', 'epef', 'epep', 'epeg'])
+}
+
+async function reportApi(request: Request, url: URL, env: Env, path: string, accessScope: AccessScope) {
+  if (path === '/energy/report/bill' && request.method === 'GET') return reportBill(url, env, accessScope)
+  return fail('接口方法不匹配', 405, 405)
+}
+
+async function reportBill(url: URL, env: Env, accessScope: AccessScope) {
+  const billMonth = cleanText(url.searchParams.get('billMonth')) || nowText().slice(0, 7)
+  const monthStart = `${billMonth}-01 00:00:00`
+  const monthEnd = endOfMonthText(billMonth)
+  const scopeType = cleanText(url.searchParams.get('scopeType')) || 'all'
+  const devices = await reportDevices(url, env, accessScope, scopeType)
+  const deviceIds = devices.map((device) => Number(device.id)).filter(Number.isFinite)
+  if (!deviceIds.length) {
+    return ok(emptyReportBill(billMonth, monthStart, monthEnd, scopeType))
+  }
+
+  const rulesByDevice = new Map<number, AnyRecord | null>()
+  for (const device of devices) {
+    rulesByDevice.set(Number(device.id), await findPricingRuleForDevice(env, Number(device.id), monthEnd))
+  }
+
+  const deviceDetails = await Promise.all(devices.map((device) => buildReportDeviceDetail(env, device, rulesByDevice.get(Number(device.id)) || null, monthStart, monthEnd)))
+  const intervals = await reportIntervals(env, deviceIds, monthStart, monthEnd)
+  const telemetryRows = await reportTelemetryRows(env, deviceIds, monthStart, monthEnd)
+  const intervalSummary = summarizeIntervals(intervals)
+  const telemetryFallback = await reportTelemetryFallback(env, deviceIds, monthStart, monthEnd)
+  const chargeEnergy = sumTouEnergy(intervalSummary.charge) > 0 ? intervalSummary.charge : telemetryFallback.charge
+  const dischargeEnergy = sumTouEnergy(intervalSummary.discharge) > 0 ? intervalSummary.discharge : telemetryFallback.discharge
+  const totalChargeEnergy = round4(sumTouEnergy(chargeEnergy) || deviceDetails.reduce((sum, item) => sum + item.chargeEnergy, 0))
+  const totalDischargeEnergy = round4(sumTouEnergy(dischargeEnergy) || deviceDetails.reduce((sum, item) => sum + item.dischargeEnergy, 0))
+  const ruleRows = uniqueRules(Array.from(rulesByDevice.values()).filter(Boolean) as AnyRecord[])
+  const feeDetails = buildReportFeeDetails(chargeEnergy, dischargeEnergy, ruleRows, devices, telemetryRows)
+  const totalFee = reportBillingFeeTotal(feeDetails)
+  const salesRevenue = round2(sumByTou(dischargeEnergy, averageTouRates(ruleRows)))
+
+  return ok({
+    billMonth,
+    billRange: { start: monthStart, end: monthEnd },
+    scopeType,
+    scopeName: reportScopeName(scopeType, devices),
+    billHeader: buildReportHeader(devices, ruleRows, billMonth, monthStart, monthEnd, scopeType),
+    summary: {
+      deviceCount: devices.length,
+      totalChargeEnergy,
+      totalDischargeEnergy,
+      totalFee,
+      averageBuyRate: totalChargeEnergy > 0 ? round4(totalFee / totalChargeEnergy) : null,
+      salesRevenue,
+      averageSellRate: totalDischargeEnergy > 0 ? round4(salesRevenue / totalDischargeEnergy) : null,
+      touSource: intervalSummary.count > 0 ? 'interval' : 'telemetry'
+    },
+    deviceDetails,
+    energyDetails: buildReportEnergyDetails(deviceDetails, chargeEnergy, dischargeEnergy),
+    feeDetails,
+    analysis: {
+      chargeTou: chargeEnergy,
+      dischargeTou: dischargeEnergy,
+      chargeConsistency: consistencyStatus(chargeEnergy, totalChargeEnergy),
+      dischargeConsistency: consistencyStatus(dischargeEnergy, totalDischargeEnergy)
+    }
+  })
+}
+
+async function reportDevices(url: URL, env: Env, accessScope: AccessScope, scopeType: string) {
+  const where: string[] = []
+  const args: any[] = []
+  if (scopeType === 'project') {
+    where.push('d.project_id = ?')
+    args.push(url.searchParams.get('projectId'))
+  }
+  if (scopeType === 'device') {
+    where.push('d.id = ?')
+    args.push(url.searchParams.get('deviceId'))
+  }
+  applyCustomerScope(where, args, 'COALESCE(d.customer_id, p.customer_id)', accessScope)
+  const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : ''
+  const rows = await env.DB.prepare(
+    `SELECT d.*, c.name AS customer_name, p.name AS project_name, p.customer_id AS project_customer_id
+     FROM energy_device d
+     LEFT JOIN energy_project p ON p.id = d.project_id
+     LEFT JOIN energy_customer c ON c.id = COALESCE(d.customer_id, p.customer_id)
+     ${whereSql}
+     ORDER BY d.id DESC
+     LIMIT 1000`
+  )
+    .bind(...args)
+    .all<AnyRecord>()
+  return rows.results || []
+}
+
+async function buildReportDeviceDetail(env: Env, device: AnyRecord, rule: AnyRecord | null, start: string, end: string) {
+  const first = await firstTelemetryInRange(env, Number(device.id), start, end)
+  const last = await lastTelemetryInRange(env, Number(device.id), start, end)
+  const startEpi = numberOrNull(first?.epi)
+  const endEpi = numberOrNull(last?.epi)
+  const startEpe = numberOrNull(first?.epe)
+  const endEpe = numberOrNull(last?.epe)
+  const chargeEnergy = startEpi !== null && endEpi !== null ? round4(Math.max(0, endEpi - startEpi)) : 0
+  const dischargeEnergy = startEpe !== null && endEpe !== null ? round4(Math.max(0, endEpe - startEpe)) : 0
+  const energyRate = numberOrNull(rule?.energy_rate)
+  return {
+    deviceId: device.id,
+    deviceName: device.device_name || device.device_no || `电表 ${device.id}`,
+    deviceNo: device.device_no || '',
+    meterNo: device.meter_no || '',
+    projectId: device.project_id || null,
+    projectName: device.project_name || '',
+    customerId: device.customer_id || device.project_customer_id || null,
+    customerName: device.customer_name || '',
+    startEpi,
+    endEpi,
+    startEpe,
+    endEpe,
+    chargeEnergy,
+    dischargeEnergy,
+    energyRate,
+    purchaseCost: energyRate === null ? null : round2(chargeEnergy * energyRate),
+    pricingRuleId: rule?.id || null
+  }
+}
+
+async function firstTelemetryInRange(env: Env, deviceId: number, start: string, end: string) {
+  return env.DB.prepare(
+    `SELECT * FROM energy_telemetry WHERE device_id = ? AND collect_time >= ? AND collect_time <= ? ORDER BY collect_time ASC, id ASC LIMIT 1`
+  ).bind(deviceId, start, end).first<AnyRecord>()
+}
+
+async function lastTelemetryInRange(env: Env, deviceId: number, start: string, end: string) {
+  return env.DB.prepare(
+    `SELECT * FROM energy_telemetry WHERE device_id = ? AND collect_time >= ? AND collect_time <= ? ORDER BY collect_time DESC, id DESC LIMIT 1`
+  ).bind(deviceId, start, end).first<AnyRecord>()
+}
+
+async function reportIntervals(env: Env, deviceIds: number[], start: string, end: string) {
+  const placeholders = deviceIds.map(() => '?').join(',')
+  const rows = await env.DB.prepare(
+    `SELECT * FROM energy_telemetry_interval
+     WHERE device_id IN (${placeholders}) AND end_time >= ? AND end_time <= ?
+     ORDER BY end_time ASC`
+  )
+    .bind(...deviceIds, start, end)
+    .all<AnyRecord>()
+  return rows.results || []
+}
+
+async function reportTelemetryRows(env: Env, deviceIds: number[], start: string, end: string) {
+  const placeholders = deviceIds.map(() => '?').join(',')
+  const rows = await env.DB.prepare(
+    `SELECT device_id, collect_time, p
+     FROM energy_telemetry
+     WHERE device_id IN (${placeholders}) AND collect_time >= ? AND collect_time <= ?
+     ORDER BY collect_time ASC, id ASC`
+  )
+    .bind(...deviceIds, start, end)
+    .all<AnyRecord>()
+  return rows.results || []
+}
+
+function summarizeIntervals(intervals: AnyRecord[]) {
+  const charge = emptyTouEnergy()
+  const discharge = emptyTouEnergy()
+  intervals.forEach((row) => {
+    charge.sharpPeak += Number(row.charge_sharp_peak || 0)
+    charge.peak += Number(row.charge_peak || 0)
+    charge.flat += Number(row.charge_flat || 0)
+    charge.valley += Number(row.charge_valley || 0)
+    charge.deepValley += Number(row.charge_deep_valley || 0)
+    discharge.sharpPeak += Number(row.discharge_sharp_peak || 0)
+    discharge.peak += Number(row.discharge_peak || 0)
+    discharge.flat += Number(row.discharge_flat || 0)
+    discharge.valley += Number(row.discharge_valley || 0)
+    discharge.deepValley += Number(row.discharge_deep_valley || 0)
+  })
+  return { charge: roundTouEnergy(charge), discharge: roundTouEnergy(discharge), count: intervals.length }
+}
+
+async function reportTelemetryFallback(env: Env, deviceIds: number[], start: string, end: string) {
+  const charge = emptyTouEnergy()
+  const discharge = emptyTouEnergy()
+  for (const deviceId of deviceIds) {
+    const first = await firstTelemetryInRange(env, deviceId, start, end)
+    const last = await lastTelemetryInRange(env, deviceId, start, end)
+    charge.sharpPeak += positiveEnergyDelta(first || {}, last || {}, 'epij')
+    charge.peak += positiveEnergyDelta(first || {}, last || {}, 'epif')
+    charge.flat += positiveEnergyDelta(first || {}, last || {}, 'epip')
+    charge.valley += positiveEnergyDelta(first || {}, last || {}, 'epig')
+    discharge.sharpPeak += positiveEnergyDelta(first || {}, last || {}, 'epej')
+    discharge.peak += positiveEnergyDelta(first || {}, last || {}, 'epef')
+    discharge.flat += positiveEnergyDelta(first || {}, last || {}, 'epep')
+    discharge.valley += positiveEnergyDelta(first || {}, last || {}, 'epeg')
+  }
+  return { charge: roundTouEnergy(charge), discharge: roundTouEnergy(discharge) }
+}
+
+function buildReportEnergyDetails(deviceDetails: AnyRecord[], charge: TouEnergy, discharge: TouEnergy) {
+  const totalStartEpi = nullableNumberSum(deviceDetails.map((row) => row.startEpi))
+  const totalEndEpi = nullableNumberSum(deviceDetails.map((row) => row.endEpi))
+  const totalStartEpe = nullableNumberSum(deviceDetails.map((row) => row.startEpe))
+  const totalEndEpe = nullableNumberSum(deviceDetails.map((row) => row.endEpe))
+  return [
+    energyDetailRow('正向有功（总）', totalStartEpi, totalEndEpi, sumTouEnergy(charge), 'EPI'),
+    energyDetailRow('正向有功（尖）', null, null, charge.sharpPeak, 'EPIJ'),
+    energyDetailRow('正向有功（峰）', null, null, charge.peak, 'EPIF'),
+    energyDetailRow('正向有功（平）', null, null, charge.flat, 'EPIP'),
+    energyDetailRow('正向有功（谷）', null, null, charge.valley, 'EPIG'),
+    energyDetailRow('正向有功（深谷）', null, null, charge.deepValley, '计费时段/深谷'),
+    energyDetailRow('反向有功（总）', totalStartEpe, totalEndEpe, sumTouEnergy(discharge), 'EPE'),
+    energyDetailRow('反向有功（尖）', null, null, discharge.sharpPeak, 'EPEJ'),
+    energyDetailRow('反向有功（峰）', null, null, discharge.peak, 'EPEF'),
+    energyDetailRow('反向有功（平）', null, null, discharge.flat, 'EPEP'),
+    energyDetailRow('反向有功（谷）', null, null, discharge.valley, 'EPEG'),
+    energyDetailRow('反向有功（深谷）', null, null, discharge.deepValley, '计费时段/深谷')
+  ]
+}
+
+function energyDetailRow(label: string, startReading: number | null, endReading: number | null, billingEnergy: number, sourceField: string) {
+  return {
+    label,
+    startReading,
+    endReading,
+    multiplier: 1,
+    copiedEnergy: billingEnergy,
+    transformerLoss: 0,
+    lineLoss: 0,
+    adjustment: 0,
+    billingEnergy: round4(billingEnergy),
+    sourceField
+  }
+}
+
+function buildReportFeeDetails(charge: TouEnergy, discharge: TouEnergy, rules: AnyRecord[], devices: AnyRecord[], telemetryRows: AnyRecord[]) {
+  const rates = averageReportRates(rules)
+  const rows = [
+    feeDetailHeader('市场化购电费'),
+    ...touFeeRows('市场化购电费', '零售交易电费', charge, rates.agentPurchasePrice),
+    feeDetailHeader('上网环节线损费用'),
+    ...touFeeRows('上网环节线损费用', '上网环节线损费用', charge, rates.lineLossPrice),
+    feeDetailHeader('输配电量电费'),
+    ...touFeeRows('输配电量电费', '电量电费', charge, rates.transmissionDistributionPrice),
+    feeDetailHeader('系统运行费用'),
+    ...touFeeRows('系统运行费用', '煤电容量电费', charge, rates.systemOperationFee),
+    ...touFeeRows('系统运行费用', '上网环节线损代理采购损益', charge, 0),
+    ...touFeeRows('系统运行费用', '力调电费损益', charge, 0),
+    ...touFeeRows('系统运行费用', '峰谷分时电价损益', charge, 0),
+    ...touFeeRows('系统运行费用', '电价交叉补贴新增损益', charge, 0),
+    ...touFeeRows('系统运行费用', '天然气发电容量电费（含气电联动）', charge, 0),
+    ...touFeeRows('系统运行费用', '抽水蓄能容量电费', charge, 0),
+    feeDetailHeader('政府性基金及附加'),
+    ...touFeeRows('政府性基金及附加', '库区移民基金', charge, rates.governmentFundSurcharge),
+    ...touFeeRows('政府性基金及附加', '可再生能源附加', charge, 0),
+    ...touFeeRows('政府性基金及附加', '国家重大水利工程建设基金', charge, 0),
+    feeDetailHeader('售电收入'),
+    ...touFeeRows('售电收入', '放电售电收入', discharge, averageTouRates(rules), -1),
+    demandFeeDetailRow(rules, devices, telemetryRows),
+    transformerFeeDetailRow(rules)
+  ].filter(Boolean)
+  rows.push({ category: '合计', component: '本期电费合计', period: '', billingEnergy: null, rate: null, amount: reportBillingFeeTotal(rows), source: '汇总，不含售电收入' })
+  return rows
+}
+
+function feeDetailHeader(category: string) {
+  return { category, component: '', period: '', billingEnergy: null, rate: null, amount: null, source: '分组标题' }
+}
+
+function touFeeRows(category: string, component: string, energy: TouEnergy, rateOrRates: number | TouEnergy, sign = 1) {
+  const periods: Array<{ key: TouKey; label: string }> = [
+    { key: 'sharpPeak', label: '尖' },
+    { key: 'peak', label: '峰' },
+    { key: 'flat', label: '平' },
+    { key: 'valley', label: '谷' },
+    { key: 'deepValley', label: '深谷' }
+  ]
+  return periods
+    .filter((period) => Number(energy[period.key] || 0) > 0 || component === '零售交易电费' || component === '电量电费')
+    .map((period) => {
+      const rate = typeof rateOrRates === 'number' ? rateOrRates : Number(rateOrRates[period.key] || 0)
+      const billingEnergy = round4(Number(energy[period.key] || 0))
+      return {
+        category,
+        component,
+        period: period.label,
+        billingEnergy,
+        rate: round8(rate),
+        amount: round2(billingEnergy * rate * sign),
+        source: '计费规则 × EIOT分时电量'
+      }
+    })
+}
+
+function demandFeeDetailRow(rules: AnyRecord[], devices: AnyRecord[], telemetryRows: AnyRecord[]) {
+  const enabled = rules.filter((rule) => rule.capacity_billing_mode === 'maxDemand')
+  if (!enabled.length) return { category: '容需量费用', component: '最大需量费用', period: '', billingEnergy: 0, rate: null, amount: 0, source: '未启用' }
+  const demand = round4(maxDemandFromTelemetry(telemetryRows))
+  const rate = averageNumber(enabled.map((rule) => numberOrNull(rule.max_demand_price)))
+  return { category: '容需量费用', component: '最大需量费用', period: '', billingEnergy: demand, rate, amount: round2(demand * rate), source: '遥测P按15分钟窗口聚合最大需量 × 单价' }
+}
+
+function transformerFeeDetailRow(rules: AnyRecord[]) {
+  const enabled = rules.filter((rule) => rule.capacity_billing_mode === 'transformerCapacity')
+  if (!enabled.length) return { category: '容需量费用', component: '变压器容量费用', period: '', billingEnergy: 0, rate: null, amount: 0, source: '未启用' }
+  const capacity = round4(enabled.reduce((sum, rule) => sum + Number(rule.transformer_capacity_kva || 0), 0))
+  const rate = averageNumber(enabled.map((rule) => numberOrNull(rule.transformer_capacity_price)))
+  return { category: '容需量费用', component: '变压器容量费用', period: '', billingEnergy: capacity, rate, amount: round2(capacity * rate), source: '容量 × 单价' }
+}
+
+function averageReportRates(rules: AnyRecord[]) {
+  return {
+    agentPurchasePrice: averageNumber(rules.map((rule) => numberOrNull(rule.agent_purchase_price))),
+    lineLossPrice: averageNumber(rules.map((rule) => numberOrNull(rule.line_loss_price))),
+    transmissionDistributionPrice: averageNumber(rules.map((rule) => numberOrNull(rule.transmission_distribution_price))),
+    systemOperationFee: averageNumber(rules.map((rule) => numberOrNull(rule.system_operation_fee))),
+    governmentFundSurcharge: averageNumber(rules.map((rule) => numberOrNull(rule.government_fund_surcharge)))
+  }
+}
+
+function averageTouRates(rules: AnyRecord[]): TouEnergy {
+  return {
+    sharpPeak: averageNumber(rules.map((rule) => numberOrNull(rule.sharp_peak_rate))),
+    peak: averageNumber(rules.map((rule) => numberOrNull(rule.peak_rate))),
+    flat: averageNumber(rules.map((rule) => numberOrNull(rule.flat_rate))),
+    valley: averageNumber(rules.map((rule) => numberOrNull(rule.valley_rate))),
+    deepValley: averageNumber(rules.map((rule) => numberOrNull(rule.deep_valley_rate)))
+  }
+}
+
+function sumByTou(energy: TouEnergy, rates: TouEnergy) {
+  return round2((Object.keys(energy) as TouKey[]).reduce((sum, key) => sum + Number(energy[key] || 0) * Number(rates[key] || 0), 0))
+}
+
+function reportBillingFeeTotal(rows: AnyRecord[]) {
+  return round2(rows.reduce((sum, row) => {
+    if (!row || row.category === '售电收入' || row.category === '合计') return sum
+    return sum + Number(row.amount || 0)
+  }, 0))
+}
+
+function buildReportHeader(devices: AnyRecord[], rules: AnyRecord[], billMonth: string, start: string, end: string, scopeType: string) {
+  const device = devices[0] || {}
+  const rule = rules[0] || {}
+  return {
+    billStartDate: start.slice(0, 10),
+    billEndDate: end.slice(0, 10),
+    accountNo: '待录入',
+    customerName: device.customer_name || rule.customer_name || '待录入',
+    usageAddress: scopeType === 'project' ? device.project_name || '待录入' : device.project_name || '待录入',
+    electricityCategory: rule.electricity_category || '待录入',
+    voltageLevel: rule.voltage_level || '待录入',
+    serviceUnit: '待录入',
+    marketType: scopeType === 'device' ? '单表统计' : scopeType === 'project' ? '场站汇总' : '全部电表汇总',
+    printer: 'system',
+    printDate: nowText().slice(0, 10),
+    reportNo: `ES-${billMonth.replace('-', '')}-${Date.now()}`
+  }
+}
+
+function emptyReportBill(billMonth: string, start: string, end: string, scopeType: string) {
+  return {
+    billMonth,
+    billRange: { start, end },
+    scopeType,
+    scopeName: '暂无电表',
+    billHeader: buildReportHeader([], [], billMonth, start, end, scopeType),
+    summary: { deviceCount: 0, totalChargeEnergy: 0, totalDischargeEnergy: 0, totalFee: 0, averageBuyRate: null, salesRevenue: 0, averageSellRate: null, touSource: 'empty' },
+    deviceDetails: [],
+    energyDetails: [],
+    feeDetails: [],
+    analysis: { chargeTou: emptyTouEnergy(), dischargeTou: emptyTouEnergy(), chargeConsistency: '无数据', dischargeConsistency: '无数据' }
+  }
 }
 
 function detectEiotPushType(payload: unknown) {
@@ -1460,6 +1890,29 @@ async function requireUser(request: Request, env: Env) {
   return env.DB.prepare('SELECT * FROM system_user WHERE id = ? AND status = 0').bind(session.user_id).first<AnyRecord>()
 }
 
+async function getAccessScope(env: Env, user: AnyRecord): Promise<AccessScope> {
+  const account = await env.DB.prepare(
+    'SELECT customer_id FROM energy_customer_account WHERE system_user_id = ? AND status = 0 LIMIT 1'
+  )
+    .bind(user.id)
+    .first<AnyRecord>()
+  if (!account) return { isCustomerAccount: false, customerId: null }
+  return {
+    isCustomerAccount: true,
+    customerId: account.customer_id === null || account.customer_id === undefined ? null : Number(account.customer_id)
+  }
+}
+
+function applyCustomerScope(where: string[], args: any[], column: string, accessScope: AccessScope) {
+  if (!accessScope.isCustomerAccount) return
+  if (!accessScope.customerId) {
+    where.push('1 = 0')
+    return
+  }
+  where.push(`${column} = ?`)
+  args.push(accessScope.customerId)
+}
+
 function menu(id: number, parentId: number, name: string, path: string, component: string, componentName: string, icon: string, sort: number) {
   return { id, parentId, name, path, component, componentName, icon, visible: true, keepAlive: true, alwaysShow: false, redirect: '', sort }
 }
@@ -1693,6 +2146,76 @@ function textFromUnix(value: unknown) {
   if (!timestamp) return ''
   const milliseconds = timestamp > 100000000000 ? timestamp : timestamp * 1000
   return new Date(milliseconds).toISOString().replace('T', ' ').slice(0, 19)
+}
+
+function endOfMonthText(monthValue: string) {
+  const match = cleanText(monthValue).match(/^(\d{4})-(\d{2})$/)
+  if (!match) return nowText()
+  const year = Number(match[1])
+  const month = Number(match[2])
+  const end = new Date(Date.UTC(year, month, 0, 23, 59, 59))
+  return end.toISOString().replace('T', ' ').slice(0, 19)
+}
+
+function round2(value: number) {
+  return Number(Number(value || 0).toFixed(2))
+}
+
+function round4(value: number) {
+  return Number(Number(value || 0).toFixed(4))
+}
+
+function round8(value: number) {
+  return Number(Number(value || 0).toFixed(8))
+}
+
+function nullableNumberSum(values: Array<number | null | undefined>) {
+  const nums = values.filter((value): value is number => typeof value === 'number' && Number.isFinite(value))
+  return nums.length ? round4(nums.reduce((sum, value) => sum + value, 0)) : null
+}
+
+function averageNumber(values: Array<number | null>) {
+  const nums = values.filter((value): value is number => value !== null && Number.isFinite(value))
+  return nums.length ? round8(nums.reduce((sum, value) => sum + value, 0) / nums.length) : 0
+}
+
+function uniqueRules(rules: AnyRecord[]) {
+  return Array.from(new Map(rules.map((rule, index) => [rule.id || index, rule])).values())
+}
+
+function reportScopeName(scopeType: string, devices: AnyRecord[]) {
+  if (!devices.length) return '暂无电表'
+  if (scopeType === 'device') return devices[0].device_name || devices[0].device_no || `电表 ${devices[0].id}`
+  if (scopeType === 'project') return devices[0].project_name || '场站汇总'
+  return '全部电表汇总'
+}
+
+function consistencyStatus(energy: TouEnergy, total: number) {
+  const subtotal = sumTouEnergy(energy)
+  if (total <= 0 && subtotal <= 0) return '无数据'
+  const tolerance = Math.max(0.02, total * 0.02)
+  return Math.abs(subtotal - total) <= tolerance ? '一致' : '分项缺失'
+}
+
+function maxDemandFromTelemetry(rows: AnyRecord[]) {
+  const bucketMs = 5 * 60 * 1000
+  const windowMs = 15 * 60 * 1000
+  const buckets = new Map<number, number>()
+  rows.forEach((row) => {
+    const time = parseLocalDateTime(cleanText(row.collect_time))
+    if (!time) return
+    const power = numberOrNull(row.p)
+    if (power === null) return
+    const bucket = Math.floor(time / bucketMs) * bucketMs
+    buckets.set(bucket, (buckets.get(bucket) || 0) + Math.max(0, power))
+  })
+  const points = Array.from(buckets.entries()).map(([time, power]) => ({ time, power })).sort((a, b) => a.time - b.time)
+  return points.reduce((max, point, index) => {
+    const windowStart = point.time - windowMs + bucketMs
+    const window = points.slice(0, index + 1).filter((item) => item.time >= windowStart)
+    const demand = window.reduce((sum, item) => sum + item.power, 0) / Math.max(window.length, 1)
+    return Math.max(max, demand)
+  }, 0)
 }
 
 function localizedText(value: unknown) {

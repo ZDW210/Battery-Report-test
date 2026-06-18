@@ -3,6 +3,9 @@
   "name": "report",
   "main": "worker/src/index.ts",
   "compatibility_date": "2026-06-15",
+  "observability": {
+    "enabled": false
+  },
   "build": {
     "command": "npm run build"
   },

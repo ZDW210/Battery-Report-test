@@ -18,15 +18,35 @@
       </div>
     </div>
 
-    <el-row :gutter="12">
-      <el-col v-for="item in statCards" :key="item.label" :lg="6" :md="12" :xs="24">
+    <el-row :gutter="12" class="energy-dashboard__top-row">
+      <el-col :lg="6" :md="8" :sm="24" :xs="24">
         <el-card shadow="never" class="energy-dashboard__stat">
           <div>
-            <span>{{ item.label }}</span>
-            <strong>{{ item.value }}</strong>
-            <small>{{ item.hint }}</small>
+            <span>设备总数</span>
+            <strong>{{ deviceTotal }}</strong>
+            <small>在线 {{ onlineTotal }} 台</small>
           </div>
-          <Icon :icon="item.icon" :style="{ color: item.color }" :size="32" />
+          <Icon icon="ep:monitor" style="color: #2563eb" :size="32" />
+        </el-card>
+      </el-col>
+      <el-col :lg="18" :md="16" :sm="24" :xs="24">
+        <el-card shadow="never" class="energy-dashboard__status-card">
+          <template #header>
+            <div class="energy-dashboard__card-header">
+              <span>设备在线状态</span>
+            </div>
+          </template>
+          <el-skeleton :loading="loading" animated>
+            <div class="energy-dashboard__soc-grid">
+              <div v-for="item in statusBands" :key="item.label" class="energy-dashboard__soc-item">
+                <div class="energy-dashboard__soc-top">
+                  <span>{{ item.label }}</span>
+                  <strong>{{ item.count }}</strong>
+                </div>
+                <el-progress :percentage="item.percent" :stroke-width="10" :color="item.color" />
+              </div>
+            </div>
+          </el-skeleton>
         </el-card>
       </el-col>
     </el-row>
@@ -74,25 +94,6 @@
                 <template #default="{ row }">{{ formatDateText(row.lastReadingTime) }}</template>
               </el-table-column>
             </el-table>
-          </el-skeleton>
-        </el-card>
-
-        <el-card shadow="never">
-          <template #header>
-            <div class="energy-dashboard__card-header">
-              <span>设备在线状态</span>
-            </div>
-          </template>
-          <el-skeleton :loading="loading" animated>
-            <div class="energy-dashboard__soc-grid">
-              <div v-for="item in statusBands" :key="item.label" class="energy-dashboard__soc-item">
-                <div class="energy-dashboard__soc-top">
-                  <span>{{ item.label }}</span>
-                  <strong>{{ item.count }}</strong>
-                </div>
-                <el-progress :percentage="item.percent" :stroke-width="10" :color="item.color" />
-              </div>
-            </div>
           </el-skeleton>
         </el-card>
       </el-col>
@@ -212,7 +213,6 @@ import { EnergyAlarmApi } from '@/api/energy/alarm'
 import type { EnergyAlarmVO } from '@/api/energy/alarm'
 import { EnergyDeviceApi } from '@/api/energy/device'
 import type { EnergyDeviceVO } from '@/api/energy/device'
-import { EnergyProjectApi } from '@/api/energy/project'
 import { EnergyTelemetryApi } from '@/api/energy/telemetry'
 import type { EnergyTelemetryVO } from '@/api/energy/telemetry'
 import { formatNullableDate } from '@/utils/formatTime'
@@ -236,8 +236,6 @@ const devices = ref<EnergyDeviceVO[]>([])
 const latestAlarms = ref<EnergyAlarmVO[]>([])
 const dataPanelRows = ref<EnergyTelemetryVO[]>([])
 const deviceTotal = ref(0)
-const projectTotal = ref(0)
-const activeAlarmTotal = ref(0)
 
 const dataMetricGroups: Array<{ value: MetricGroupValue; label: string; fields: MetricField[] }> = [
   {
@@ -356,43 +354,11 @@ const dataPanelChartOptions = computed<EChartsOption>(() => {
   })
 })
 
-const statCards = computed(() => [
-  {
-    label: '设备总数',
-    value: deviceTotal.value,
-    hint: `在线 ${onlineTotal.value} 台`,
-    icon: 'ep:monitor',
-    color: '#2563eb'
-  },
-  {
-    label: '在线率',
-    value: `${onlineRate.value}%`,
-    hint: '按5分钟报文判断',
-    icon: 'ep:connection',
-    color: '#0f766e'
-  },
-  {
-    label: '项目站点',
-    value: projectTotal.value,
-    hint: '已建档项目',
-    icon: 'ep:office-building',
-    color: '#7c3aed'
-  },
-  {
-    label: '待处理告警',
-    value: activeAlarmTotal.value,
-    hint: '未确认/未关闭',
-    icon: 'ep:warning',
-    color: '#dc2626'
-  }
-])
-
 const statusBands = computed(() => {
   const bands = [
     { label: '在线', status: 0, color: '#0f766e' },
     { label: '离线', status: 1, color: '#64748b' },
-    { label: '故障', status: 2, color: '#dc2626' },
-    { label: '维护', status: 3, color: '#ca8a04' }
+    { label: '故障', status: 2, color: '#dc2626' }
   ]
   return bands.map((band) => {
     const count = devices.value.filter((item) => item.status === band.status).length
@@ -408,8 +374,7 @@ const getDeviceStatusText = (status?: number) => {
   const statusMap: Record<number, string> = {
     0: '在线',
     1: '离线',
-    2: '故障',
-    3: '维护'
+    2: '故障'
   }
   return status === undefined || status === null ? '未知' : statusMap[status] || `状态${status}`
 }
@@ -424,17 +389,14 @@ const getDeviceStatusType = (status?: number) => {
 const loadDashboard = async () => {
   loading.value = true
   try {
-    const [devicePage, alarmPage, projectPage] = await Promise.all([
+    const [devicePage, alarmPage] = await Promise.all([
       EnergyDeviceApi.getDevicePage({ pageNo: 1, pageSize: 100 }),
-      EnergyAlarmApi.getAlarmPage({ pageNo: 1, pageSize: 8, status: 0 }),
-      EnergyProjectApi.getProjectPage({ pageNo: 1, pageSize: 1 })
+      EnergyAlarmApi.getAlarmPage({ pageNo: 1, pageSize: 8, status: 0 })
     ])
 
     devices.value = devicePage?.list || []
     latestAlarms.value = alarmPage?.list || []
-    deviceTotal.value = devicePage?.total || 0
-    activeAlarmTotal.value = alarmPage?.total || 0
-    projectTotal.value = projectPage?.total || 0
+    deviceTotal.value = devicePage?.total || devices.value.length
     if (!dataQuery.deviceId && devices.value[0]?.id) {
       dataQuery.deviceId = devices.value[0].id
     }
@@ -601,6 +563,14 @@ onMounted(() => {
     gap: 8px;
   }
 
+  &__top-row {
+    margin-bottom: 12px;
+
+    :deep(.el-card) {
+      height: 100%;
+    }
+  }
+
   &__stat {
     margin-bottom: 12px;
 
@@ -698,6 +668,14 @@ onMounted(() => {
     }
   }
 
+  &__status-card {
+    margin-bottom: 12px;
+
+    :deep(.el-card__body) {
+      min-height: 96px;
+    }
+  }
+
   &__data-panel {
     margin-top: 12px;
   }
@@ -783,6 +761,16 @@ onMounted(() => {
     }
   }
 
+}
+
+@media (max-width: 1200px) {
+  .energy-dashboard {
+    &__load,
+    &__soc-grid,
+    &__data-summary {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
 }
 
 @media (max-width: 768px) {

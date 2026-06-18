@@ -7,13 +7,8 @@
       <div
         :class="`${prefixCls}__left flex-1 bg-gray-500 bg-opacity-20 relative p-30px lt-xl:hidden overflow-x-hidden overflow-y-auto`"
       >
-        <!-- 左上角的 logo + 系统标题 -->
-        <div class="relative flex items-center text-white">
-          <img alt="" class="mr-10px h-48px w-48px" src="@/assets/imgs/logo.png" />
-          <span class="text-20px font-bold">{{ underlineToHump(appStore.getTitle) }}</span>
-        </div>
         <!-- 左边的背景图 + 欢迎语 -->
-        <div class="h-[calc(100%-60px)] flex items-center justify-center">
+        <div class="h-full flex items-center justify-center">
           <TransitionGroup
             appear
             enter-active-class="animate__animated animate__bounceInLeft"
@@ -21,9 +16,6 @@
           >
             <img key="1" alt="" class="w-350px" src="@/assets/svgs/login-box-bg.svg" />
             <div key="2" class="text-3xl text-white">移动储能运营管理平台</div>
-            <div key="3" class="mt-5 text-14px font-normal text-white">
-              统一管理客户、项目、设备、告警和小程序用户授权
-            </div>
           </TransitionGroup>
         </div>
       </div>
@@ -35,10 +27,7 @@
           class="flex items-center justify-between at-2xl:justify-end at-xl:justify-end"
           style="color: var(--el-text-color-primary);"
         >
-          <div class="flex items-center at-2xl:hidden at-xl:hidden">
-            <img alt="" class="mr-10px h-48px w-48px" src="@/assets/imgs/logo.png" />
-            <span class="text-20px font-bold">{{ underlineToHump(appStore.getTitle) }}</span>
-          </div>
+          <div class="at-2xl:hidden at-xl:hidden"></div>
           <div class="flex items-center justify-end space-x-10px h-48px">
             <ThemeSwitch />
             <LocaleDropdown />
@@ -60,10 +49,7 @@
   </div>
 </template>
 <script lang="ts" setup>
-import { underlineToHump } from '@/utils'
-
 import { useDesign } from '@/hooks/web/useDesign'
-import { useAppStore } from '@/store/modules/app'
 import { ThemeSwitch } from '@/layout/components/ThemeSwitch'
 import { LocaleDropdown } from '@/layout/components/LocaleDropdown'
 
@@ -71,7 +57,6 @@ import { LoginForm, ForgetPasswordForm } from './components'
 
 defineOptions({ name: 'Login' })
 
-const appStore = useAppStore()
 const { getPrefixCls } = useDesign()
 const prefixCls = getPrefixCls('login')
 </script>

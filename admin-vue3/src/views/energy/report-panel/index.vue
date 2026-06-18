@@ -53,7 +53,7 @@
       <div v-else v-loading="loading" class="report-body">
         <div class="bill-title">
           <div>
-            <span>账单周期 {{ billRangeText }}</span>
+            <span>账单周期 {{ activeBillRangeText }}</span>
             <strong>{{ reportScopeTitle }}</strong>
           </div>
           <small>参考电费账单样式生成，未接入字段以“待录入”展示。</small>
@@ -149,15 +149,36 @@
 
         <section class="report-section">
           <div class="section-title">
-            <h3>费用组成</h3>
-            <span>参考电费账单的费用组成结构，缺失项不强行伪造</span>
+            <h3>电量明细</h3>
+            <span>接口按 EPI/EPE 与分时字段统一返回，未接入字段不伪造</span>
           </div>
-          <el-table :data="feeRows" border size="small">
+          <el-table :data="energyDetailRows" border size="small" show-overflow-tooltip>
+            <el-table-column label="示数类型" prop="label" min-width="150" />
+            <el-table-column label="上期示数" prop="startReadingText" align="right" width="120" />
+            <el-table-column label="本期示数" prop="endReadingText" align="right" width="120" />
+            <el-table-column label="倍率" prop="multiplierText" align="right" width="90" />
+            <el-table-column label="抄见电量" prop="copiedEnergyText" align="right" width="120" />
+            <el-table-column label="变损" prop="transformerLossText" align="right" width="90" />
+            <el-table-column label="线损" prop="lineLossText" align="right" width="90" />
+            <el-table-column label="加减" prop="adjustmentText" align="right" width="90" />
+            <el-table-column label="计费电量" prop="billingEnergyText" align="right" width="120" />
+            <el-table-column label="数据来源" prop="sourceField" min-width="120" />
+          </el-table>
+        </section>
+
+        <section class="report-section">
+          <div class="section-title">
+            <h3>电费明细</h3>
+            <span>费用类别、费用组成、分时时段、计费电量、计费标准和电费均来自报表接口</span>
+          </div>
+          <el-table :data="feeDetailRows" border size="small" :row-class-name="feeDetailRowClassName" show-overflow-tooltip>
             <el-table-column label="费用类别" prop="category" min-width="160" />
-            <el-table-column label="计费数量" prop="quantity" align="right" width="130" />
-            <el-table-column label="计费标准" prop="rate" align="right" width="130" />
-            <el-table-column label="金额" prop="amount" align="right" width="130" />
-            <el-table-column label="说明" prop="remark" min-width="260" />
+            <el-table-column label="费用组成" prop="component" min-width="180" />
+            <el-table-column label="分时时段" prop="period" align="center" width="100" />
+            <el-table-column label="计费电量" prop="billingEnergyText" align="right" width="130" />
+            <el-table-column label="计费标准" prop="rateText" align="right" width="130" />
+            <el-table-column label="电费" prop="amountText" align="right" width="130" />
+            <el-table-column label="参数来源" prop="source" min-width="220" />
           </el-table>
         </section>
       </div>
@@ -172,6 +193,8 @@ import { EnergyDeviceApi } from '@/api/energy/device'
 import type { EnergyDeviceVO } from '@/api/energy/device'
 import { EnergyPricingRuleApi } from '@/api/energy/pricingRule'
 import type { EnergyPricingRuleVO } from '@/api/energy/pricingRule'
+import { EnergyReportApi } from '@/api/energy/report'
+import type { EnergyReportBillVO } from '@/api/energy/report'
 import { EnergyTelemetryApi } from '@/api/energy/telemetry'
 import type { EnergyTelemetryVO } from '@/api/energy/telemetry'
 import { archiveReport } from '@/utils/reportArchive'
@@ -187,6 +210,7 @@ const devices = ref<EnergyDeviceVO[]>([])
 const telemetryRows = ref<EnergyTelemetryVO[]>([])
 const chargeSessions = ref<EnergyChargeSessionVO[]>([])
 const pricingRules = ref<EnergyPricingRuleVO[]>([])
+const billReport = ref<EnergyReportBillVO>()
 
 const query = reactive<{
   scopeType: ScopeType
@@ -208,6 +232,10 @@ const billRange = computed(() => {
   }
 })
 const billRangeText = computed(() => `${billRange.value.start.slice(0, 10)} 至 ${billRange.value.end.slice(0, 10)}`)
+const activeBillRangeText = computed(() => {
+  const range = billReport.value?.billRange
+  return range ? `${range.start.slice(0, 10)} 至 ${range.end.slice(0, 10)}` : billRangeText.value
+})
 
 const projectOptions = computed(() => {
   const map = new Map<number, string>()
@@ -230,6 +258,7 @@ const selectedDevices = computed(() => {
 })
 const selectedDeviceIds = computed(() => new Set(selectedDevices.value.map((device) => Number(device.id)).filter(Number.isFinite)))
 const reportScopeTitle = computed(() => {
+  if (billReport.value?.scopeName) return billReport.value.scopeName
   if (query.scopeType === 'device') return deviceLabel(selectedDevices.value[0]) || '单个电表'
   if (query.scopeType === 'project') return projectOptions.value.find((item) => Number(item.value) === Number(query.projectId))?.label || '场地汇总'
   return '全部电表汇总'
@@ -249,6 +278,26 @@ const scopedSessions = computed(() => {
 })
 
 const deviceRows = computed(() => {
+  if (billReport.value?.deviceDetails?.length) {
+    return billReport.value.deviceDetails.map((item) => ({
+      deviceId: item.deviceId,
+      deviceName: item.deviceName || item.deviceNo || `电表 ${item.deviceId}`,
+      projectName: item.projectName || '-',
+      meterNo: item.meterNo || '-',
+      startEpi: item.startEpi ?? null,
+      endEpi: item.endEpi ?? null,
+      purchasedEnergy: Number(item.chargeEnergy || 0),
+      dischargeEnergy: Number(item.dischargeEnergy || 0),
+      buyRate: item.energyRate ?? null,
+      purchaseCost: item.purchaseCost ?? null,
+      startEpiText: item.startEpi === null || item.startEpi === undefined ? '--' : kwhText(item.startEpi),
+      endEpiText: item.endEpi === null || item.endEpi === undefined ? '--' : kwhText(item.endEpi),
+      purchasedEnergyText: kwhText(Number(item.chargeEnergy || 0)),
+      dischargeEnergyText: kwhText(Number(item.dischargeEnergy || 0)),
+      buyRateText: item.energyRate === null || item.energyRate === undefined ? '待录入' : `${numText(item.energyRate)} 元/kWh`,
+      purchaseCostText: item.purchaseCost === null || item.purchaseCost === undefined ? '待录入' : moneyText(item.purchaseCost)
+    }))
+  }
   return selectedDevices.value.map((device) => {
     const rows = scopedTelemetryRows.value
       .filter((row) => Number(row.deviceId) === Number(device.id))
@@ -288,11 +337,15 @@ const deviceRows = computed(() => {
   })
 })
 
-const totalPurchasedEnergy = computed(() => Number(deviceRows.value.reduce((sum, row) => sum + row.purchasedEnergy, 0).toFixed(2)))
-const totalDischargeEnergy = computed(() => Number(deviceRows.value.reduce((sum, row) => sum + row.dischargeEnergy, 0).toFixed(2)))
+const totalPurchasedEnergy = computed(() => billReport.value?.summary ? Number(billReport.value.summary.totalChargeEnergy || 0) : Number(deviceRows.value.reduce((sum, row) => sum + row.purchasedEnergy, 0).toFixed(2)))
+const totalDischargeEnergy = computed(() => billReport.value?.summary ? Number(billReport.value.summary.totalDischargeEnergy || 0) : Number(deviceRows.value.reduce((sum, row) => sum + row.dischargeEnergy, 0).toFixed(2)))
 const totalPurchaseCost = computed(() => nullableSum(deviceRows.value.map((row) => row.purchaseCost)))
-const chargeTouEnergy = computed(() => calcTouEnergy(['epij', 'epif', 'epip', 'epig']))
-const dischargeTouEnergy = computed(() => calcTouEnergy(['epej', 'epef', 'epep', 'epeg']))
+const chargeTouEnergy = computed(() => billReport.value?.analysis?.chargeTou
+  ? toLocalTou(billReport.value.analysis.chargeTou)
+  : calcTouEnergy(['epij', 'epif', 'epip', 'epig']))
+const dischargeTouEnergy = computed(() => billReport.value?.analysis?.dischargeTou
+  ? toLocalTou(billReport.value.analysis.dischargeTou)
+  : calcTouEnergy(['epej', 'epef', 'epep', 'epeg']))
 const hasChargeTouData = computed(() => Object.values(chargeTouEnergy.value).some((value) => value > 0))
 const hasDischargeTouData = computed(() => Object.values(dischargeTouEnergy.value).some((value) => value > 0))
 const chargeTouTotal = computed(() => Number(Object.values(chargeTouEnergy.value).reduce((sum, value) => sum + value, 0).toFixed(2)))
@@ -315,6 +368,9 @@ const billableFixedFeeRules = computed(() => {
   return applicableRules.value.filter((rule) => Number.isFinite(Number(rule.deviceId)))
 })
 const billHeaderInfo = computed(() => {
+  if (billReport.value?.billHeader) {
+    return billReport.value.billHeader
+  }
   const primaryDevice = selectedDevices.value[0]
   const primaryRule = applicableRules.value[0]
   const customerName = firstText([
@@ -361,6 +417,7 @@ const feeTotals = computed(() => {
   }
 })
 const totalBillAmount = computed(() => {
+  if (billReport.value?.summary) return Number(billReport.value.summary.totalFee || 0)
   const values = Object.values(feeTotals.value)
   const composition = values.reduce((sum, value) => sum + Number(value || 0), 0)
   return Number((composition || totalPurchaseCost.value || 0).toFixed(2))
@@ -370,24 +427,84 @@ const summaryCards = computed(() => [
   { label: '本期电量', value: kwhText(totalPurchasedEnergy.value), hint: '按当前范围内电表 EPI 首末差汇总' },
   { label: '本期电费', value: moneyText(totalBillAmount.value), hint: '按现有计费规则可用字段测算' },
   { label: '平均购电单价', value: averageBuyRate.value === null ? '待录入' : `${numText(averageBuyRate.value)} 元/kWh`, hint: '购电成本 / 本期电量' },
-  { label: '售电收入', value: moneyText(totalRevenue.value), hint: 'EPE 分时电量 × 尖峰平谷电价' }
+  { label: '售电收入', value: moneyText(totalRevenue.value), hint: averageSellRate.value === null ? 'EPE 分时电量 × 尖峰平谷电价' : `平均售电单价 ${numText(averageSellRate.value)} 元/kWh` }
 ])
 
+const energyDetailRows = computed(() => {
+  if (billReport.value?.energyDetails?.length) {
+    return billReport.value.energyDetails.map((row) => ({
+      ...row,
+      startReadingText: row.startReading === null || row.startReading === undefined ? '--' : numText(Number(row.startReading)),
+      endReadingText: row.endReading === null || row.endReading === undefined ? '--' : numText(Number(row.endReading)),
+      multiplierText: row.multiplier === null || row.multiplier === undefined ? '--' : numText(Number(row.multiplier)),
+      copiedEnergyText: kwhText(Number(row.copiedEnergy || 0)),
+      transformerLossText: kwhText(Number(row.transformerLoss || 0)),
+      lineLossText: kwhText(Number(row.lineLoss || 0)),
+      adjustmentText: kwhText(Number(row.adjustment || 0)),
+      billingEnergyText: kwhText(Number(row.billingEnergy || 0)),
+      sourceField: row.sourceField || '--'
+    }))
+  }
+  return [
+    {
+      label: '正向有功（总）',
+      startReadingText: deviceRows.value.length ? deviceRows.value.map((row) => row.startEpiText).join(' / ') : '--',
+      endReadingText: deviceRows.value.length ? deviceRows.value.map((row) => row.endEpiText).join(' / ') : '--',
+      multiplierText: '1',
+      copiedEnergyText: kwhText(totalPurchasedEnergy.value),
+      transformerLossText: kwhText(0),
+      lineLossText: kwhText(0),
+      adjustmentText: kwhText(0),
+      billingEnergyText: kwhText(totalPurchasedEnergy.value),
+      sourceField: 'EPI'
+    },
+    {
+      label: '反向有功（总）',
+      startReadingText: '--',
+      endReadingText: '--',
+      multiplierText: '1',
+      copiedEnergyText: kwhText(totalDischargeEnergy.value),
+      transformerLossText: kwhText(0),
+      lineLossText: kwhText(0),
+      adjustmentText: kwhText(0),
+      billingEnergyText: kwhText(totalDischargeEnergy.value),
+      sourceField: 'EPE'
+    }
+  ]
+})
+
+const feeDetailRows = computed(() => {
+  if (billReport.value?.feeDetails?.length) return billReport.value.feeDetails.map((row) => feeDetailToRow(row))
+  return feeRows.value.map((row) => ({
+    category: row.category,
+    component: row.remark || row.category,
+    period: '--',
+    billingEnergyText: row.quantity,
+    rateText: row.rate,
+    amountText: row.amount,
+    source: '前端兼容测算'
+  }))
+})
+
 const feeRows = computed(() => [
-  feeRow('市场化购电费', totalPurchasedEnergy.value, avgRuleField('agentPurchasePrice'), feeTotals.value.agentPurchase, '代理购电价格 × 本期电量'),
-  feeRow('上网环节线损费用', totalPurchasedEnergy.value, avgRuleField('lineLossPrice'), feeTotals.value.lineLoss, '线损电价 × 本期电量'),
-  feeRow('输配电量电费', totalPurchasedEnergy.value, avgRuleField('transmissionDistributionPrice'), feeTotals.value.transmission, '输配电价 × 本期电量'),
-  feeRow('系统运行费', totalPurchasedEnergy.value, avgRuleField('systemOperationFee'), feeTotals.value.systemOperation, '系统运行费折价 × 本期电量'),
-  feeRow('政府性基金及附加', totalPurchasedEnergy.value, avgRuleField('governmentFundSurcharge'), feeTotals.value.governmentFund, '基金及附加 × 本期电量'),
-  demandFeeRow(),
-  transformerCapacityFeeRow(),
-  fixedFeeRow('场地费', feeTotals.value.siteFee, fixedFeeRemark('固定费用')),
-  fixedFeeRow('运维费', feeTotals.value.maintenanceFee, fixedFeeRemark('固定费用')),
-  fixedFeeRow('通信费', feeTotals.value.communicationFee, fixedFeeRemark('固定费用')),
-  fixedFeeRow('平台服务费', feeTotals.value.platformServiceFee, fixedFeeRemark('固定费用')),
-  fixedFeeRow('电池折旧成本', feeTotals.value.batteryDepreciationCost, fixedFeeRemark('固定费用')),
-  fixedFeeRow('其他固定费用', feeTotals.value.otherFixedFee, fixedFeeRemark('固定费用')),
-  { category: '合计', quantity: kwhText(totalPurchasedEnergy.value), rate: '--', amount: moneyText(totalBillAmount.value), remark: '当前项目可用字段合计' }
+  ...(billReport.value?.feeDetails?.length
+    ? buildBillOverviewRowsFromDetails(billReport.value.feeDetails)
+    : [
+        feeRow('市场化购电费', totalPurchasedEnergy.value, avgRuleField('agentPurchasePrice'), feeTotals.value.agentPurchase, '代理购电价格 × 本期电量'),
+        feeRow('上网环节线损费用', totalPurchasedEnergy.value, avgRuleField('lineLossPrice'), feeTotals.value.lineLoss, '线损电价 × 本期电量'),
+        feeRow('输配电量电费', totalPurchasedEnergy.value, avgRuleField('transmissionDistributionPrice'), feeTotals.value.transmission, '输配电价 × 本期电量'),
+        feeRow('系统运行费', totalPurchasedEnergy.value, avgRuleField('systemOperationFee'), feeTotals.value.systemOperation, '系统运行费折价 × 本期电量'),
+        feeRow('政府性基金及附加', totalPurchasedEnergy.value, avgRuleField('governmentFundSurcharge'), feeTotals.value.governmentFund, '基金及附加 × 本期电量'),
+        demandFeeRow(),
+        transformerCapacityFeeRow(),
+        fixedFeeRow('场地费', feeTotals.value.siteFee, fixedFeeRemark('固定费用')),
+        fixedFeeRow('运维费', feeTotals.value.maintenanceFee, fixedFeeRemark('固定费用')),
+        fixedFeeRow('通信费', feeTotals.value.communicationFee, fixedFeeRemark('固定费用')),
+        fixedFeeRow('平台服务费', feeTotals.value.platformServiceFee, fixedFeeRemark('固定费用')),
+        fixedFeeRow('电池折旧成本', feeTotals.value.batteryDepreciationCost, fixedFeeRemark('固定费用')),
+        fixedFeeRow('其他固定费用', feeTotals.value.otherFixedFee, fixedFeeRemark('固定费用')),
+        { category: '合计', quantity: kwhText(totalPurchasedEnergy.value), rate: '--', amount: moneyText(totalBillAmount.value), remark: '当前项目可用字段合计' }
+      ])
 ])
 
 const billOverviewRows = computed(() => feeRows.value.map((row) => ({
@@ -453,15 +570,24 @@ const loadReport = async () => {
       limit: 5000
     }
     if (query.scopeType === 'device' && query.deviceId) telemetryParams.deviceId = query.deviceId
-    const [telemetry, sessions, rules] = await Promise.all([
+    const reportParams = {
+      scopeType: query.scopeType,
+      projectId: query.scopeType === 'project' ? query.projectId : undefined,
+      deviceId: query.scopeType === 'device' ? query.deviceId : undefined,
+      billMonth: query.billMonth
+    }
+    const [telemetry, sessions, rules, report] = await Promise.all([
       EnergyTelemetryApi.getTelemetryChart(telemetryParams),
       EnergyChargeSessionApi.getChargeSessionPage({ pageNo: 1, pageSize: 5000 }),
-      EnergyPricingRuleApi.getPricingRulePage({ pageNo: 1, pageSize: 5000 })
+      EnergyPricingRuleApi.getPricingRulePage({ pageNo: 1, pageSize: 5000 }),
+      EnergyReportApi.getBillReport(reportParams)
     ])
     telemetryRows.value = telemetry || []
     chargeSessions.value = sessions?.list || []
     pricingRules.value = rules?.list || []
+    billReport.value = report
   } catch (error) {
+    billReport.value = undefined
     message.error('报表加载失败，请检查电表、遥测、任务和计费规则数据')
   } finally {
     loading.value = false
@@ -510,8 +636,11 @@ const buildPrintableBillHtml = () => {
       (row) => `<tr><td>${escapeHtml(row.deviceName)}</td><td>${escapeHtml(row.projectName)}</td><td>${escapeHtml(row.meterNo)}</td><td>${row.startEpiText}</td><td>${row.endEpiText}</td><td>${row.purchasedEnergyText}</td><td>${row.buyRateText}</td><td>${row.purchaseCostText}</td></tr>`
     )
     .join('')
-  const feeHtml = feeRows.value
-    .map((row) => `<tr><td>${row.category}</td><td>${row.quantity}</td><td>${row.rate}</td><td>${row.amount}</td><td>${row.remark}</td></tr>`)
+  const energyHtml = energyDetailRows.value
+    .map((row) => `<tr><td>${escapeHtml(row.label)}</td><td>${escapeHtml(row.startReadingText)}</td><td>${escapeHtml(row.endReadingText)}</td><td>${escapeHtml(row.multiplierText)}</td><td>${escapeHtml(row.copiedEnergyText)}</td><td>${escapeHtml(row.transformerLossText)}</td><td>${escapeHtml(row.lineLossText)}</td><td>${escapeHtml(row.adjustmentText)}</td><td>${escapeHtml(row.billingEnergyText)}</td><td>${escapeHtml(row.sourceField)}</td></tr>`)
+    .join('')
+  const feeHtml = feeDetailRows.value
+    .map((row) => `<tr class="${row.category === '合计' ? 'total' : row.source === '分组标题' ? 'group' : ''}"><td>${escapeHtml(row.category)}</td><td>${escapeHtml(row.component)}</td><td>${escapeHtml(row.period)}</td><td>${escapeHtml(row.billingEnergyText)}</td><td>${escapeHtml(row.rateText)}</td><td>${escapeHtml(row.amountText)}</td><td>${escapeHtml(row.source)}</td></tr>`)
     .join('')
   const overviewHtml = billOverviewRows.value
     .map((row) => `<tr class="${row.category === '合计' ? 'total' : ''}"><td>${escapeHtml(row.category)}</td><td>${escapeHtml(row.quantity)}</td><td>${escapeHtml(row.rate)}</td><td>${escapeHtml(row.amount)}</td></tr>`)
@@ -564,6 +693,8 @@ const buildPrintableBillHtml = () => {
     .bill-overview-table th { color: #334155; background: #f8ffff; }
     .bill-overview-table td:nth-child(2), .bill-overview-table td:nth-child(3), .bill-overview-table td:nth-child(4), .bill-overview-table th:nth-child(2), .bill-overview-table th:nth-child(3), .bill-overview-table th:nth-child(4) { text-align: right; }
     .bill-overview-table .total td { font-weight: 800; color: #0f172a; background: #f8ffff; }
+    tr.group td { background: #f8ffff; color: #0f766e; font-weight: 800; }
+    tr.total td { background: #f8ffff; color: #0f172a; font-weight: 800; }
     .analysis { padding: 10px 12px 12px; }
     .analysis p { margin: 0 0 9px; line-height: 1.55; }
     .analysis p b { color: #007273; }
@@ -645,9 +776,11 @@ const buildPrintableBillHtml = () => {
     </section>
   </div>
   <div class="section-title">电量明细</div>
+  <table><thead><tr><th>示数类型</th><th>上期示数</th><th>本期示数</th><th>倍率</th><th>抄见电量</th><th>变损</th><th>线损</th><th>加减</th><th>计费电量</th><th>数据来源</th></tr></thead><tbody>${energyHtml}</tbody></table>
+  <div class="section-title">电表用电明细</div>
   <table><thead><tr><th>电表</th><th>项目场地</th><th>仪表编号</th><th>期初累计</th><th>期末累计</th><th>本期电量</th><th>购电单价</th><th>购电成本</th></tr></thead><tbody>${detailRows}</tbody></table>
-  <div class="section-title">费用组成</div>
-  <table><thead><tr><th>费用类别</th><th>计费数量</th><th>计费标准</th><th>金额</th><th>说明</th></tr></thead><tbody>${feeHtml}</tbody></table>
+  <div class="section-title">电费明细</div>
+  <table><thead><tr><th>费用类别</th><th>费用组成</th><th>分时时段</th><th>计费电量</th><th>计费标准</th><th>电费</th><th>参数来源</th></tr></thead><tbody>${feeHtml}</tbody></table>
   <div class="note">备注：当前项目未接入电网账单中的上期示数、倍率、变损、线损、峰平谷真实分项、功率因数调整等字段，因此导出报表仅展示项目已接入和已录入的数据。</div>
 </body>
 </html>`
@@ -830,6 +963,62 @@ const transformerCapacityFeeRow = () => {
     remark: '按计费规则录入的变压器容量 × 变压器容量单价'
   }
 }
+const buildBillOverviewRowsFromDetails = (rows: Array<{
+  category: string
+  component: string
+  period?: string
+  billingEnergy?: number | null
+  rate?: number | null
+  amount?: number | null
+  source?: string
+}>) => {
+  const grouped = new Map<string, { category: string; energy: number; amount: number; rates: number[] }>()
+  rows.forEach((row) => {
+    if (!row.component && row.source === '分组标题') return
+    const key = row.category || '未分类'
+    const current = grouped.get(key) || { category: key, energy: 0, amount: 0, rates: [] }
+    current.energy += Number(row.billingEnergy || 0)
+    current.amount += Number(row.amount || 0)
+    if (row.rate !== null && row.rate !== undefined && Number.isFinite(Number(row.rate))) current.rates.push(Number(row.rate))
+    grouped.set(key, current)
+  })
+  return Array.from(grouped.values()).map((row) => ({
+    category: row.category,
+    quantity: row.energy > 0 ? kwhText(row.energy) : '--',
+    rate: row.rates.length ? numText(row.rates.reduce((sum, value) => sum + value, 0) / row.rates.length) : '--',
+    amount: moneyText(row.amount),
+    remark: '接口费用明细小计'
+  }))
+}
+
+const feeDetailToRow = (row: {
+  category: string
+  component: string
+  period?: string
+  billingEnergy?: number | null
+  rate?: number | null
+  amount?: number | null
+  source?: string
+}) => ({
+  category: row.category || '--',
+  component: row.component || (row.source === '分组标题' ? '分组标题' : '--'),
+  period: row.period || '--',
+  billingEnergyText: row.billingEnergy === null || row.billingEnergy === undefined ? '--' : (row.category === '容需量费用' ? numText(Number(row.billingEnergy)) : kwhText(Number(row.billingEnergy))),
+  rateText: row.rate === null || row.rate === undefined ? '--' : numText(Number(row.rate)),
+  amountText: row.amount === null || row.amount === undefined ? '--' : moneyText(Number(row.amount)),
+  source: row.source || ''
+})
+const feeDetailRowClassName = ({ row }: { row: { source?: string; category?: string } }) => {
+  if (row.category === '合计') return 'is-total-row'
+  if (row.source === '分组标题') return 'is-group-row'
+  return ''
+}
+const toLocalTou = (value: { sharpPeak?: number; peak?: number; flat?: number; valley?: number; deepValley?: number }) => ({
+  sharp: Number(value.sharpPeak || 0),
+  peak: Number(value.peak || 0),
+  flat: Number(value.flat || 0),
+  valley: Number(value.valley || 0)
+})
 const firstText = (values: Array<unknown>) => values.map((value) => String(value || '').trim()).find(Boolean) || ''
 const deviceLabel = (device?: EnergyDeviceVO) => device ? `${device.deviceName || device.deviceNo || `电表 ${device.id}`} / ${device.meterNo || '-'}` : ''
 const getElectricityCategoryText = (value?: string) => {
@@ -1040,6 +1229,22 @@ onMounted(async () => {
     }
   }
 
+  :deep(.is-group-row) {
+    td {
+      background: #f8ffff;
+      color: #0f766e;
+      font-weight: 700;
+    }
+  }
+
+  :deep(.is-total-row) {
+    td {
+      background: #f7ffff;
+      color: #0f172a;
+      font-weight: 800;
+    }
+  }
+
   .bill-overview__name {
     font-weight: 700;
   }
@@ -1153,6 +1358,24 @@ onMounted(async () => {
   .energy-report-panel .summary-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .energy-report-panel {
+    .bill-main,
+    .bill-grid,
+    .bill-layout {
+      grid-template-columns: 1fr;
+    }
+
+    .bill-cards,
+    .cards {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .bill-info,
+    .brand-row {
+      grid-template-columns: 1fr;
+    }
+  }
 }
 
 @media (max-width: 768px) {
@@ -1165,6 +1388,40 @@ onMounted(async () => {
 
     .summary-grid {
       grid-template-columns: 1fr;
+    }
+
+    .bill-cards,
+    .cards,
+    .meta {
+      grid-template-columns: 1fr;
+    }
+
+    .bill-overview {
+      overflow-x: auto;
+    }
+
+    .bill-overview__head,
+    .bill-overview__row {
+      grid-template-columns: minmax(150px, 1fr) minmax(90px, .7fr) minmax(100px, .8fr) minmax(96px, .7fr);
+      min-width: 480px;
+      padding: 0 10px;
+      column-gap: 8px;
+      font-size: 12px;
+    }
+
+    .bill-overview__row.is-total {
+      font-size: 14px;
+    }
+
+    .analysis-chart__plot {
+      gap: 8px;
+      overflow-x: auto;
+      justify-content: flex-start;
+    }
+
+    .analysis-bar {
+      flex: 0 0 48px;
+      width: 48px;
     }
   }
 }

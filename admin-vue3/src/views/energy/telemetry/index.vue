@@ -3558,6 +3558,23 @@ onMounted(() => {
     grid-template-columns: 300px minmax(0, 1fr);
   }
 
+  .bill-report {
+    &__kpis,
+    &__battery,
+    &__total {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    &__grid,
+    &__split {
+      grid-template-columns: 1fr;
+    }
+
+    &__section--tall {
+      grid-row: auto;
+    }
+  }
+
   .monitor-toolbar {
     align-items: flex-start;
     flex-direction: column;
@@ -3597,6 +3614,88 @@ onMounted(() => {
 
   .monitor-sidebar__status {
     padding: 28px 48px;
+  }
+
+  .bill-report-panel {
+    padding: 12px;
+
+    &__header {
+      align-items: flex-start;
+      flex-direction: column;
+
+      h2 {
+        font-size: 18px;
+        line-height: 24px;
+      }
+    }
+  }
+
+  .bill-report {
+    &__scope-summary {
+      align-items: flex-start;
+      flex-direction: column;
+    }
+
+    &__kpis,
+    &__grid,
+    &__total,
+    &__split,
+    &__battery {
+      grid-template-columns: 1fr;
+    }
+
+    &__kpi {
+      min-height: 92px;
+      padding: 14px;
+
+      strong {
+        font-size: 22px;
+        line-height: 28px;
+        white-space: normal;
+      }
+    }
+
+    &__list,
+    &__profit {
+      div {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 4px;
+      }
+
+      strong {
+        text-align: left;
+        white-space: normal;
+      }
+    }
+
+    &__final {
+      font-size: 20px;
+      line-height: 28px;
+    }
+  }
+
+  .data-view-toolbar,
+  .realtime-detail__toolbar,
+  .realtime-detail__meta {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .realtime-detail__actions {
+    justify-content: flex-start;
+    margin-left: 0;
+  }
+
+  .realtime-detail {
+    min-height: auto;
+    padding: 10px;
+  }
+
+  :deep(.realtime-detail-dialog) {
+    .el-dialog__body {
+      padding: 10px;
+    }
   }
 
   .monitor-toolbar__filters,

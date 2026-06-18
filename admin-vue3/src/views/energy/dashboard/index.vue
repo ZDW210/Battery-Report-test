@@ -785,6 +785,16 @@ onMounted(() => {
 
 }
 
+@media (max-width: 1200px) {
+  .energy-dashboard {
+    &__load,
+    &__soc-grid,
+    &__data-summary {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+}
+
 @media (max-width: 768px) {
   .energy-dashboard {
     &__header {
