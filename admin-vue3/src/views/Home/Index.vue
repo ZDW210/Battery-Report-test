@@ -133,58 +133,27 @@
         <div class="energy-dashboard__card-header">
           <div>
             <span>数据面板</span>
-            <span class="energy-dashboard__subtext ml-8px">按接收到的电表遥测数据绘制曲线</span>
+            <span class="energy-dashboard__subtext ml-8px">按天统计充电总成本和节约成本</span>
           </div>
-          <el-button link type="primary" @click="go('/energy/telemetry')">查看详细数据</el-button>
+          <el-button link type="primary" @click="go('/energy/report-panel')">查看报表面板</el-button>
         </div>
       </template>
 
       <el-form :inline="true" :model="dataQuery" class="energy-dashboard__data-form" label-width="72px">
-        <el-form-item label="电表">
-          <el-select
-            v-model="dataQuery.deviceId"
-            class="!w-260px"
-            filterable
-            placeholder="选择电表"
-            @change="loadDataPanel"
-          >
-            <el-option
-              v-for="device in devices"
-              :key="device.id"
-              :label="device.deviceName || device.deviceNo || device.meterNo || `设备${device.id}`"
-              :value="device.id"
-            >
-              <span>{{ device.deviceName || device.deviceNo || device.meterNo || `设备${device.id}` }}</span>
-              <span class="energy-dashboard__option-extra">{{ device.projectName || device.meterNo || '' }}</span>
-            </el-option>
-          </el-select>
-        </el-form-item>
-        <el-form-item label="时间">
+        <el-form-item label="月份">
           <el-date-picker
-            v-model="dataQuery.collectTime"
-            type="datetimerange"
-            value-format="YYYY-MM-DD HH:mm:ss"
-            start-placeholder="开始时间"
-            end-placeholder="结束时间"
-            class="!w-390px"
+            v-model="dataQuery.billMonth"
+            type="month"
+            value-format="YYYY-MM"
+            placeholder="选择月份"
+            class="!w-180px"
             @change="loadDataPanel"
           />
-        </el-form-item>
-        <el-form-item label="类型">
-          <el-radio-group v-model="dataQuery.metricGroup">
-            <el-radio-button
-              v-for="group in dataMetricGroups"
-              :key="group.value"
-              :label="group.value"
-            >
-              {{ group.label }}
-            </el-radio-button>
-          </el-radio-group>
         </el-form-item>
         <el-form-item>
           <el-button type="primary" :loading="dataPanelLoading" @click="loadDataPanel">
             <Icon class="mr-5px" icon="ep:refresh" />
-            刷新曲线
+            刷新费用
           </el-button>
         </el-form-item>
       </el-form>
@@ -196,7 +165,7 @@
         </div>
       </div>
 
-      <el-empty v-if="!dataQuery.deviceId" description="请先选择电表" />
+      <el-empty v-if="dailyCostRows.length === 0" description="暂无费用统计数据" />
       <Echart
         v-else
         v-loading="dataPanelLoading"
@@ -213,8 +182,8 @@ import { EnergyAlarmApi } from '@/api/energy/alarm'
 import type { EnergyAlarmVO } from '@/api/energy/alarm'
 import { EnergyDeviceApi } from '@/api/energy/device'
 import type { EnergyDeviceVO } from '@/api/energy/device'
-import { EnergyTelemetryApi } from '@/api/energy/telemetry'
-import type { EnergyTelemetryVO } from '@/api/energy/telemetry'
+import { EnergyReportApi } from '@/api/energy/report'
+import type { EnergyReportDailyCostRowVO } from '@/api/energy/report'
 import { formatNullableDate } from '@/utils/formatTime'
 import type { EChartsOption } from 'echarts'
 import dayjs from 'dayjs'
@@ -222,70 +191,21 @@ import { useRouter } from 'vue-router'
 
 defineOptions({ name: 'Index' })
 
-type MetricKey = 'pa' | 'pb' | 'pc' | 'p' | 'ua' | 'ub' | 'uc' | 'ia' | 'ib' | 'ic' | 'pf' | 'epi'
-type MetricGroupValue = 'activePower' | 'phaseVoltage' | 'phaseCurrent' | 'powerFactor' | 'energy'
-type MetricField = { key: MetricKey; label: string; unit: string }
-
 const router = useRouter()
 const message = useMessage()
-const today = dayjs().format('YYYY-MM-DD')
+const currentMonth = dayjs().format('YYYY-MM')
 
 const loading = ref(true)
 const dataPanelLoading = ref(false)
 const devices = ref<EnergyDeviceVO[]>([])
 const latestAlarms = ref<EnergyAlarmVO[]>([])
-const dataPanelRows = ref<EnergyTelemetryVO[]>([])
+const dailyCostRows = ref<EnergyReportDailyCostRowVO[]>([])
 const deviceTotal = ref(0)
 
-const dataMetricGroups: Array<{ value: MetricGroupValue; label: string; fields: MetricField[] }> = [
-  {
-    value: 'activePower',
-    label: '有功功率',
-    fields: [
-      { key: 'pa', label: 'A相有功功率', unit: 'kW' },
-      { key: 'pb', label: 'B相有功功率', unit: 'kW' },
-      { key: 'pc', label: 'C相有功功率', unit: 'kW' },
-      { key: 'p', label: '总有功功率', unit: 'kW' }
-    ]
-  },
-  {
-    value: 'phaseVoltage',
-    label: '相电压',
-    fields: [
-      { key: 'ua', label: 'A相电压', unit: 'V' },
-      { key: 'ub', label: 'B相电压', unit: 'V' },
-      { key: 'uc', label: 'C相电压', unit: 'V' }
-    ]
-  },
-  {
-    value: 'phaseCurrent',
-    label: '相电流',
-    fields: [
-      { key: 'ia', label: 'A相电流', unit: 'A' },
-      { key: 'ib', label: 'B相电流', unit: 'A' },
-      { key: 'ic', label: 'C相电流', unit: 'A' }
-    ]
-  },
-  {
-    value: 'powerFactor',
-    label: '功率因数',
-    fields: [{ key: 'pf', label: '总功率因数', unit: '' }]
-  },
-  {
-    value: 'energy',
-    label: '有功电能',
-    fields: [{ key: 'epi', label: '正向总有功电能', unit: 'kWh' }]
-  }
-]
-
 const dataQuery = reactive<{
-  deviceId?: number
-  collectTime: string[]
-  metricGroup: MetricGroupValue
+  billMonth: string
 }>({
-  deviceId: undefined,
-  collectTime: [`${today} 00:00:00`, `${today} 23:59:59`],
-  metricGroup: 'activePower'
+  billMonth: currentMonth
 })
 
 const totalPower = computed(() => {
@@ -313,44 +233,38 @@ const powerRank = computed(() => {
     .slice(0, 8)
 })
 
-const activeDataMetricGroup = computed(() => {
-  return dataMetricGroups.find((item) => item.value === dataQuery.metricGroup) || dataMetricGroups[0]
-})
-
-const latestDataPanelRow = computed(() => {
-  return dataPanelRows.value
-    .filter((item) => item.collectTime)
-    .sort((a, b) => dayjs(b.collectTime as string).valueOf() - dayjs(a.collectTime as string).valueOf())[0]
-})
-
 const dataPanelSummary = computed(() => {
-  const latest = latestDataPanelRow.value
-  const fields = activeDataMetricGroup.value.fields
-  const latestValue = latest ? normalizeNumber(latest[fields[0].key]) : null
+  const validChargeCosts = dailyCostRows.value
+    .map((item) => normalizeNumber(item.chargeCost))
+    .filter((value): value is number => value !== null)
+  const validSavedCosts = dailyCostRows.value
+    .map((item) => normalizeNumber(item.savedCost))
+    .filter((value): value is number => value !== null)
+  const latest = [...dailyCostRows.value].reverse().find((item) => normalizeNumber(item.chargeCost) !== null || normalizeNumber(item.savedCost) !== null)
   return [
-    { label: '采集点数', value: dataPanelRows.value.length },
-    { label: '最新时间', value: formatDateText(latest?.collectTime) },
-    {
-      label: fields[0]?.label || '最新值',
-      value: formatMetricValue(latestValue, fields[0]?.unit)
-    },
-    { label: '报文状态', value: latest?.state || '-' }
+    { label: '统计天数', value: dailyCostRows.value.length },
+    { label: '充电总成本', value: formatCurrency(sumNumbers(validChargeCosts)) },
+    { label: '节约成本', value: formatCurrency(sumNumbers(validSavedCosts)) },
+    { label: '最近日期', value: latest?.date || '-' }
   ]
 })
 
 const dataPanelChartOptions = computed<EChartsOption>(() => {
-  const fields = activeDataMetricGroup.value.fields
-  const sortedRows = [...dataPanelRows.value]
-    .filter((item) => item.collectTime)
-    .sort((a, b) => dayjs(a.collectTime as string).valueOf() - dayjs(b.collectTime as string).valueOf())
+  const sortedRows = [...dailyCostRows.value].sort((a, b) => dayjs(a.date).valueOf() - dayjs(b.date).valueOf())
 
   return buildLineOptions({
-    xData: sortedRows.map((item) => formatAxisTime(item.collectTime)),
-    series: fields.map((field) => ({
-      name: field.label,
-      data: sortedRows.map((item) => normalizeNumber(item[field.key]))
-    })),
-    yName: fields[0]?.unit || ''
+    xData: sortedRows.map((item) => dayjs(item.date).format('MM-DD')),
+    series: [
+      {
+        name: '充电总成本',
+        data: sortedRows.map((item) => normalizeNumber(item.chargeCost))
+      },
+      {
+        name: '节约成本',
+        data: sortedRows.map((item) => normalizeNumber(item.savedCost))
+      }
+    ],
+    yName: '元'
   })
 })
 
@@ -397,9 +311,6 @@ const loadDashboard = async () => {
     devices.value = devicePage?.list || []
     latestAlarms.value = alarmPage?.list || []
     deviceTotal.value = devicePage?.total || devices.value.length
-    if (!dataQuery.deviceId && devices.value[0]?.id) {
-      dataQuery.deviceId = devices.value[0].id
-    }
     await loadDataPanel()
   } catch (error) {
     message.error('运营面板数据加载失败，请检查后端服务和登录状态')
@@ -409,31 +320,23 @@ const loadDashboard = async () => {
 }
 
 const loadDataPanel = async () => {
-  if (!dataQuery.deviceId || !dataQuery.collectTime?.[0] || !dataQuery.collectTime?.[1]) {
-    dataPanelRows.value = []
+  if (!dataQuery.billMonth) {
+    dailyCostRows.value = []
     return
   }
   dataPanelLoading.value = true
   try {
-    dataPanelRows.value = await EnergyTelemetryApi.getTelemetryChart({
-      deviceId: dataQuery.deviceId,
-      collectTime: dataQuery.collectTime,
-      limit: 1200
+    const report = await EnergyReportApi.getDailyCostReport({
+      scopeType: 'all',
+      billMonth: dataQuery.billMonth
     })
+    dailyCostRows.value = report?.rows || []
   } catch (error) {
-    dataPanelRows.value = []
-    message.error('数据面板加载失败，请检查遥测数据接口')
+    dailyCostRows.value = []
+    message.error('数据面板加载失败，请检查报表费用接口')
   } finally {
     dataPanelLoading.value = false
   }
-}
-
-const average = (values: Array<number | undefined>) => {
-  const valid = values.filter((value): value is number => typeof value === 'number')
-  if (valid.length === 0) {
-    return 0
-  }
-  return Number((valid.reduce((sum, value) => sum + value, 0) / valid.length).toFixed(1))
 }
 
 const valueOrDash = (value?: number) => {
@@ -444,14 +347,6 @@ const formatDateText = (value?: string | Date) => {
   return formatNullableDate(value)
 }
 
-const formatAxisTime = (value?: string | Date) => {
-  if (!value) {
-    return ''
-  }
-  const date = dayjs(value)
-  return date.isValid() ? date.format('MM-DD HH:mm') : ''
-}
-
 const normalizeNumber = (value: unknown): number | null => {
   if (value === undefined || value === null || value === '') {
     return null
@@ -460,12 +355,15 @@ const normalizeNumber = (value: unknown): number | null => {
   return Number.isFinite(numberValue) ? numberValue : null
 }
 
-const formatMetricValue = (value: number | null, unit?: string) => {
-  if (value === null) {
+const sumNumbers = (values: number[]) => {
+  return Number(values.reduce((sum, value) => sum + value, 0).toFixed(2))
+}
+
+const formatCurrency = (value: number | null) => {
+  if (value === null || value === undefined) {
     return '-'
   }
-  const text = Number.isInteger(value) ? String(value) : value.toFixed(2)
-  return unit ? `${text} ${unit}` : text
+  return `¥${Number(value || 0).toFixed(2)}`
 }
 
 const buildLineOptions = ({
@@ -686,16 +584,6 @@ onMounted(() => {
     :deep(.el-form-item) {
       margin-bottom: 10px;
     }
-  }
-
-  &__option-extra {
-    float: right;
-    max-width: 140px;
-    overflow: hidden;
-    color: var(--el-text-color-secondary);
-    font-size: 12px;
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
 
   &__data-summary {

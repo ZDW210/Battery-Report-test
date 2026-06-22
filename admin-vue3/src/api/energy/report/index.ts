@@ -100,6 +100,31 @@ export interface EnergyReportBillVO {
   }
 }
 
+export interface EnergyReportDailyCostRowVO {
+  date: string
+  totalChargeEnergy: number
+  totalDischargeEnergy: number
+  chargeCost?: number | null
+  salesRevenue: number
+  savedCost?: number | null
+  deviceCount: number
+  unmatchedPricingCount: number
+}
+
+export interface EnergyReportDailyCostVO {
+  billMonth: string
+  billRange: { start: string; end: string }
+  scopeType: string
+  scopeName: string
+  rows: EnergyReportDailyCostRowVO[]
+  summary: {
+    chargeCost: number
+    salesRevenue: number
+    savedCost: number
+    unmatchedDays: number
+  }
+}
+
 export const EnergyReportApi = {
   getBillReport: async (params: {
     scopeType: 'all' | 'project' | 'device'
@@ -108,5 +133,13 @@ export const EnergyReportApi = {
     billMonth: string
   }) => {
     return await request.get({ url: '/energy/report/bill', params })
+  },
+  getDailyCostReport: async (params: {
+    scopeType: 'all' | 'project' | 'device'
+    projectId?: number
+    deviceId?: number
+    billMonth: string
+  }): Promise<EnergyReportDailyCostVO> => {
+    return await request.get({ url: '/energy/report/daily-cost', params })
   }
 }

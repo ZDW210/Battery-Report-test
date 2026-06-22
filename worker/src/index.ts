@@ -1590,6 +1590,7 @@ async function telemetryApi(request: Request, url: URL, env: Env, path: string, 
 
 async function reportApi(request: Request, url: URL, env: Env, path: string, accessScope: AccessScope) {
   if (path === '/energy/report/bill' && request.method === 'GET') return reportBill(url, env, accessScope)
+  if (path === '/energy/report/daily-cost' && request.method === 'GET') return reportDailyCost(url, env, accessScope)
   return fail('接口方法不匹配', 405, 405)
 }
 
@@ -1652,6 +1653,68 @@ async function reportBill(url: URL, env: Env, accessScope: AccessScope) {
       dischargeTou: dischargeEnergy,
       chargeConsistency: consistencyStatus(chargeEnergy, totalChargeEnergy),
       dischargeConsistency: consistencyStatus(dischargeEnergy, totalDischargeEnergy)
+    }
+  })
+}
+
+async function reportDailyCost(url: URL, env: Env, accessScope: AccessScope) {
+  const billMonth = cleanText(url.searchParams.get('billMonth')) || localNowText().slice(0, 7)
+  const monthStart = `${billMonth}-01 00:00:00`
+  const monthEnd = endOfMonthText(billMonth)
+  const scopeType = cleanText(url.searchParams.get('scopeType')) || 'all'
+  const devices = await reportDevices(url, env, accessScope, scopeType)
+  if (!devices.length) {
+    return ok({
+      billMonth,
+      billRange: { start: monthStart, end: monthEnd },
+      scopeType,
+      scopeName: '暂无电表',
+      rows: [],
+      summary: { chargeCost: 0, salesRevenue: 0, savedCost: 0, unmatchedDays: 0 }
+    })
+  }
+
+  const rows: AnyRecord[] = []
+  for (const day of monthDayTexts(billMonth)) {
+    const dayStart = `${day} 00:00:00`
+    const dayEnd = `${day} 23:59:59`
+    const deviceDetails: AnyRecord[] = []
+    for (const device of devices) {
+      const rule = await findPricingRuleForDevice(env, Number(device.id), dayEnd)
+      deviceDetails.push(await buildReportDeviceDetail(env, device, rule, dayStart, dayEnd))
+    }
+    const purchaseCosts = deviceDetails.map((item) => numberOrNull(item.purchaseCost))
+    const chargeCost = purchaseCosts.some((value) => value !== null)
+      ? round2(purchaseCosts.reduce((sum, value) => sum + Number(value || 0), 0))
+      : null
+    const salesRevenue = round2(deviceDetails.reduce((sum, item) => sum + Number(item.salesRevenue || 0), 0))
+    const totalChargeEnergy = round4(deviceDetails.reduce((sum, item) => sum + Number(item.chargeEnergy || 0), 0))
+    const totalDischargeEnergy = round4(deviceDetails.reduce((sum, item) => sum + Number(item.dischargeEnergy || 0), 0))
+    rows.push({
+      date: day,
+      totalChargeEnergy,
+      totalDischargeEnergy,
+      chargeCost,
+      salesRevenue,
+      savedCost: chargeCost !== null ? round2(salesRevenue - chargeCost) : null,
+      deviceCount: devices.length,
+      unmatchedPricingCount: deviceDetails.filter((item) => !item.pricingRuleId && (Number(item.chargeEnergy || 0) > 0 || Number(item.dischargeEnergy || 0) > 0)).length
+    })
+  }
+
+  const chargeCosts = rows.map((row) => numberOrNull(row.chargeCost))
+  const savedCosts = rows.map((row) => numberOrNull(row.savedCost))
+  return ok({
+    billMonth,
+    billRange: { start: monthStart, end: monthEnd },
+    scopeType,
+    scopeName: reportScopeName(scopeType, devices),
+    rows,
+    summary: {
+      chargeCost: round2(chargeCosts.reduce((sum, value) => sum + Number(value || 0), 0)),
+      salesRevenue: round2(rows.reduce((sum, row) => sum + Number(row.salesRevenue || 0), 0)),
+      savedCost: round2(savedCosts.reduce((sum, value) => sum + Number(value || 0), 0)),
+      unmatchedDays: rows.filter((row) => Number(row.unmatchedPricingCount || 0) > 0).length
     }
   })
 }
@@ -3062,6 +3125,15 @@ function endOfMonthText(monthValue: string) {
   const month = Number(match[2])
   const end = new Date(Date.UTC(year, month, 0, 23, 59, 59))
   return end.toISOString().replace('T', ' ').slice(0, 19)
+}
+
+function monthDayTexts(monthValue: string) {
+  const match = cleanText(monthValue).match(/^(\d{4})-(\d{2})$/)
+  if (!match) return []
+  const year = Number(match[1])
+  const month = Number(match[2])
+  const days = new Date(Date.UTC(year, month, 0)).getUTCDate()
+  return Array.from({ length: days }, (_, index) => `${match[1]}-${match[2]}-${String(index + 1).padStart(2, '0')}`)
 }
 
 function round2(value: number) {

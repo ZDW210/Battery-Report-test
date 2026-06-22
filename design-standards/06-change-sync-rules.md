@@ -41,6 +41,14 @@
 ```
 
 ```text
+日期：2026-06-22
+变更内容：首页底部数据面板从单电表遥测曲线调整为按天统计的费用趋势；新增 Worker `/energy/report/daily-cost` 接口，按账单同口径返回每日充电总成本、售电收入和节约成本，首页默认按当前月份全部电表绘制充电总成本/节约成本曲线。
+影响范围：worker/src/index.ts，admin-vue3/src/api/energy/report/index.ts，admin-vue3/src/views/Home/Index.vue，design-standards/04-api-standards.md，design-standards/05-frontend-standards.md。
+已同步标准：04-api-standards.md 补充首页按日费用趋势接口标准；05-frontend-standards.md 补充首页底部数据面板展示规则。
+备注：详细单电表遥测曲线仍保留在左侧平级“数据面板”中。
+```
+
+```text
 日期：2026-06-18
 变更内容：进一步保护前端环境文件；将 admin-vue3/.env 加入 .gitignore，并从 Git 索引移除该文件，避免后续本地填写真实密钥后再次提交到仓库。
 影响范围：cloudflare-worker-package/.gitignore，cloudflare-worker-package/admin-vue3/.env，cloudflare-worker-package/design-standards/06-change-sync-rules.md

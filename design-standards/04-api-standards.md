@@ -315,3 +315,9 @@ POST /infra-api/energy/eiot/alarm
 - 费用明细的计费标准应按已匹配规则电量加权计算；没有本期电量但需要展示固定分时时段时，可展示当前范围内已匹配规则的平均标准。
 - 计费规则 `effectiveEnd` 如果保存为日期当天 `00:00:00` 或仅日期格式，规则匹配时必须按当天 `23:59:59` 处理，避免运营人员选择“结束日期”后当天整日被误判为过期。
 - 报表电费明细中的电量型费用类别必须按固定分时时段展示，至少包含尖、峰、平、谷、深谷；市场化购电费、上网环节线损费用、输配电量电费、系统运行费用、政府性基金及附加不得只输出本期有电量的时段。
+
+## 2026-06-22 首页按日费用趋势接口
+
+- `/admin-api/energy/report/daily-cost` 必须按 `scopeType=all|project|device`、`projectId`、`deviceId`、`billMonth` 返回当前账号有权查看范围内的每日费用统计；客户账号权限过滤必须与 `/energy/report/bill` 保持一致。
+- 每日 `chargeCost`、`salesRevenue`、`savedCost` 必须复用账单接口同一套 EPI/EPE、分时电量、计费规则匹配和分时电价计算逻辑；不得在首页前端根据遥测曲线二次估算费用。
+- 接口返回的 `rows` 至少包含 `date`、`totalChargeEnergy`、`totalDischargeEnergy`、`chargeCost`、`salesRevenue`、`savedCost`、`deviceCount`、`unmatchedPricingCount`，用于首页趋势图和后续按日费用表格。
