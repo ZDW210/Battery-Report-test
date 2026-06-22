@@ -320,4 +320,5 @@ POST /infra-api/energy/eiot/alarm
 
 - `/admin-api/energy/report/daily-cost` 必须按 `scopeType=all|project|device`、`projectId`、`deviceId`、`billMonth` 返回当前账号有权查看范围内的每日费用统计；客户账号权限过滤必须与 `/energy/report/bill` 保持一致。
 - 每日 `chargeCost`、`salesRevenue`、`savedCost` 必须复用账单接口同一套 EPI/EPE、分时电量、计费规则匹配和分时电价计算逻辑；不得在首页前端根据遥测曲线二次估算费用。
+- 每日电费趋势必须落库到 `energy_daily_cost`，按“电表 + 日期”唯一保存。EIOT 遥测区间重算后必须刷新对应电表当天缓存；计费规则新增、修改或删除后必须清理日报缓存，后续查询再回填，避免每次打开首页都从原始遥测全量重算。
 - 接口返回的 `rows` 至少包含 `date`、`totalChargeEnergy`、`totalDischargeEnergy`、`chargeCost`、`salesRevenue`、`savedCost`、`deviceCount`、`unmatchedPricingCount`，用于首页趋势图和后续按日费用表格。

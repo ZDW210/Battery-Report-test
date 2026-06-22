@@ -1159,6 +1159,11 @@ async function pricingRuleApi(request: Request, url: URL, env: Env, path: string
   if (accessScope.isCustomerAccount) return customerAccountForbidden()
   if (path === '/energy/pricing-rule/create' && request.method === 'POST') return createPricingRule(request, env)
   if (path === '/energy/pricing-rule/update' && request.method === 'PUT') return updatePricingRule(request, env)
+  if ((path === '/energy/pricing-rule/delete' || path === '/energy/pricing-rule/delete-list') && request.method === 'DELETE') {
+    const response = await crud(request, url, env, 'energy_pricing_rule', PRICING_RULE_FIELDS)
+    await invalidateDailyCostCache(env)
+    return response
+  }
   return crud(request, url, env, 'energy_pricing_rule', PRICING_RULE_FIELDS)
 }
 
@@ -1307,14 +1312,18 @@ async function createPricingRule(request: Request, env: Env) {
   const body = normalizePricingRuleScope(await readJson(request))
   const validation = validatePricingRuleScope(body)
   if (validation) return validation
-  return createRowFromBody(body, env, 'energy_pricing_rule', PRICING_RULE_FIELDS)
+  const response = await createRowFromBody(body, env, 'energy_pricing_rule', PRICING_RULE_FIELDS)
+  await invalidateDailyCostCache(env)
+  return response
 }
 
 async function updatePricingRule(request: Request, env: Env) {
   const body = normalizePricingRuleScope(await readJson(request))
   const validation = validatePricingRuleScope(body)
   if (validation) return validation
-  return updateRowFromBody(body, env, 'energy_pricing_rule', PRICING_RULE_FIELDS)
+  const response = await updateRowFromBody(body, env, 'energy_pricing_rule', PRICING_RULE_FIELDS)
+  await invalidateDailyCostCache(env)
+  return response
 }
 
 function normalizePricingRuleScope(body: AnyRecord) {
@@ -1658,11 +1667,15 @@ async function reportBill(url: URL, env: Env, accessScope: AccessScope) {
 }
 
 async function reportDailyCost(url: URL, env: Env, accessScope: AccessScope) {
+  await ensureDailyCostTable(env)
   const billMonth = cleanText(url.searchParams.get('billMonth')) || localNowText().slice(0, 7)
   const monthStart = `${billMonth}-01 00:00:00`
   const monthEnd = endOfMonthText(billMonth)
+  const monthStartDate = monthStart.slice(0, 10)
+  const monthEndDate = monthEnd.slice(0, 10)
   const scopeType = cleanText(url.searchParams.get('scopeType')) || 'all'
   const devices = await reportDevices(url, env, accessScope, scopeType)
+  const deviceIds = devices.map((device) => Number(device.id)).filter(Number.isFinite)
   if (!devices.length) {
     return ok({
       billMonth,
@@ -1674,33 +1687,44 @@ async function reportDailyCost(url: URL, env: Env, accessScope: AccessScope) {
     })
   }
 
-  const rows: AnyRecord[] = []
-  for (const day of monthDayTexts(billMonth)) {
-    const dayStart = `${day} 00:00:00`
-    const dayEnd = `${day} 23:59:59`
-    const deviceDetails: AnyRecord[] = []
-    for (const device of devices) {
-      const rule = await findPricingRuleForDevice(env, Number(device.id), dayEnd)
-      deviceDetails.push(await buildReportDeviceDetail(env, device, rule, dayStart, dayEnd))
-    }
-    const purchaseCosts = deviceDetails.map((item) => numberOrNull(item.purchaseCost))
-    const chargeCost = purchaseCosts.some((value) => value !== null)
-      ? round2(purchaseCosts.reduce((sum, value) => sum + Number(value || 0), 0))
-      : null
-    const salesRevenue = round2(deviceDetails.reduce((sum, item) => sum + Number(item.salesRevenue || 0), 0))
-    const totalChargeEnergy = round4(deviceDetails.reduce((sum, item) => sum + Number(item.chargeEnergy || 0), 0))
-    const totalDischargeEnergy = round4(deviceDetails.reduce((sum, item) => sum + Number(item.dischargeEnergy || 0), 0))
-    rows.push({
-      date: day,
-      totalChargeEnergy,
-      totalDischargeEnergy,
-      chargeCost,
-      salesRevenue,
-      savedCost: chargeCost !== null ? round2(salesRevenue - chargeCost) : null,
-      deviceCount: devices.length,
-      unmatchedPricingCount: deviceDetails.filter((item) => !item.pricingRuleId && (Number(item.chargeEnergy || 0) > 0 || Number(item.dischargeEnergy || 0) > 0)).length
-    })
+  const cachedCount = await countDailyCostRows(env, deviceIds, monthStartDate, monthEndDate)
+  if (cachedCount <= 0) {
+    await rebuildDailyCostCacheForMonth(env, devices, monthStart, monthEnd)
   }
+  const cachedRows = await queryDailyCostRows(env, deviceIds, monthStartDate, monthEndDate)
+  const rowsByDate = new Map<string, AnyRecord>()
+  monthDayTexts(billMonth).forEach((day) => {
+    rowsByDate.set(day, {
+      date: day,
+      totalChargeEnergy: 0,
+      totalDischargeEnergy: 0,
+      chargeCost: null,
+      salesRevenue: 0,
+      savedCost: null,
+      deviceCount: devices.length,
+      unmatchedPricingCount: 0
+    })
+  })
+
+  cachedRows.forEach((cached) => {
+    const date = cleanText(cached.stat_date)
+    const row = rowsByDate.get(date)
+    if (!row) return
+    row.totalChargeEnergy += Number(cached.total_charge_energy || 0)
+    row.totalDischargeEnergy += Number(cached.total_discharge_energy || 0)
+    if (numberOrNull(cached.charge_cost) !== null) row.chargeCost = Number(row.chargeCost || 0) + Number(cached.charge_cost || 0)
+    row.salesRevenue += Number(cached.sales_revenue || 0)
+    row.unmatchedPricingCount += Number(cached.unmatched_pricing || 0)
+  })
+
+  const rows = Array.from(rowsByDate.values()).map((row) => ({
+    ...row,
+    totalChargeEnergy: round4(row.totalChargeEnergy),
+    totalDischargeEnergy: round4(row.totalDischargeEnergy),
+    chargeCost: row.chargeCost === null ? null : round2(row.chargeCost),
+    salesRevenue: round2(row.salesRevenue),
+    savedCost: row.chargeCost === null ? null : round2(row.salesRevenue - row.chargeCost)
+  }))
 
   const chargeCosts = rows.map((row) => numberOrNull(row.chargeCost))
   const savedCosts = rows.map((row) => numberOrNull(row.savedCost))
@@ -1744,6 +1768,243 @@ async function reportDevices(url: URL, env: Env, accessScope: AccessScope, scope
     .bind(...args)
     .all<AnyRecord>()
   return rows.results || []
+}
+
+async function countDailyCostRows(env: Env, deviceIds: number[], startDate: string, endDate: string) {
+  if (!deviceIds.length) return 0
+  const placeholders = deviceIds.map(() => '?').join(',')
+  return scalar(
+    env,
+    `SELECT COUNT(*) FROM energy_daily_cost WHERE device_id IN (${placeholders}) AND stat_date >= ? AND stat_date <= ?`,
+    [...deviceIds, startDate, endDate]
+  )
+}
+
+async function queryDailyCostRows(env: Env, deviceIds: number[], startDate: string, endDate: string) {
+  if (!deviceIds.length) return []
+  const placeholders = deviceIds.map(() => '?').join(',')
+  const rows = await env.DB.prepare(
+    `SELECT *
+     FROM energy_daily_cost
+     WHERE device_id IN (${placeholders}) AND stat_date >= ? AND stat_date <= ?
+     ORDER BY stat_date ASC, device_id ASC`
+  )
+    .bind(...deviceIds, startDate, endDate)
+    .all<AnyRecord>()
+  return rows.results || []
+}
+
+async function rebuildDailyCostCacheForMonth(env: Env, devices: AnyRecord[], monthStart: string, monthEnd: string) {
+  const deviceIds = devices.map((device) => Number(device.id)).filter(Number.isFinite)
+  if (!deviceIds.length) return
+  const intervals = await reportDailyIntervals(env, deviceIds, monthStart, monthEnd)
+  const deviceMap = new Map(devices.map((device) => [Number(device.id), device]))
+  const rules = await reportPricingRulesForDevices(env, devices, monthEnd)
+  await env.DB.prepare(
+    `DELETE FROM energy_daily_cost
+     WHERE device_id IN (${deviceIds.map(() => '?').join(',')}) AND stat_date >= ? AND stat_date <= ?`
+  )
+    .bind(...deviceIds, monthStart.slice(0, 10), monthEnd.slice(0, 10))
+    .run()
+  for (const interval of intervals) {
+    const device = deviceMap.get(Number(interval.device_id))
+    if (!device) continue
+    await upsertDailyCostFromInterval(env, device, matchPricingRuleForDevice(rules, device), cleanText(interval.date), interval)
+  }
+}
+
+async function reportDailyIntervals(env: Env, deviceIds: number[], start: string, end: string) {
+  if (!deviceIds.length) return []
+  const placeholders = deviceIds.map(() => '?').join(',')
+  const rows = await env.DB.prepare(
+    `SELECT device_id, substr(end_time, 1, 10) AS date,
+            SUM(charge_total) AS charge_total,
+            SUM(charge_sharp_peak) AS charge_sharp_peak,
+            SUM(charge_peak) AS charge_peak,
+            SUM(charge_flat) AS charge_flat,
+            SUM(charge_valley) AS charge_valley,
+            SUM(charge_deep_valley) AS charge_deep_valley,
+            SUM(discharge_total) AS discharge_total,
+            SUM(discharge_sharp_peak) AS discharge_sharp_peak,
+            SUM(discharge_peak) AS discharge_peak,
+            SUM(discharge_flat) AS discharge_flat,
+            SUM(discharge_valley) AS discharge_valley,
+            SUM(discharge_deep_valley) AS discharge_deep_valley
+     FROM energy_telemetry_interval
+     WHERE device_id IN (${placeholders}) AND end_time >= ? AND end_time <= ?
+     GROUP BY device_id, substr(end_time, 1, 10)
+     ORDER BY date ASC, device_id ASC`
+  )
+    .bind(...deviceIds, start, end)
+    .all<AnyRecord>()
+  return rows.results || []
+}
+
+async function reportPricingRulesForDevices(env: Env, devices: AnyRecord[], billingTime: string) {
+  const deviceIds = uniqueNumbers(devices.map((device) => Number(device.id)))
+  const projectIds = uniqueNumbers(devices.map((device) => Number(device.project_id || device.projectId)))
+  const customerIds = uniqueNumbers(devices.map((device) => Number(device.customer_id || device.customerId || device.project_customer_id || device.projectCustomerId)))
+  const clauses: string[] = []
+  const args: any[] = [billingTime, billingTime, billingTime, billingTime]
+  if (deviceIds.length) {
+    clauses.push(`r.device_id IN (${deviceIds.map(() => '?').join(',')})`)
+    args.push(...deviceIds)
+  }
+  if (projectIds.length) {
+    clauses.push(`r.project_id IN (${projectIds.map(() => '?').join(',')})`)
+    args.push(...projectIds)
+  }
+  if (customerIds.length) {
+    clauses.push(`r.customer_id IN (${customerIds.map(() => '?').join(',')})`)
+    args.push(...customerIds)
+  }
+  if (!clauses.length) return []
+  const rows = await env.DB.prepare(
+    `SELECT r.*
+     FROM energy_pricing_rule r
+     WHERE r.status = 0
+       AND (? IS NULL OR r.effective_start IS NULL OR r.effective_start <= ?)
+       AND (? IS NULL OR r.effective_end IS NULL OR ${pricingRuleEffectiveEndSql()} >= ?)
+       AND (${clauses.join(' OR ')})
+     ORDER BY r.effective_start DESC, r.id DESC`
+  )
+    .bind(...args)
+    .all<AnyRecord>()
+  return rows.results || []
+}
+
+function matchPricingRuleForDevice(rules: AnyRecord[], device: AnyRecord) {
+  const deviceId = Number(device.id)
+  const projectId = Number(device.project_id || device.projectId)
+  const customerId = Number(device.customer_id || device.customerId || device.project_customer_id || device.projectCustomerId)
+  return rules
+    .map((rule) => {
+      const score = Number(rule.device_id) === deviceId
+        ? 3
+        : !rule.device_id && Number(rule.project_id) === projectId
+          ? 2
+          : !rule.device_id && !rule.project_id && Number(rule.customer_id) === customerId
+            ? 1
+            : 0
+      return { rule, score }
+    })
+    .filter((item) => item.score > 0)
+    .sort((a, b) => b.score - a.score || String(b.rule.effective_start || '').localeCompare(String(a.rule.effective_start || '')) || Number(b.rule.id || 0) - Number(a.rule.id || 0))[0]?.rule || null
+}
+
+async function refreshDeviceDailyCost(env: Env, deviceId: number, statDate: string) {
+  await ensureDailyCostTable(env)
+  const date = cleanText(statDate).slice(0, 10)
+  if (!deviceId || !date) return
+  const device = await env.DB.prepare(
+    `SELECT d.*, c.name AS customer_name, p.name AS project_name, p.customer_id AS project_customer_id
+     FROM energy_device d
+     LEFT JOIN energy_project p ON p.id = d.project_id
+     LEFT JOIN energy_customer c ON c.id = COALESCE(d.customer_id, p.customer_id)
+     WHERE d.id = ?`
+  )
+    .bind(deviceId)
+    .first<AnyRecord>()
+  if (!device) return
+  const intervals = await reportDailyIntervals(env, [deviceId], `${date} 00:00:00`, `${date} 23:59:59`)
+  if (!intervals.length) {
+    await env.DB.prepare('DELETE FROM energy_daily_cost WHERE device_id = ? AND stat_date = ?')
+      .bind(deviceId, date)
+      .run()
+    return
+  }
+  const rule = await findPricingRuleForDevice(env, deviceId, `${date} 23:59:59`)
+  await upsertDailyCostFromInterval(env, device, rule, date, intervals[0])
+}
+
+async function upsertDailyCostFromInterval(env: Env, device: AnyRecord, rule: AnyRecord | null, statDate: string, interval: AnyRecord) {
+  const chargeTou = roundTouEnergy({
+    sharpPeak: Number(interval.charge_sharp_peak || 0),
+    peak: Number(interval.charge_peak || 0),
+    flat: Number(interval.charge_flat || 0),
+    valley: Number(interval.charge_valley || 0),
+    deepValley: Number(interval.charge_deep_valley || 0)
+  })
+  const dischargeTou = roundTouEnergy({
+    sharpPeak: Number(interval.discharge_sharp_peak || 0),
+    peak: Number(interval.discharge_peak || 0),
+    flat: Number(interval.discharge_flat || 0),
+    valley: Number(interval.discharge_valley || 0),
+    deepValley: Number(interval.discharge_deep_valley || 0)
+  })
+  const totalChargeEnergy = sumTouEnergy(chargeTou)
+  const totalDischargeEnergy = sumTouEnergy(dischargeTou)
+  if (totalChargeEnergy <= 0 && totalDischargeEnergy <= 0) {
+    await env.DB.prepare('DELETE FROM energy_daily_cost WHERE device_id = ? AND stat_date = ?')
+      .bind(Number(device.id), statDate)
+      .run()
+    return
+  }
+  const rates = rule ? averageTouRates([rule]) : emptyTouEnergy()
+  const chargeCost = rule ? sumByTou(chargeTou, rates) : null
+  const salesRevenue = rule ? sumByTou(dischargeTou, rates) : 0
+  const savedCost = chargeCost !== null ? round2(salesRevenue - chargeCost) : null
+  await env.DB.prepare(
+    `INSERT INTO energy_daily_cost(
+      stat_date, device_id, customer_id, project_id, device_name, device_no, meter_no,
+      total_charge_energy, total_discharge_energy,
+      charge_sharp_peak, charge_peak, charge_flat, charge_valley, charge_deep_valley,
+      discharge_sharp_peak, discharge_peak, discharge_flat, discharge_valley, discharge_deep_valley,
+      charge_cost, sales_revenue, saved_cost, pricing_rule_id, unmatched_pricing, update_time
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(device_id, stat_date) DO UPDATE SET
+      customer_id = excluded.customer_id,
+      project_id = excluded.project_id,
+      device_name = excluded.device_name,
+      device_no = excluded.device_no,
+      meter_no = excluded.meter_no,
+      total_charge_energy = excluded.total_charge_energy,
+      total_discharge_energy = excluded.total_discharge_energy,
+      charge_sharp_peak = excluded.charge_sharp_peak,
+      charge_peak = excluded.charge_peak,
+      charge_flat = excluded.charge_flat,
+      charge_valley = excluded.charge_valley,
+      charge_deep_valley = excluded.charge_deep_valley,
+      discharge_sharp_peak = excluded.discharge_sharp_peak,
+      discharge_peak = excluded.discharge_peak,
+      discharge_flat = excluded.discharge_flat,
+      discharge_valley = excluded.discharge_valley,
+      discharge_deep_valley = excluded.discharge_deep_valley,
+      charge_cost = excluded.charge_cost,
+      sales_revenue = excluded.sales_revenue,
+      saved_cost = excluded.saved_cost,
+      pricing_rule_id = excluded.pricing_rule_id,
+      unmatched_pricing = excluded.unmatched_pricing,
+      update_time = excluded.update_time`
+  )
+    .bind(
+      statDate,
+      Number(device.id),
+      device.customer_id || device.project_customer_id || null,
+      device.project_id || null,
+      device.device_name || device.deviceName || null,
+      device.device_no || device.deviceNo || null,
+      device.meter_no || device.meterNo || null,
+      totalChargeEnergy,
+      totalDischargeEnergy,
+      chargeTou.sharpPeak,
+      chargeTou.peak,
+      chargeTou.flat,
+      chargeTou.valley,
+      chargeTou.deepValley,
+      dischargeTou.sharpPeak,
+      dischargeTou.peak,
+      dischargeTou.flat,
+      dischargeTou.valley,
+      dischargeTou.deepValley,
+      chargeCost,
+      salesRevenue,
+      savedCost,
+      rule?.id || null,
+      rule ? 0 : 1,
+      nowText()
+    )
+    .run()
 }
 
 async function buildReportDeviceDetail(env: Env, device: AnyRecord, rule: AnyRecord | null, start: string, end: string) {
@@ -2182,6 +2443,7 @@ async function ensureEiotReceiveColumns(env: Env) {
       create_time TEXT
     )`
   ).run()
+  await ensureDailyCostTable(env)
   await ensureColumns(env, 'energy_telemetry', {
     epij: 'REAL',
     epif: 'REAL',
@@ -2208,6 +2470,49 @@ async function ensureEiotReceiveColumns(env: Env) {
   await env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_energy_alarm_gateway_meter_time ON energy_alarm(gateway_sn, meter_sn, occur_time)').run()
   await env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_energy_interval_device_time ON energy_telemetry_interval(device_id, end_time)').run()
   await env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_energy_interval_meter_time ON energy_telemetry_interval(meter_no, end_time)').run()
+}
+
+async function ensureDailyCostTable(env: Env) {
+  await env.DB.prepare(
+    `CREATE TABLE IF NOT EXISTS energy_daily_cost (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      stat_date TEXT NOT NULL,
+      device_id INTEGER NOT NULL,
+      customer_id INTEGER,
+      project_id INTEGER,
+      device_name TEXT,
+      device_no TEXT,
+      meter_no TEXT,
+      total_charge_energy REAL NOT NULL DEFAULT 0,
+      total_discharge_energy REAL NOT NULL DEFAULT 0,
+      charge_sharp_peak REAL NOT NULL DEFAULT 0,
+      charge_peak REAL NOT NULL DEFAULT 0,
+      charge_flat REAL NOT NULL DEFAULT 0,
+      charge_valley REAL NOT NULL DEFAULT 0,
+      charge_deep_valley REAL NOT NULL DEFAULT 0,
+      discharge_sharp_peak REAL NOT NULL DEFAULT 0,
+      discharge_peak REAL NOT NULL DEFAULT 0,
+      discharge_flat REAL NOT NULL DEFAULT 0,
+      discharge_valley REAL NOT NULL DEFAULT 0,
+      discharge_deep_valley REAL NOT NULL DEFAULT 0,
+      charge_cost REAL,
+      sales_revenue REAL NOT NULL DEFAULT 0,
+      saved_cost REAL,
+      pricing_rule_id INTEGER,
+      unmatched_pricing INTEGER NOT NULL DEFAULT 0,
+      update_time TEXT,
+      UNIQUE(device_id, stat_date)
+    )`
+  ).run()
+  await env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_energy_daily_cost_date ON energy_daily_cost(stat_date)').run()
+  await env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_energy_daily_cost_device_date ON energy_daily_cost(device_id, stat_date)').run()
+  await env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_energy_daily_cost_project_date ON energy_daily_cost(project_id, stat_date)').run()
+  await env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_energy_daily_cost_customer_date ON energy_daily_cost(customer_id, stat_date)').run()
+}
+
+async function invalidateDailyCostCache(env: Env) {
+  await ensureDailyCostTable(env)
+  await env.DB.prepare('DELETE FROM energy_daily_cost').run()
 }
 
 async function ensureColumns(env: Env, table: string, columns: Record<string, string>) {
@@ -2381,6 +2686,8 @@ async function rebuildTelemetryIntervalsAround(env: Env, deviceId: number, telem
 
   const previous = await findPreviousTelemetry(env, deviceId, collectTime)
   const next = await findNextTelemetry(env, deviceId, collectTime)
+  const affectedDates = new Set<string>([collectTime.slice(0, 10)])
+  if (next?.collect_time) affectedDates.add(cleanText(next.collect_time).slice(0, 10))
 
   await env.DB.prepare('DELETE FROM energy_telemetry_interval WHERE telemetry_id = ?')
     .bind(telemetryId)
@@ -2396,6 +2703,9 @@ async function rebuildTelemetryIntervalsAround(env: Env, deviceId: number, telem
   }
   if (next?.id) {
     await saveTelemetryInterval(env, current, next, Number(next.id))
+  }
+  for (const date of affectedDates) {
+    if (date) await refreshDeviceDailyCost(env, deviceId, date)
   }
 }
 
@@ -3087,6 +3397,10 @@ function numberOrNull(value: unknown) {
 function positiveId(value: unknown) {
   const parsed = Number(value)
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null
+}
+
+function uniqueNumbers(values: unknown[]) {
+  return Array.from(new Set(values.map(Number).filter((value) => Number.isFinite(value) && value > 0)))
 }
 
 function averageNumbers(values: unknown[]) {

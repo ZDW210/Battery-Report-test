@@ -42,8 +42,8 @@
 
 ```text
 日期：2026-06-22
-变更内容：首页底部数据面板从单电表遥测曲线调整为按天统计的费用趋势；新增 Worker `/energy/report/daily-cost` 接口，按账单同口径返回每日充电总成本、售电收入和节约成本，首页默认按当前月份全部电表绘制充电总成本/节约成本曲线。
-影响范围：worker/src/index.ts，admin-vue3/src/api/energy/report/index.ts，admin-vue3/src/views/Home/Index.vue，design-standards/04-api-standards.md，design-standards/05-frontend-standards.md。
+变更内容：首页底部数据面板从单电表遥测曲线调整为按天统计的费用趋势；新增 Worker `/energy/report/daily-cost` 接口和 `energy_daily_cost` 日报缓存表，按账单同口径返回每日充电总成本、售电收入和节约成本，首页默认按当前月份全部电表绘制充电总成本/节约成本曲线。
+影响范围：worker/src/index.ts，migrations/0004_energy_daily_cost.sql，admin-vue3/src/api/energy/report/index.ts，admin-vue3/src/views/Home/Index.vue，design-standards/04-api-standards.md，design-standards/05-frontend-standards.md。
 已同步标准：04-api-standards.md 补充首页按日费用趋势接口标准；05-frontend-standards.md 补充首页底部数据面板展示规则。
 备注：详细单电表遥测曲线仍保留在左侧平级“数据面板”中。
 ```
