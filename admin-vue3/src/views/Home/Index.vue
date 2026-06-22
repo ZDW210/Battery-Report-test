@@ -385,8 +385,8 @@ const buildLineOptions = ({
     name: item.name,
     type: 'line',
     smooth: true,
-    showSymbol: false,
-    connectNulls: false,
+    showSymbol: true,
+    connectNulls: true,
     data: item.data
   }))
 })
