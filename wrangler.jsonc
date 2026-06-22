@@ -1,6 +1,6 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "report",
+  "name": "report-test",
   "main": "worker/src/index.ts",
   "compatibility_date": "2026-06-15",
   "observability": {
