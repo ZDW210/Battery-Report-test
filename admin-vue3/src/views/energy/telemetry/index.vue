@@ -141,7 +141,7 @@
                     <strong>{{ item.value }}</strong>
                   </div>
                 </div>
-                <div class="bill-report__chart-title">电表正向有功电能曲线（EPI）</div>
+                <div class="bill-report__chart-title">电表正向有功电能曲线</div>
                 <Echart :options="energyLineOptions" height="210px" />
               </section>
             </div>
@@ -1230,14 +1230,14 @@ const billTopCards = computed(() => [
   {
     label: '充入电量合计',
     value: formatKwh(monthlyPurchasedEnergy.value),
-    hint: '按正向有功电能 EPI 首末差汇总',
+    hint: '按正向有功电能首末差汇总',
     icon: 'ep:connection',
     color: '#2088d8'
   },
   {
     label: '放出电量合计',
     value: formatKwh(monthlySoldEnergy.value),
-    hint: '按反向有功电能 EPE 首末差汇总',
+    hint: '按反向有功电能首末差汇总',
     icon: 'ep:truck',
     color: '#0ea5a4'
   },
@@ -1260,10 +1260,9 @@ const billTopCards = computed(() => [
 const energyStatRows = computed(() => [
   { label: '期初累计电能', value: formatNullableKwh(startEpi.value) },
   { label: '期末累计电能', value: formatNullableKwh(endEpi.value) },
-  { label: 'EPI充入电量合计', value: formatKwh(monthlyPurchasedEnergy.value) },
-  { label: 'EPE放出电量合计', value: formatKwh(monthlySoldEnergy.value) },
+  { label: '充入电量合计', value: formatKwh(monthlyPurchasedEnergy.value) },
+  { label: '放出电量合计', value: formatKwh(monthlySoldEnergy.value) },
   { label: '未售出/自耗电量', value: formatKwh(Math.max(0, monthlyPurchasedEnergy.value - monthlySoldEnergy.value)) },
-  { label: '充放电效率', value: batteryEfficiencyText.value },
   { label: '损耗电量', value: formatKwh(Math.max(0, monthlyPurchasedEnergy.value - monthlySoldEnergy.value)) }
 ])
 
@@ -1272,13 +1271,12 @@ const costRows = computed(() => {
 })
 
 const revenueRows = computed(() => [
-  { label: 'EPE放出电量合计', value: formatKwh(monthlySoldEnergy.value) },
-  { label: 'EPEJ尖峰放电量', value: formatKwh(dischargeTouEnergy.value.sharpPeak) },
-  { label: 'EPEF高峰放电量', value: formatKwh(dischargeTouEnergy.value.peak) },
-  { label: 'EPEP平时放电量', value: formatKwh(dischargeTouEnergy.value.flat) },
-  { label: 'EPEG低谷放电量', value: formatKwh(dischargeTouEnergy.value.valley) },
-  { label: '放电等效电费', value: formatCurrency(dischargeEquivalentFee.value) },
-  { label: '任务记录数（参考）', value: `${billSessions.value.length} 次` }
+  { label: '放出电量合计', value: formatKwh(monthlySoldEnergy.value) },
+  { label: '尖峰放电量', value: formatKwh(dischargeTouEnergy.value.sharpPeak) },
+  { label: '高峰放电量', value: formatKwh(dischargeTouEnergy.value.peak) },
+  { label: '平时放电量', value: formatKwh(dischargeTouEnergy.value.flat) },
+  { label: '低谷放电量', value: formatKwh(dischargeTouEnergy.value.valley) },
+  { label: '放电等效电费', value: formatCurrency(dischargeEquivalentFee.value) }
 ])
 
 const profitRows = computed(() => [
@@ -1292,13 +1290,9 @@ const finalProfitText = computed(() => {
 })
 
 const batteryRows = computed(() => [
-  { label: 'EPI充入电量合计', value: formatKwh(monthlyPurchasedEnergy.value) },
-  { label: 'EPE放出电量合计', value: formatKwh(monthlySoldEnergy.value) },
-  { label: '循环次数', value: `${batteryCycleCount.value} 次` },
-  { label: '当月任务次数', value: `${billSessions.value.length} 次` },
-  { label: '电池效率', value: batteryEfficiencyText.value },
-  { label: '电池折旧成本', value: formatPricingFee(batteryDepreciationCost.value) },
-  { label: '折旧费用', value: formatPricingFee(batteryDepreciationCost.value) }
+  { label: '充入电量合计', value: formatKwh(monthlyPurchasedEnergy.value) },
+  { label: '放出电量合计', value: formatKwh(monthlySoldEnergy.value) },
+  { label: '循环次数', value: `${batteryCycleCount.value} 次` }
 ])
 
 const energyPieOptions = computed<EChartsOption>(() => ({
@@ -1311,7 +1305,7 @@ const energyPieOptions = computed<EChartsOption>(() => ({
       radius: ['42%', '68%'],
       center: ['50%', '44%'],
       data: [
-        { name: 'EPI用电量', value: monthlyPurchasedEnergy.value },
+        { name: '充入电量', value: monthlyPurchasedEnergy.value },
         { name: '放电量', value: monthlySoldEnergy.value },
         { name: '损耗/自耗', value: Math.max(0, monthlyPurchasedEnergy.value - monthlySoldEnergy.value) }
       ]
@@ -1361,7 +1355,7 @@ const energyLineOptions = computed<EChartsOption>(() => ({
   yAxis: { type: 'value', name: 'kWh' },
   series: [
     {
-      name: billQuery.scopeType === 'device' ? 'EPI' : 'EPI 合计',
+      name: billQuery.scopeType === 'device' ? '正向有功电能' : '正向有功电能合计',
       type: 'line',
       smooth: true,
       showSymbol: false,
