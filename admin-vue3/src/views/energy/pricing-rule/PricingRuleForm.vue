@@ -89,36 +89,50 @@
         </el-col>
         <el-col :span="24">
           <el-divider content-position="left">
-            <span class="mr-12px">电价组成（元/千瓦时）</span>
-            <el-button link type="primary" @click="applyShanghaiJuneExample">
-              套用上海 2026 年 6 月示例
-            </el-button>
+            <span class="mr-12px">费用设置（元/千瓦时）</span>
+            <el-button link type="primary" @click="applyShanghaiJuneExample">套用上海 2026 年 6 月示例</el-button>
+            <el-button link type="primary" @click="applySavedFeeTemplate">套用当前模板</el-button>
+            <el-button link type="primary" @click="saveCurrentFeeTemplate">保存为套用模板</el-button>
+            <el-button link type="warning" @click="resetFeeTemplateToSystem">恢复系统模板</el-button>
           </el-divider>
         </el-col>
-        <el-col v-for="field in priceComponentFields" :key="field.prop" :span="8">
-          <el-form-item :label="field.label" :prop="field.prop">
+        <el-col :span="8">
+          <el-form-item label="服务增值比例(%)" prop="serviceMarkupPercent">
             <el-input-number
-              v-model="formData[field.prop]"
+              v-model="formData.serviceMarkupPercent"
               :min="0"
-              :precision="6"
+              :precision="2"
               class="!w-1/1"
               controls-position="right"
+              @change="syncLegacyFieldsFromFeeConfig"
             />
           </el-form-item>
         </el-col>
         <el-col :span="24">
-          <el-divider content-position="left">分时电度电价（元/千瓦时）</el-divider>
-        </el-col>
-        <el-col v-for="field in timeOfUsePriceFields" :key="field.prop" :span="8">
-          <el-form-item :label="field.label" :prop="field.prop">
-            <el-input-number
-              v-model="formData[field.prop]"
-              :min="0"
-              :precision="6"
-              class="!w-1/1"
-              controls-position="right"
-            />
-          </el-form-item>
+          <div class="fee-config-table">
+            <div class="fee-config-table__head">
+              <span>费用类别</span>
+              <span>费用组成</span>
+              <span v-for="period in feePeriodFields" :key="period.key">{{ period.label }}</span>
+            </div>
+            <div v-for="(row, rowIndex) in feeConfigRows" :key="`${row.category}-${row.component}`" class="fee-config-table__row">
+              <strong>{{ row.category }}</strong>
+              <span>{{ row.component }}</span>
+              <el-input-number
+                v-for="period in feePeriodFields"
+                :key="period.key"
+                v-model="row.rates[period.key]"
+                :precision="6"
+                class="fee-config-table__input"
+                controls-position="right"
+                @change="syncLegacyFieldsFromFeeConfig"
+              />
+              <el-button class="fee-config-table__copy" link type="primary" @click="copyPreviousFeeRow(rowIndex)">复制上行</el-button>
+            </div>
+          </div>
+          <div class="fee-config-tip">
+            市场化购电电费的“零售交易电费”会在保存时保留原始电价，报表计算时再叠加服务增值比例。
+          </div>
         </el-col>
         <el-col :span="24">
           <el-divider content-position="left">
@@ -332,10 +346,16 @@ defineOptions({ name: 'EnergyPricingRuleForm' })
 type ScopeType = 'customer' | 'project' | 'device'
 type PricingField = keyof EnergyPricingRuleVO
 type TouPeriodType = 'sharpPeak' | 'peak' | 'flat' | 'valley' | 'deepValley'
+type FeePeriodKey = 'peak' | 'flat' | 'valley' | 'deepValley' | 'peakFloat' | 'valleyFloat'
 type TouPeriodRow = {
   type: TouPeriodType
   start: string
   end: string
+}
+type FeeConfigRow = {
+  category: string
+  component: string
+  rates: Record<FeePeriodKey, number>
 }
 
 const { t } = useI18n()
@@ -349,6 +369,8 @@ const customerList = ref<EnergyCustomerVO[]>([])
 const projectList = ref<EnergyProjectVO[]>([])
 const deviceList = ref<EnergyDeviceVO[]>([])
 const touPeriodRows = ref<TouPeriodRow[]>([])
+const feeConfigRows = ref<FeeConfigRow[]>([])
+const FEE_TEMPLATE_STORAGE_KEY = 'energy-pricing-rule-fee-template-v1'
 const electricityCategoryOptions = [
   { label: '一般工商业用电', value: 'general_commercial' },
   { label: '大工业用电', value: 'large_industrial' }
@@ -364,19 +386,13 @@ const voltageLevelOptions = [
   { label: '110千伏', value: '110kv' },
   { label: '220千伏及以上', value: '220kv_plus' }
 ]
-const priceComponentFields: Array<{ label: string; prop: PricingField }> = [
-  { label: '代理购电价格', prop: 'agentPurchasePrice' },
-  { label: '线损电价', prop: 'lineLossPrice' },
-  { label: '电度输配电价', prop: 'transmissionDistributionPrice' },
-  { label: '系统运行费折价', prop: 'systemOperationFee' },
-  { label: '政府基金及附加', prop: 'governmentFundSurcharge' }
-]
-const timeOfUsePriceFields: Array<{ label: string; prop: PricingField }> = [
-  { label: '尖峰时段', prop: 'sharpPeakRate' },
-  { label: '高峰时段', prop: 'peakRate' },
-  { label: '平时段', prop: 'flatRate' },
-  { label: '低谷时段', prop: 'valleyRate' },
-  { label: '深谷时段', prop: 'deepValleyRate' }
+const feePeriodFields: Array<{ label: string; key: FeePeriodKey }> = [
+  { label: '峰', key: 'peak' },
+  { label: '平', key: 'flat' },
+  { label: '谷', key: 'valley' },
+  { label: '深谷', key: 'deepValley' },
+  { label: '峰浮动', key: 'peakFloat' },
+  { label: '谷浮动', key: 'valleyFloat' }
 ]
 const touPeriodTypeOptions: Array<{ label: string; value: TouPeriodType }> = [
   { label: '尖峰', value: 'sharpPeak' },
@@ -411,12 +427,47 @@ const shanghaiJuneExample: Partial<EnergyPricingRuleVO> = {
   valleyRate: 0.372036,
   deepValleyRate: 0,
   touPeriods: JSON.stringify(defaultTouPeriods),
+  feeConfigJson: '',
+  serviceMarkupPercent: 0,
   capacityBillingMode: 'none',
   maxDemandPrice: 40.8,
   transformerCapacityKva: 0,
   transformerCapacityPrice: 25.5,
   energyRate: 0.662376
 }
+function feeRowTemplate(
+  category: string,
+  component: string,
+  rates: Partial<Record<FeePeriodKey, number>> = {}
+): FeeConfigRow {
+  return {
+    category,
+    component,
+    rates: {
+      peak: Number(rates.peak || 0),
+      flat: Number(rates.flat || 0),
+      valley: Number(rates.valley || 0),
+      deepValley: Number(rates.deepValley || 0),
+      peakFloat: Number(rates.peakFloat || 0),
+      valleyFloat: Number(rates.valleyFloat || 0)
+    }
+  }
+}
+const systemFeeTemplate: FeeConfigRow[] = [
+  feeRowTemplate('市场化购电电费', '零售交易电费', { peak: 1.010784, flat: 0.662376, valley: 0.372036 }),
+  feeRowTemplate('上网环节线损费用', '上网环节线损费用', { peak: 0.011863, flat: 0.011863, valley: 0.011863 }),
+  feeRowTemplate('输配电量电费', '电量电费', { peak: 0.1456, flat: 0.1456, valley: 0.1456 }),
+  feeRowTemplate('系统运行费用', '煤电容量电费', { peak: 0.0154, flat: 0.0154, valley: 0.0154 }),
+  feeRowTemplate('系统运行费用', '上网环节线损代理采购损益'),
+  feeRowTemplate('系统运行费用', '力调电费损益'),
+  feeRowTemplate('系统运行费用', '峰谷分时电价损益'),
+  feeRowTemplate('系统运行费用', '电价交叉补贴新增损益'),
+  feeRowTemplate('系统运行费用', '天然气发电容量电费（含气电联动）'),
+  feeRowTemplate('系统运行费用', '抽水蓄能容量电费'),
+  feeRowTemplate('政府性基金及附加', '库区移民基金', { peak: 0.0062, flat: 0.0062, valley: 0.0062 }),
+  feeRowTemplate('政府性基金及附加', '可再生能源附加', { peak: 0.019, flat: 0.019, valley: 0.019 }),
+  feeRowTemplate('政府性基金及附加', '国家重大水利工程建设基金', { peak: 0.0042, flat: 0.0042, valley: 0.0042 })
+]
 const formData = ref<EnergyPricingRuleVO>({
   id: undefined,
   customerId: undefined,
@@ -436,6 +487,8 @@ const formData = ref<EnergyPricingRuleVO>({
   valleyRate: 0,
   deepValleyRate: 0,
   touPeriods: JSON.stringify(defaultTouPeriods),
+  feeConfigJson: JSON.stringify(systemFeeTemplate),
+  serviceMarkupPercent: 0,
   capacityBillingMode: 'none',
   maxDemandPrice: 0,
   transformerCapacityKva: 0,
@@ -467,8 +520,11 @@ const formRef = ref()
 const applyShanghaiJuneExample = () => {
   formData.value = {
     ...formData.value,
-    ...shanghaiJuneExample
+    ...shanghaiJuneExample,
+    feeConfigJson: JSON.stringify(cloneFeeRows(systemFeeTemplate))
   }
+  feeConfigRows.value = cloneFeeRows(systemFeeTemplate)
+  syncLegacyFieldsFromFeeConfig()
   touPeriodRows.value = parseTouPeriods(formData.value.touPeriods)
 }
 
@@ -483,7 +539,9 @@ const open = async (type: string, id?: number) => {
     try {
       formData.value = await EnergyPricingRuleApi.getPricingRule(id)
       touPeriodRows.value = parseTouPeriods(formData.value.touPeriods)
+      feeConfigRows.value = parseFeeConfigRows(formData.value.feeConfigJson)
       scopeType.value = getScopeType(formData.value)
+      syncLegacyFieldsFromFeeConfig()
     } finally {
       formLoading.value = false
     }
@@ -496,9 +554,11 @@ const submitForm = async () => {
   await formRef.value.validate()
   formLoading.value = true
   try {
+    syncLegacyFieldsFromFeeConfig()
     const data = normalizeScope({
       ...formData.value,
-      touPeriods: JSON.stringify(normalizeTouPeriods(touPeriodRows.value))
+      touPeriods: JSON.stringify(normalizeTouPeriods(touPeriodRows.value)),
+      feeConfigJson: JSON.stringify(normalizeFeeConfigRows(feeConfigRows.value))
     })
     if (formType.value === 'create') {
       await EnergyPricingRuleApi.createPricingRule(data)
@@ -567,6 +627,8 @@ const resetForm = () => {
     valleyRate: 0,
     deepValleyRate: 0,
     touPeriods: JSON.stringify(defaultTouPeriods),
+    feeConfigJson: JSON.stringify(systemFeeTemplate),
+    serviceMarkupPercent: 0,
     capacityBillingMode: 'none',
     maxDemandPrice: 0,
     transformerCapacityKva: 0,
@@ -585,6 +647,8 @@ const resetForm = () => {
     remark: undefined
   }
   touPeriodRows.value = defaultTouPeriods.map((item) => ({ ...item }))
+  feeConfigRows.value = cloneFeeRows(systemFeeTemplate)
+  syncLegacyFieldsFromFeeConfig()
   formRef.value?.resetFields()
 }
 
@@ -617,6 +681,88 @@ const parseTouPeriods = (value?: string) => {
     return defaultTouPeriods.map((item) => ({ ...item }))
   }
 }
+
+const cloneFeeRows = (rows: FeeConfigRow[]) => rows.map((row) => ({
+  category: row.category,
+  component: row.component,
+  rates: { ...row.rates }
+}))
+
+const normalizeFeeConfigRows = (rows: FeeConfigRow[]) => rows.map((row) => ({
+  category: row.category,
+  component: row.component,
+  rates: feePeriodFields.reduce((rates, period) => {
+    rates[period.key] = Number(row.rates?.[period.key] || 0)
+    return rates
+  }, {} as Record<FeePeriodKey, number>)
+}))
+
+const parseFeeConfigRows = (value?: string) => {
+  try {
+    const parsed = JSON.parse(value || '[]')
+    if (!Array.isArray(parsed) || parsed.length === 0) return cloneFeeRows(systemFeeTemplate)
+    const fallback = cloneFeeRows(systemFeeTemplate)
+    return fallback.map((base) => {
+      const found = parsed.find((item) => item?.category === base.category && item?.component === base.component)
+      return found
+        ? feeRowTemplate(base.category, base.component, { ...base.rates, ...(found.rates || {}) })
+        : base
+    })
+  } catch {
+    return cloneFeeRows(systemFeeTemplate)
+  }
+}
+
+const applySavedFeeTemplate = () => {
+  feeConfigRows.value = parseFeeConfigRows(localStorage.getItem(FEE_TEMPLATE_STORAGE_KEY) || '')
+  syncLegacyFieldsFromFeeConfig()
+  message.success('已套用当前保存的费用模板')
+}
+
+const saveCurrentFeeTemplate = () => {
+  localStorage.setItem(FEE_TEMPLATE_STORAGE_KEY, JSON.stringify(normalizeFeeConfigRows(feeConfigRows.value)))
+  message.success('已保存为套用模板')
+}
+
+const resetFeeTemplateToSystem = () => {
+  feeConfigRows.value = cloneFeeRows(systemFeeTemplate)
+  syncLegacyFieldsFromFeeConfig()
+  message.success('已恢复系统费用模板')
+}
+
+const copyPreviousFeeRow = (index: number) => {
+  if (index <= 0) return
+  feeConfigRows.value[index].rates = { ...feeConfigRows.value[index - 1].rates }
+  syncLegacyFieldsFromFeeConfig()
+}
+
+const syncLegacyFieldsFromFeeConfig = () => {
+  const rows = feeConfigRows.value
+  const serviceMultiplier = 1 + Number(formData.value.serviceMarkupPercent || 0) / 100
+  const marketRow = rows.find((row) => row.category === '市场化购电电费' && row.component === '零售交易电费')
+  const lineLossRow = rows.find((row) => row.category === '上网环节线损费用')
+  const transmissionRow = rows.find((row) => row.category === '输配电量电费')
+  const systemRows = rows.filter((row) => row.category === '系统运行费用')
+  const fundRows = rows.filter((row) => row.category === '政府性基金及附加')
+  formData.value.agentPurchasePrice = rateByPeriod(marketRow, 'flat') * serviceMultiplier
+  formData.value.lineLossPrice = rateByPeriod(lineLossRow, 'flat')
+  formData.value.transmissionDistributionPrice = rateByPeriod(transmissionRow, 'flat')
+  formData.value.systemOperationFee = sumRowsByPeriod(systemRows, 'flat')
+  formData.value.governmentFundSurcharge = sumRowsByPeriod(fundRows, 'flat')
+  formData.value.peakRate = totalRateByPeriod(rows, 'peak', serviceMultiplier)
+  formData.value.sharpPeakRate = formData.value.peakRate
+  formData.value.flatRate = totalRateByPeriod(rows, 'flat', serviceMultiplier)
+  formData.value.valleyRate = totalRateByPeriod(rows, 'valley', serviceMultiplier)
+  formData.value.deepValleyRate = totalRateByPeriod(rows, 'deepValley', serviceMultiplier)
+  formData.value.energyRate = formData.value.flatRate
+}
+
+const rateByPeriod = (row: FeeConfigRow | undefined, period: FeePeriodKey) => Number(row?.rates?.[period] || 0)
+const sumRowsByPeriod = (rows: FeeConfigRow[], period: FeePeriodKey) => Number(rows.reduce((sum, row) => sum + rateByPeriod(row, period), 0).toFixed(6))
+const totalRateByPeriod = (rows: FeeConfigRow[], period: FeePeriodKey, serviceMultiplier: number) => Number(rows.reduce((sum, row) => {
+  const multiplier = row.category === '市场化购电电费' && row.component === '零售交易电费' ? serviceMultiplier : 1
+  return sum + rateByPeriod(row, period) * multiplier
+}, 0).toFixed(6))
 </script>
 
 <style lang="scss" scoped>
@@ -643,5 +789,65 @@ const parseTouPeriods = (value?: string) => {
   &__separator {
     color: #64748b;
   }
+}
+
+.fee-config-table {
+  width: 100%;
+  overflow-x: auto;
+  border: 1px solid #dbeafe;
+  border-radius: 6px;
+
+  &__head,
+  &__row {
+    display: grid;
+    grid-template-columns: 150px 220px repeat(6, 128px) 72px;
+    align-items: center;
+    min-width: 1210px;
+    column-gap: 8px;
+    padding: 8px 10px;
+  }
+
+  &__head {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    color: #0f172a;
+    font-weight: 700;
+    background: #eff6ff;
+    border-bottom: 1px solid #dbeafe;
+  }
+
+  &__row {
+    border-bottom: 1px dashed #cbd5e1;
+
+    &:last-child {
+      border-bottom: 0;
+    }
+
+    strong {
+      color: #0f766e;
+      font-size: 13px;
+    }
+
+    span {
+      color: #334155;
+      font-size: 13px;
+    }
+  }
+
+  &__input {
+    width: 128px;
+  }
+
+  &__copy {
+    justify-self: start;
+  }
+}
+
+.fee-config-tip {
+  margin-top: 8px;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.6;
 }
 </style>

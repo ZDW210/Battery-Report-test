@@ -44,6 +44,8 @@ const PRICING_RULE_FIELDS = [
   'valleyRate',
   'deepValleyRate',
   'touPeriods',
+  'feeConfigJson',
+  'serviceMarkupPercent',
   'capacityBillingMode',
   'maxDemandPrice',
   'transformerCapacityKva',
@@ -76,6 +78,8 @@ const PRICING_RULE_FEE_COLUMNS: Record<string, string> = {
   valley_rate: 'REAL NOT NULL DEFAULT 0',
   deep_valley_rate: 'REAL NOT NULL DEFAULT 0',
   tou_periods: 'TEXT NOT NULL DEFAULT \'[]\'',
+  fee_config_json: 'TEXT NOT NULL DEFAULT \'[]\'',
+  service_markup_percent: 'REAL NOT NULL DEFAULT 0',
   capacity_billing_mode: "TEXT NOT NULL DEFAULT 'none'",
   max_demand_price: 'REAL NOT NULL DEFAULT 0',
   transformer_capacity_kva: 'REAL NOT NULL DEFAULT 0',
@@ -2207,6 +2211,16 @@ function energyDetailRow(label: string, startReading: number | null, endReading:
 }
 
 function buildReportFeeDetails(deviceDetails: AnyRecord[], rules: AnyRecord[], telemetryRows: AnyRecord[]) {
+  const configuredRows = buildConfiguredFeeDetails(deviceDetails, rules)
+  if (configuredRows.length) {
+    const rows = [
+      ...configuredRows,
+      demandFeeDetailRow(rules, deviceDetails, telemetryRows),
+      transformerFeeDetailRow(rules)
+    ].filter(Boolean)
+    rows.push({ category: '合计', component: '本期电费合计', period: '', billingEnergy: null, rate: null, amount: reportBillingFeeTotal(rows), source: '费用明细汇总' })
+    return rows
+  }
   const rows = [
     feeDetailHeader('市场化购电费'),
     ...touFeeRowsByDevice(deviceDetails, rules, '市场化购电费', '零售交易电费', 'chargeTou', (rule, key) => Number(averageTouRates(rule ? [rule] : [])[key] || 0), 1, true),
@@ -2231,6 +2245,89 @@ function buildReportFeeDetails(deviceDetails: AnyRecord[], rules: AnyRecord[], t
   ].filter(Boolean)
   rows.push({ category: '合计', component: '本期电费合计', period: '', billingEnergy: null, rate: null, amount: reportBillingFeeTotal(rows), source: '费用明细汇总' })
   return rows
+}
+
+const FEE_RATE_PERIODS: Array<{ key: string; label: string; energyKeys: TouKey[] }> = [
+  { key: 'peak', label: '峰', energyKeys: ['sharpPeak', 'peak'] },
+  { key: 'flat', label: '平', energyKeys: ['flat'] },
+  { key: 'valley', label: '谷', energyKeys: ['valley'] },
+  { key: 'deepValley', label: '深谷', energyKeys: ['deepValley'] },
+  { key: 'peakFloat', label: '峰浮动', energyKeys: ['sharpPeak', 'peak'] },
+  { key: 'valleyFloat', label: '谷浮动', energyKeys: ['valley'] }
+]
+
+function buildConfiguredFeeDetails(deviceDetails: AnyRecord[], rules: AnyRecord[]) {
+  const configuredRules = rules.filter((rule) => parseFeeConfigRows(rule).length)
+  if (!configuredRules.length) return []
+  const categories: string[] = []
+  const components: Array<{ category: string; component: string }> = []
+  configuredRules.forEach((rule) => {
+    parseFeeConfigRows(rule).forEach((row) => {
+      const category = cleanText(row.category)
+      const component = cleanText(row.component)
+      if (!category || !component) return
+      if (!categories.includes(category)) categories.push(category)
+      if (!components.some((item) => item.category === category && item.component === component)) {
+        components.push({ category, component })
+      }
+    })
+  })
+  const rows: AnyRecord[] = []
+  categories.forEach((category) => {
+    rows.push(feeDetailHeader(category))
+    components
+      .filter((item) => item.category === category)
+      .forEach((component) => {
+        FEE_RATE_PERIODS.forEach((period) => {
+          let matchedEnergy = 0
+          let amount = 0
+          const rates: Array<number | null> = []
+          deviceDetails.forEach((detail) => {
+            const rule = findRuleById(rules, detail.pricingRuleId)
+            if (!rule) return
+            const config = findFeeConfigRow(rule, component.category, component.component)
+            if (!config) return
+            const energy = period.energyKeys.reduce((sum, key) => sum + Number(detail?.chargeTou?.[key] || 0), 0)
+            const rate = feeConfigRate(rule, config, period.key)
+            matchedEnergy += energy
+            amount += energy * rate
+            rates.push(Number.isFinite(rate) ? rate : null)
+          })
+          const displayRate = matchedEnergy > 0 ? amount / matchedEnergy : averageNumber(rates)
+          rows.push({
+            category,
+            component: component.component,
+            period: period.label,
+            billingEnergy: round4(matchedEnergy),
+            rate: round8(displayRate),
+            amount: round2(amount),
+            source: '计费规则费用矩阵 × EIOT分时电量'
+          })
+        })
+      })
+  })
+  return rows
+}
+
+function parseFeeConfigRows(rule: AnyRecord | null) {
+  if (!rule) return []
+  try {
+    const rows = JSON.parse(cleanText(rule.fee_config_json) || '[]')
+    return Array.isArray(rows) ? rows : []
+  } catch {
+    return []
+  }
+}
+
+function findFeeConfigRow(rule: AnyRecord, category: string, component: string) {
+  return parseFeeConfigRows(rule).find((row) => cleanText(row.category) === category && cleanText(row.component) === component) || null
+}
+
+function feeConfigRate(rule: AnyRecord, row: AnyRecord, periodKey: string) {
+  const raw = numberOrNull(row?.rates?.[periodKey]) || 0
+  const isMarketRetail = cleanText(row.category) === '市场化购电电费' && cleanText(row.component) === '零售交易电费'
+  const markup = isMarketRetail ? Math.max(0, Number(rule.service_markup_percent || 0)) / 100 : 0
+  return raw * (1 + markup)
 }
 
 function buildUnmatchedPricingDetails(deviceDetails: AnyRecord[]) {

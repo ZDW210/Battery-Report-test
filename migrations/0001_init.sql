@@ -172,6 +172,8 @@ CREATE TABLE IF NOT EXISTS energy_pricing_rule (
   valley_rate REAL NOT NULL DEFAULT 0,
   deep_valley_rate REAL NOT NULL DEFAULT 0,
   tou_periods TEXT NOT NULL DEFAULT '[]',
+  fee_config_json TEXT NOT NULL DEFAULT '[]',
+  service_markup_percent REAL NOT NULL DEFAULT 0,
   capacity_billing_mode TEXT NOT NULL DEFAULT 'none',
   max_demand_price REAL NOT NULL DEFAULT 0,
   transformer_capacity_kva REAL NOT NULL DEFAULT 0,

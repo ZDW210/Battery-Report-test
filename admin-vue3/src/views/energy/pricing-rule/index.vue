@@ -116,6 +116,8 @@
       <el-descriptions-item label="电压等级">{{ getVoltageLevelText(matchedRule.voltageLevel) }}</el-descriptions-item>
       <el-descriptions-item label="时间单价">{{ matchedRule.timeRate }}</el-descriptions-item>
       <el-descriptions-item label="电量单价">{{ matchedRule.energyRate }}</el-descriptions-item>
+      <el-descriptions-item label="服务增值比例">{{ formatPercent(matchedRule.serviceMarkupPercent) }}</el-descriptions-item>
+      <el-descriptions-item label="详细费用项">{{ getFeeConfigCount(matchedRule) }} 项</el-descriptions-item>
       <el-descriptions-item label="高峰电价">{{ formatRate(matchedRule.peakRate) }}</el-descriptions-item>
       <el-descriptions-item label="平时电价">{{ formatRate(matchedRule.flatRate) }}</el-descriptions-item>
       <el-descriptions-item label="低谷电价">{{ formatRate(matchedRule.valleyRate) }}</el-descriptions-item>
@@ -164,6 +166,12 @@
       </el-table-column>
       <el-table-column align="right" label="时间单价" width="120" prop="timeRate" />
       <el-table-column align="right" label="结算电量单价" width="130" prop="energyRate" />
+      <el-table-column align="right" label="服务增值" width="100">
+        <template #default="{ row }">{{ formatPercent(row.serviceMarkupPercent) }}</template>
+      </el-table-column>
+      <el-table-column align="center" label="费用项" width="90">
+        <template #default="{ row }">{{ getFeeConfigCount(row) }}</template>
+      </el-table-column>
       <el-table-column align="right" label="高峰电价" width="110">
         <template #default="{ row }">{{ formatRate(row.peakRate) }}</template>
       </el-table-column>
@@ -443,6 +451,19 @@ const formatNumber = (value?: number) => {
 const formatRate = (value?: number) => {
   const amount = Number(value || 0)
   return amount > 0 ? amount.toFixed(6) : '0.000000'
+}
+
+const formatPercent = (value?: number) => {
+  return `${Number(value || 0).toFixed(2)}%`
+}
+
+const getFeeConfigCount = (row: EnergyPricingRuleVO) => {
+  try {
+    const parsed = JSON.parse(row.feeConfigJson || '[]')
+    return Array.isArray(parsed) ? parsed.length : 0
+  } catch {
+    return 0
+  }
 }
 
 const formatTouPeriods = (value?: string) => {

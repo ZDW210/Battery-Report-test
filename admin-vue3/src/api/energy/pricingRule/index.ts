@@ -23,6 +23,8 @@ export interface EnergyPricingRuleVO {
   valleyRate?: number
   deepValleyRate?: number
   touPeriods?: string
+  feeConfigJson?: string
+  serviceMarkupPercent?: number
   capacityBillingMode?: string
   maxDemandPrice?: number
   transformerCapacityKva?: number
