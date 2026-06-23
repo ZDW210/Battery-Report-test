@@ -104,7 +104,6 @@
                 </el-table>
                 <div class="bill-report__total">
                   <div><span>总充入电量</span><strong>{{ formatKwh(monthlyPurchasedEnergy) }}</strong></div>
-                  <div><span>正向分项校验</span><strong>{{ chargeConsistencyText }}</strong></div>
                   <div><span>充电总成本</span><strong>{{ formatCurrency(chargeTotalCost) }}</strong></div>
                 </div>
               </section>
@@ -1265,11 +1264,7 @@ const energyStatRows = computed(() => [
   { label: 'EPE放出电量合计', value: formatKwh(monthlySoldEnergy.value) },
   { label: '未售出/自耗电量', value: formatKwh(Math.max(0, monthlyPurchasedEnergy.value - monthlySoldEnergy.value)) },
   { label: '充放电效率', value: batteryEfficiencyText.value },
-  { label: '损耗电量', value: formatKwh(Math.max(0, monthlyPurchasedEnergy.value - monthlySoldEnergy.value)) },
-  { label: '尖电量校验', value: formatKwh(chargeTouEnergy.value.sharpPeak) },
-  { label: '峰电量校验', value: formatKwh(chargeTouEnergy.value.peak) },
-  { label: '平电量校验', value: formatKwh(chargeTouEnergy.value.flat) },
-  { label: '谷电量校验', value: formatKwh(chargeTouEnergy.value.valley) }
+  { label: '损耗电量', value: formatKwh(Math.max(0, monthlyPurchasedEnergy.value - monthlySoldEnergy.value)) }
 ])
 
 const costRows = computed(() => {
@@ -1282,7 +1277,6 @@ const revenueRows = computed(() => [
   { label: 'EPEF高峰放电量', value: formatKwh(dischargeTouEnergy.value.peak) },
   { label: 'EPEP平时放电量', value: formatKwh(dischargeTouEnergy.value.flat) },
   { label: 'EPEG低谷放电量', value: formatKwh(dischargeTouEnergy.value.valley) },
-  { label: '反向分项校验', value: dischargeConsistencyText.value },
   { label: '放电等效电费', value: formatCurrency(dischargeEquivalentFee.value) },
   { label: '任务记录数（参考）', value: `${billSessions.value.length} 次` }
 ])
@@ -1290,9 +1284,7 @@ const revenueRows = computed(() => [
 const profitRows = computed(() => [
   { label: '放电等效电费', value: formatCurrency(dischargeEquivalentFee.value) },
   { label: '充电总成本', value: formatCurrency(chargeTotalCost.value) },
-  { label: '节约成本', value: formatCurrency(savedCost.value) },
-  { label: '充电分项校验', value: chargeConsistencyText.value },
-  { label: '放电分项校验', value: dischargeConsistencyText.value }
+  { label: '节约成本', value: formatCurrency(savedCost.value) }
 ])
 
 const finalProfitText = computed(() => {
