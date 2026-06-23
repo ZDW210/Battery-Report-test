@@ -2324,10 +2324,44 @@ function findFeeConfigRow(rule: AnyRecord, category: string, component: string) 
 }
 
 function feeConfigRate(rule: AnyRecord, row: AnyRecord, periodKey: string) {
-  const raw = numberOrNull(row?.rates?.[periodKey]) || 0
+  const raw = numberOrNull(row?.rates?.[periodKey])
+  const baseRate = raw && Math.abs(raw) > 0 ? raw : legacyFeeConfigRate(rule, row, periodKey)
   const isMarketRetail = cleanText(row.category) === '市场化购电电费' && cleanText(row.component) === '零售交易电费'
   const markup = isMarketRetail ? Math.max(0, Number(rule.service_markup_percent || 0)) / 100 : 0
-  return raw * (1 + markup)
+  return baseRate * (1 + markup)
+}
+
+function legacyFeeConfigRate(rule: AnyRecord, row: AnyRecord, periodKey: string) {
+  const category = cleanText(row?.category)
+  const component = cleanText(row?.component)
+  if (hasConfiguredRateInCategory(rule, category)) return 0
+  if (category === '市场化购电电费' && component === '零售交易电费') {
+    const touRate = legacyTouRateByPeriod(rule, periodKey)
+    return touRate || numberOrNull(rule.agent_purchase_price) || 0
+  }
+  if (category === '上网环节线损费用') return numberOrNull(rule.line_loss_price) || 0
+  if (category === '输配电量电费') return numberOrNull(rule.transmission_distribution_price) || 0
+  if (category === '系统运行费用' && component === '煤电容量电费') return numberOrNull(rule.system_operation_fee) || 0
+  if (category === '政府性基金及附加' && component === '库区移民基金') return numberOrNull(rule.government_fund_surcharge) || 0
+  return 0
+}
+
+function hasConfiguredRateInCategory(rule: AnyRecord, category: string) {
+  return parseFeeConfigRows(rule).some((item) => {
+    if (cleanText(item?.category) !== category) return false
+    return Object.values(item?.rates || {}).some((value) => {
+      const rate = numberOrNull(value)
+      return rate !== null && Math.abs(rate) > 0
+    })
+  })
+}
+
+function legacyTouRateByPeriod(rule: AnyRecord, periodKey: string) {
+  if (periodKey === 'peak' || periodKey === 'peakFloat') return numberOrNull(rule.peak_rate) || numberOrNull(rule.sharp_peak_rate) || 0
+  if (periodKey === 'flat') return numberOrNull(rule.flat_rate) || 0
+  if (periodKey === 'valley' || periodKey === 'valleyFloat') return numberOrNull(rule.valley_rate) || 0
+  if (periodKey === 'deepValley') return numberOrNull(rule.deep_valley_rate) || numberOrNull(rule.valley_rate) || 0
+  return 0
 }
 
 function buildUnmatchedPricingDetails(deviceDetails: AnyRecord[]) {
