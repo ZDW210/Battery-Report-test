@@ -118,15 +118,17 @@
             <div v-for="(row, rowIndex) in feeConfigRows" :key="`${row.category}-${row.component}`" class="fee-config-table__row">
               <strong>{{ row.category }}</strong>
               <span>{{ row.component }}</span>
-              <el-input-number
-                v-for="period in feePeriodFields"
-                :key="period.key"
-                v-model="row.rates[period.key]"
-                :precision="6"
-                class="fee-config-table__input"
-                controls-position="right"
-                @change="syncLegacyFieldsFromFeeConfig"
-              />
+              <template v-for="period in feePeriodFields" :key="period.key">
+                <el-input-number
+                  v-if="isFeePeriodEditable(row, period.key)"
+                  v-model="row.rates[period.key]"
+                  :precision="6"
+                  class="fee-config-table__input"
+                  controls-position="right"
+                  @change="syncLegacyFieldsFromFeeConfig"
+                />
+                <span v-else class="fee-config-table__disabled">--</span>
+              </template>
               <el-button class="fee-config-table__copy" link type="primary" @click="copyPreviousFeeRow(rowIndex)">复制上行</el-button>
             </div>
           </div>
@@ -692,7 +694,7 @@ const normalizeFeeConfigRows = (rows: FeeConfigRow[]) => rows.map((row) => ({
   category: row.category,
   component: row.component,
   rates: feePeriodFields.reduce((rates, period) => {
-    rates[period.key] = Number(row.rates?.[period.key] || 0)
+    rates[period.key] = isFeePeriodEditable(row, period.key) ? Number(row.rates?.[period.key] || 0) : 0
     return rates
   }, {} as Record<FeePeriodKey, number>)
 }))
@@ -733,8 +735,18 @@ const resetFeeTemplateToSystem = () => {
 const copyPreviousFeeRow = (index: number) => {
   if (index <= 0) return
   feeConfigRows.value[index].rates = { ...feeConfigRows.value[index - 1].rates }
+  if (!isMarketRetailFeeRow(feeConfigRows.value[index])) {
+    feeConfigRows.value[index].rates.peakFloat = 0
+    feeConfigRows.value[index].rates.valleyFloat = 0
+  }
   syncLegacyFieldsFromFeeConfig()
 }
+
+const isMarketRetailFeeRow = (row: Pick<FeeConfigRow, 'category' | 'component'>) =>
+  row.category === '市场化购电电费' && row.component === '零售交易电费'
+
+const isFeePeriodEditable = (row: Pick<FeeConfigRow, 'category' | 'component'>, periodKey: FeePeriodKey) =>
+  periodKey !== 'peakFloat' && periodKey !== 'valleyFloat' ? true : isMarketRetailFeeRow(row)
 
 const syncLegacyFieldsFromFeeConfig = () => {
   const rows = feeConfigRows.value
@@ -837,6 +849,18 @@ const totalRateByPeriod = (rows: FeeConfigRow[], period: FeePeriodKey, serviceMu
 
   &__input {
     width: 128px;
+  }
+
+  &__disabled {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 128px;
+    height: 32px;
+    color: #94a3b8;
+    background: #f8fafc;
+    border: 1px dashed #cbd5e1;
+    border-radius: 4px;
   }
 
   &__copy {

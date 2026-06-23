@@ -1008,7 +1008,7 @@ const fixedFeeRemark = (remark: string) => {
 const feeRow = (category: string, quantity: number, rate: number, amount: number, remark: string) => ({
   category,
   quantity: kwhText(quantity),
-  rate: rate > 0 ? numText(rate) : '待录入',
+  rate: rate > 0 ? pricingRateText(rate) : '待录入',
   amount: amount > 0 ? moneyText(amount) : '¥0',
   remark
 })
@@ -1025,7 +1025,7 @@ const demandFeeRow = () => {
     return {
       category: '最大需量费用',
       quantity: '未启用',
-      rate: rate > 0 ? `${numText(rate)} 元/kW·月` : '待录入',
+      rate: rate > 0 ? `${pricingRateText(rate)} 元/kW·月` : '待录入',
       amount: '¥0',
       remark: '当前计费规则未选择“按最大需量”'
     }
@@ -1033,7 +1033,7 @@ const demandFeeRow = () => {
   return {
     category: '最大需量费用',
     quantity: `${numText(maxDemandKw.value)} kW`,
-    rate: rate > 0 ? `${numText(rate)} 元/kW·月` : '待录入',
+    rate: rate > 0 ? `${pricingRateText(rate)} 元/kW·月` : '待录入',
     amount: maxDemandFee.value > 0 ? moneyText(maxDemandFee.value) : '¥0',
     remark: '本期遥测 P 按 5 分钟聚合，并取约 15 分钟窗口平均最大需量 × 最大需量单价'
   }
@@ -1044,7 +1044,7 @@ const transformerCapacityFeeRow = () => {
     return {
       category: '变压器容量费用',
       quantity: '未启用',
-      rate: rate > 0 ? `${numText(rate)} 元/kVA·月` : '待录入',
+      rate: rate > 0 ? `${pricingRateText(rate)} 元/kVA·月` : '待录入',
       amount: '¥0',
       remark: '当前计费规则未选择“按变压器容量”'
     }
@@ -1052,7 +1052,7 @@ const transformerCapacityFeeRow = () => {
   return {
     category: '变压器容量费用',
     quantity: transformerCapacityKva.value > 0 ? `${numText(transformerCapacityKva.value)} kVA` : '待录入',
-    rate: rate > 0 ? `${numText(rate)} 元/kVA·月` : '待录入',
+    rate: rate > 0 ? `${pricingRateText(rate)} 元/kVA·月` : '待录入',
     amount: transformerCapacityFee.value > 0 ? moneyText(transformerCapacityFee.value) : '¥0',
     remark: '按计费规则录入的变压器容量 × 变压器容量单价'
   }
@@ -1079,7 +1079,7 @@ const buildBillOverviewRowsFromDetails = (rows: Array<{
   return Array.from(grouped.values()).map((row) => ({
     category: row.category,
     quantity: row.energy > 0 ? kwhText(row.energy) : '--',
-    rate: row.rates.length ? numText(row.rates.reduce((sum, value) => sum + value, 0) / row.rates.length) : '--',
+    rate: row.rates.length ? pricingRateText(row.rates.reduce((sum, value) => sum + value, 0) / row.rates.length) : '--',
     amount: moneyText(row.amount),
     remark: '接口费用明细小计'
   }))
@@ -1098,7 +1098,7 @@ const feeDetailToRow = (row: {
   component: row.component || (row.source === '分组标题' ? '分组标题' : '--'),
   period: row.period || '--',
   billingEnergyText: row.billingEnergy === null || row.billingEnergy === undefined ? '--' : (row.category === '容需量费用' ? numText(Number(row.billingEnergy)) : kwhText(Number(row.billingEnergy))),
-  rateText: row.rate === null || row.rate === undefined ? '--' : numText(Number(row.rate)),
+  rateText: row.rate === null || row.rate === undefined ? '--' : pricingRateText(Number(row.rate)),
   amountText: row.amount === null || row.amount === undefined ? '--' : moneyText(Number(row.amount)),
   source: row.source || ''
 })
@@ -1150,6 +1150,11 @@ const nullableSum = (values: Array<number | null>) => {
 }
 const uniqueRowsById = <T extends { id?: number }>(rows: T[]) => Array.from(new Map(rows.map((row, index) => [row.id || index, row])).values())
 const numText = (value: number) => Number.isInteger(value) ? String(value) : value.toFixed(2)
+const pricingRateText = (value: number) => {
+  if (!Number.isFinite(value)) return '--'
+  const text = String(value)
+  return text.includes('e') ? value.toFixed(12).replace(/\.?0+$/, '') : text
+}
 const kwhText = (value: number) => `${numText(value)} kWh`
 const moneyText = (value: number) => `¥${numText(value)}`
 const latestPowerFactorText = () => {

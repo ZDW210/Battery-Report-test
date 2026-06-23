@@ -2278,7 +2278,7 @@ function buildConfiguredFeeDetails(deviceDetails: AnyRecord[], rules: AnyRecord[
     components
       .filter((item) => item.category === category)
       .forEach((component) => {
-        FEE_RATE_PERIODS.forEach((period) => {
+        feeRatePeriodsForComponent(component.category, component.component).forEach((period) => {
           let matchedEnergy = 0
           let amount = 0
           const rates: Array<number | null> = []
@@ -2299,7 +2299,7 @@ function buildConfiguredFeeDetails(deviceDetails: AnyRecord[], rules: AnyRecord[
             component: component.component,
             period: period.label,
             billingEnergy: round4(matchedEnergy),
-            rate: round8(displayRate),
+            rate: displayRate,
             amount: round2(amount),
             source: '计费规则费用矩阵 × EIOT分时电量'
           })
@@ -2317,6 +2317,11 @@ function parseFeeConfigRows(rule: AnyRecord | null) {
   } catch {
     return []
   }
+}
+
+function feeRatePeriodsForComponent(category: string, component: string) {
+  const isMarketRetail = cleanText(category) === '市场化购电电费' && cleanText(component) === '零售交易电费'
+  return isMarketRetail ? FEE_RATE_PERIODS : FEE_RATE_PERIODS.filter((period) => period.key !== 'peakFloat' && period.key !== 'valleyFloat')
 }
 
 function findFeeConfigRow(rule: AnyRecord, category: string, component: string) {
@@ -2437,7 +2442,7 @@ function touFeeRowsByDevice(
         component,
         period: period.label,
         billingEnergy: round4(matchedEnergy),
-        rate: round8(displayRate),
+        rate: displayRate,
         amount: round2(amount),
         source: '计费规则 × EIOT分时电量'
       })
