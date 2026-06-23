@@ -2230,12 +2230,10 @@ function buildReportFeeDetails(deviceDetails: AnyRecord[], rules: AnyRecord[], t
     ...touFeeRowsByDevice(deviceDetails, rules, '政府性基金及附加', '库区移民基金', 'chargeTou', (rule) => numberOrNull(rule?.government_fund_surcharge) || 0, 1, true),
     ...touFeeRowsByDevice(deviceDetails, rules, '政府性基金及附加', '可再生能源附加', 'chargeTou', () => 0, 1, true),
     ...touFeeRowsByDevice(deviceDetails, rules, '政府性基金及附加', '国家重大水利工程建设基金', 'chargeTou', () => 0, 1, true),
-    feeDetailHeader('售电收入'),
-    ...touFeeRowsByDevice(deviceDetails, rules, '售电收入', '放电售电收入', 'dischargeTou', (rule, key) => Number(averageTouRates(rule ? [rule] : [])[key] || 0), -1),
     demandFeeDetailRow(rules, deviceDetails, telemetryRows),
     transformerFeeDetailRow(rules)
   ].filter(Boolean)
-  rows.push({ category: '合计', component: '本期电费合计', period: '', billingEnergy: null, rate: null, amount: reportBillingFeeTotal(rows), source: '汇总，不含售电收入' })
+  rows.push({ category: '合计', component: '本期电费合计', period: '', billingEnergy: null, rate: null, amount: reportBillingFeeTotal(rows), source: '费用明细汇总' })
   return rows
 }
 
