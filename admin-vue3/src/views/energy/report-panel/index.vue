@@ -732,8 +732,14 @@ const exportBillPdf = async () => {
   win.document.write(html)
   win.document.close()
   win.focus()
-  setTimeout(() => win.print(), 300)
+  if (isMobileBrowser()) {
+    message.info('已打开A4报表页，请点击页面顶部“下载PDF/打印”')
+  } else {
+    setTimeout(() => win.print(), 300)
+  }
 }
+
+const isMobileBrowser = () => /Android|iPhone|iPad|iPod|Mobile|Windows Phone/i.test(navigator.userAgent)
 
 const buildPrintableBillHtml = () => {
   const header = billHeaderInfo.value
@@ -776,11 +782,17 @@ const buildPrintableBillHtml = () => {
 <html>
 <head>
   <meta charset="utf-8" />
+  <meta name="viewport" content="width=794, initial-scale=1" />
   <title>用电电量报表</title>
   <style>
     @page { size: A4; margin: 16mm; }
     * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-    body { font-family: "Microsoft YaHei", Arial, sans-serif; color: #1f2937; font-size: 12px; }
+    body { min-width: 794px; margin: 0; background: #e8f0f7; font-family: "Microsoft YaHei", Arial, sans-serif; color: #1f2937; font-size: 12px; }
+    .print-toolbar { position: sticky; top: 0; z-index: 10; display: flex; justify-content: center; gap: 10px; padding: 10px 12px; background: rgba(248, 250, 252, .96); border-bottom: 1px solid #cbd5e1; box-shadow: 0 2px 10px rgba(15, 23, 42, .08); }
+    .print-toolbar button { min-width: 132px; height: 36px; border: 0; border-radius: 4px; background: #0f766e; color: #fff; font-size: 14px; font-weight: 700; cursor: pointer; }
+    .print-toolbar .secondary { background: #475569; }
+    .print-hint { display: flex; align-items: center; color: #475569; font-size: 12px; }
+    .sheet { width: 794px; min-height: 1123px; margin: 18px auto 24px; padding: 60px 60px 54px; box-sizing: border-box; background: #fff; box-shadow: 0 10px 35px rgba(15, 23, 42, .18); }
     .bill-head { color: #0f766e; padding-bottom: 22px; }
     .brand-row { display: grid; grid-template-columns: 210px 1fr 220px; align-items: start; gap: 22px; }
     .brand { display: flex; align-items: center; gap: 12px; }
@@ -834,9 +846,20 @@ const buildPrintableBillHtml = () => {
     .print-bar-svg { display: block; width: 58px; height: 96px; margin: 0 auto; overflow: visible; }
     .print-bar b, .print-bar em { display: block; margin-top: 4px; font-style: normal; }
     .note { color: #64748b; margin-top: 14px; line-height: 1.7; }
+    @media print {
+      body { min-width: 0; background: #fff; }
+      .print-toolbar { display: none; }
+      .sheet { width: auto; min-height: 0; margin: 0; padding: 0; box-shadow: none; }
+    }
   </style>
 </head>
 <body>
+  <div class="print-toolbar">
+    <button onclick="window.print()">下载PDF/打印</button>
+    <button class="secondary" onclick="window.close()">关闭</button>
+    <span class="print-hint">手机端请点“下载PDF/打印”，在系统面板中选择保存为PDF。</span>
+  </div>
+  <main class="sheet">
   <header class="bill-head">
     <div class="brand-row">
       <div class="brand">
@@ -912,6 +935,7 @@ const buildPrintableBillHtml = () => {
   <table><thead><tr><th>费用类别</th><th>费用组成</th><th>分时时段</th><th>计费电量</th><th>计费标准</th><th>电费</th></tr></thead><tbody>${feeHtml}</tbody></table>
   ${unmatchedSectionHtml}
   <div class="note">备注：当前项目未接入电网账单中的上期示数、倍率、变损、线损、峰平谷真实分项、功率因数调整等字段，因此导出报表仅展示项目已接入和已录入的数据。</div>
+  </main>
 </body>
 </html>`
 }
