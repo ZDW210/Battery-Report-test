@@ -1152,8 +1152,7 @@ const uniqueRowsById = <T extends { id?: number }>(rows: T[]) => Array.from(new 
 const numText = (value: number) => Number.isInteger(value) ? String(value) : value.toFixed(2)
 const pricingRateText = (value: number) => {
   if (!Number.isFinite(value)) return '--'
-  const text = String(value)
-  return text.includes('e') ? value.toFixed(12).replace(/\.?0+$/, '') : text
+  return value.toFixed(12).replace(/\.?0+$/, '')
 }
 const kwhText = (value: number) => `${numText(value)} kWh`
 const moneyText = (value: number) => `¥${numText(value)}`
