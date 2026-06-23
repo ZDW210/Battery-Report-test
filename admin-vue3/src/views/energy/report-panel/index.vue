@@ -416,6 +416,7 @@ const billHeaderInfo = computed(() => {
     marketType: query.scopeType === 'device' ? '单表统计' : query.scopeType === 'project' ? '场站汇总' : '全部电表汇总',
     printer: 'system',
     printDate: dayjs().format('YYYY-MM-DD'),
+    paymentDueDate: dayjs(query.billMonth || dayjs().format('YYYY-MM')).add(1, 'month').date(12).format('YYYY-MM-DD'),
     reportNo: `ES-${dayjs().format('YYYYMMDDHHmmss')}`
   }
 })
@@ -445,11 +446,21 @@ const totalBillAmount = computed(() => {
   return Number((composition || totalPurchaseCost.value || 0).toFixed(2))
 })
 
+const paymentDueDate = computed(() => {
+  const header = billHeaderInfo.value || {}
+  return firstText([
+    header.paymentDueDate,
+    header.paymentDeadline,
+    header.payDeadline,
+    header.dueDate,
+    header.chargeDueDate
+  ]) || dayjs(query.billMonth || dayjs().format('YYYY-MM')).add(1, 'month').date(12).format('YYYY-MM-DD')
+})
+
 const summaryCards = computed(() => [
   { label: '本期电量', value: kwhText(totalPurchasedEnergy.value), hint: '按当前范围内电表 EPI 首末差汇总' },
   { label: '本期电费', value: moneyText(totalBillAmount.value), hint: '按现有计费规则可用字段测算' },
-  { label: '平均购电单价', value: averageBuyRate.value === null ? '待录入' : `${numText(averageBuyRate.value)} 元/kWh`, hint: '购电成本 / 本期电量' },
-  { label: '售电收入', value: moneyText(totalRevenue.value), hint: averageSellRate.value === null ? 'EPE 分时电量 × 尖峰平谷电价' : `平均售电单价 ${numText(averageSellRate.value)} 元/kWh` }
+  { label: '交费截止日期', value: paymentDueDate.value, hint: '默认账单月份次月 12 日' }
 ])
 
 const energyDetailRows = computed(() => {
@@ -727,7 +738,7 @@ const buildPrintableBillHtml = () => {
     .info-grid .value { color: #111827; line-height: 1.55; }
     .print-row { display: flex; justify-content: flex-end; gap: 34px; margin-top: 36px; color: #64748b; letter-spacing: 1px; }
     .meta { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px 24px; border-top: 2px solid #0f766e; border-bottom: 1px solid #d1d5db; padding: 10px 0; }
-    .cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 14px 0; }
+    .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 14px 0; }
     .card { background: #eef6ff; border: 1px solid #bfdbfe; padding: 10px; text-align: center; }
     .card span { display: block; color: #64748b; }
     .card b { display: block; font-size: 18px; margin-top: 6px; color: #0f172a; }
@@ -809,8 +820,7 @@ const buildPrintableBillHtml = () => {
   <div class="cards">
     <div class="card"><span>本期电量</span><b>${kwhText(totalPurchasedEnergy.value)}</b></div>
     <div class="card"><span>本期电费</span><b>${moneyText(totalBillAmount.value)}</b></div>
-    <div class="card"><span>平均购电单价</span><b>${averageBuyRate.value === null ? '待录入' : `${numText(averageBuyRate.value)} 元/kWh`}</b></div>
-    <div class="card"><span>售电收入</span><b>${moneyText(totalRevenue.value)}</b></div>
+    <div class="card"><span>交费截止日期</span><b>${paymentDueDate.value}</b></div>
   </div>
   <div class="bill-layout">
     <section class="bill-box">
@@ -1170,7 +1180,7 @@ onMounted(async () => {
 
   .summary-grid {
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 12px;
     margin: 14px 0;
   }
