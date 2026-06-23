@@ -33,83 +33,6 @@
       </el-col>
     </el-row>
 
-    <el-row :gutter="12">
-      <el-col :lg="16" :md="24" :xs="24">
-        <el-card shadow="never" class="mb-12px">
-          <template #header>
-            <div class="energy-dashboard__card-header">
-              <span>运行负载</span>
-              <span class="energy-dashboard__subtext">按当前设备最新采集值聚合</span>
-            </div>
-          </template>
-          <el-skeleton :loading="loading" animated>
-            <div class="energy-dashboard__load">
-              <div>
-                <span>当前总功率</span>
-                <strong>{{ totalPower }} kW</strong>
-              </div>
-              <div>
-                <span>在线率</span>
-                <strong>{{ onlineRate }}%</strong>
-              </div>
-              <div>
-                <span>最新采集</span>
-                <strong>{{ latestReadingText }}</strong>
-              </div>
-            </div>
-            <el-table :data="powerRank" :show-overflow-tooltip="true" :stripe="true" class="mt-12px">
-              <el-table-column label="设备" min-width="160" prop="deviceName" />
-              <el-table-column label="项目" min-width="130" prop="projectName">
-                <template #default="{ row }">{{ row.projectName || '-' }}</template>
-              </el-table-column>
-              <el-table-column align="center" label="状态" width="90">
-                <template #default="{ row }">
-                  <el-tag :type="getDeviceStatusType(row.status)" effect="light">
-                    {{ getDeviceStatusText(row.status) }}
-                  </el-tag>
-                </template>
-              </el-table-column>
-              <el-table-column align="right" label="功率(kW)" width="110">
-                <template #default="{ row }">{{ valueOrDash(row.lastPower) }}</template>
-              </el-table-column>
-              <el-table-column label="更新时间" width="170">
-                <template #default="{ row }">{{ formatDateText(row.lastReadingTime) }}</template>
-              </el-table-column>
-            </el-table>
-          </el-skeleton>
-        </el-card>
-      </el-col>
-
-      <el-col :lg="8" :md="24" :xs="24">
-        <el-card shadow="never" class="mb-12px">
-          <template #header>
-            <div class="energy-dashboard__card-header">
-              <span>待处理告警</span>
-              <el-button link type="primary" @click="go('/energy/alarm')">处理告警</el-button>
-            </div>
-          </template>
-          <el-skeleton :loading="loading" animated>
-            <el-empty v-if="latestAlarms.length === 0" description="暂无待处理告警" />
-            <div
-              v-for="alarm in latestAlarms"
-              v-else
-              :key="alarm.id"
-              class="energy-dashboard__alarm"
-            >
-              <div>
-                <strong>{{ alarm.title || alarm.code || '未命名告警' }}</strong>
-                <span>{{ alarm.deviceName || '-' }} · {{ formatDateText(alarm.occurTime) }}</span>
-              </div>
-              <el-tag :type="getAlarmTagType(alarm.level)" effect="light">
-                {{ getAlarmLevelText(alarm.level) }}
-              </el-tag>
-            </div>
-          </el-skeleton>
-        </el-card>
-
-      </el-col>
-    </el-row>
-
     <el-card shadow="never" class="energy-dashboard__data-panel">
       <template #header>
         <div class="energy-dashboard__card-header">
@@ -184,13 +107,10 @@
 
 <script lang="ts" setup>
 import { Echart } from '@/components/Echart'
-import { EnergyAlarmApi } from '@/api/energy/alarm'
-import type { EnergyAlarmVO } from '@/api/energy/alarm'
 import { EnergyDeviceApi } from '@/api/energy/device'
 import type { EnergyDeviceVO } from '@/api/energy/device'
 import { EnergyReportApi } from '@/api/energy/report'
 import type { EnergyReportBillVO, EnergyReportDailyCostRowVO } from '@/api/energy/report'
-import { formatNullableDate } from '@/utils/formatTime'
 import type { EChartsOption } from 'echarts'
 import dayjs from 'dayjs'
 import { useRouter } from 'vue-router'
@@ -204,7 +124,6 @@ const currentMonth = dayjs().format('YYYY-MM')
 const loading = ref(true)
 const dataPanelLoading = ref(false)
 const devices = ref<EnergyDeviceVO[]>([])
-const latestAlarms = ref<EnergyAlarmVO[]>([])
 const billReport = ref<EnergyReportBillVO>()
 const dailyCostRows = ref<EnergyReportDailyCostRowVO[]>([])
 const deviceTotal = ref(0)
@@ -215,30 +134,7 @@ const dataQuery = reactive<{
   billMonth: currentMonth
 })
 
-const totalPower = computed(() => {
-  const value = devices.value.reduce((sum, item) => sum + Number(item.lastPower || 0), 0)
-  return Number(value.toFixed(1))
-})
-
 const onlineTotal = computed(() => devices.value.filter((item) => item.status === 0).length)
-
-const onlineRate = computed(() => {
-  if (!devices.value.length) return 0
-  return Number(((onlineTotal.value / devices.value.length) * 100).toFixed(1))
-})
-
-const latestReadingText = computed(() => {
-  const latest = [...devices.value]
-    .filter((item) => item.lastReadingTime)
-    .sort((a, b) => dayjs(b.lastReadingTime).valueOf() - dayjs(a.lastReadingTime).valueOf())[0]
-  return latest ? formatDateText(latest.lastReadingTime) : '-'
-})
-
-const powerRank = computed(() => {
-  return [...devices.value]
-    .sort((a, b) => Math.abs(Number(b.lastPower || 0)) - Math.abs(Number(a.lastPower || 0)))
-    .slice(0, 8)
-})
 
 const billScopeTitle = computed(() => billReport.value?.scopeName || '全部电表汇总')
 const billDeviceCount = computed(() => billReport.value?.summary?.deviceCount ?? deviceTotal.value)
@@ -332,32 +228,12 @@ const statusBands = computed(() => {
   })
 })
 
-const getDeviceStatusText = (status?: number) => {
-  const statusMap: Record<number, string> = {
-    0: '在线',
-    1: '离线',
-    2: '故障'
-  }
-  return status === undefined || status === null ? '未知' : statusMap[status] || `状态${status}`
-}
-
-const getDeviceStatusType = (status?: number) => {
-  if (status === 0) return 'success'
-  if (status === 2) return 'danger'
-  if (status === 3) return 'warning'
-  return 'info'
-}
-
 const loadDashboard = async () => {
   loading.value = true
   try {
-    const [devicePage, alarmPage] = await Promise.all([
-      EnergyDeviceApi.getDevicePage({ pageNo: 1, pageSize: 100 }),
-      EnergyAlarmApi.getAlarmPage({ pageNo: 1, pageSize: 8, status: 0 })
-    ])
+    const devicePage = await EnergyDeviceApi.getDevicePage({ pageNo: 1, pageSize: 100 })
 
     devices.value = devicePage?.list || []
-    latestAlarms.value = alarmPage?.list || []
     deviceTotal.value = devicePage?.total || devices.value.length
     await loadDataPanel()
   } catch (error) {
@@ -394,14 +270,6 @@ const loadDataPanel = async () => {
   } finally {
     dataPanelLoading.value = false
   }
-}
-
-const valueOrDash = (value?: number) => {
-  return value === undefined || value === null ? '-' : value
-}
-
-const formatDateText = (value?: string | Date) => {
-  return formatNullableDate(value)
 }
 
 const normalizeNumber = (value: unknown): number | null => {
@@ -454,26 +322,6 @@ const buildLineOptions = ({
     data: item.data
   }))
 })
-
-const getAlarmLevelText = (level?: number) => {
-  const levelMap: Record<number, string> = {
-    1: '提示',
-    2: '一般',
-    3: '严重',
-    4: '紧急'
-  }
-  return level ? levelMap[level] || `等级 ${level}` : '未知'
-}
-
-const getAlarmTagType = (level?: number) => {
-  if (level === 4 || level === 3) {
-    return 'danger'
-  }
-  if (level === 2) {
-    return 'warning'
-  }
-  return 'info'
-}
 
 const go = (path: string) => {
   router.push(path)
@@ -531,35 +379,6 @@ onMounted(() => {
     color: var(--el-text-color-secondary);
     font-size: 12px;
     font-weight: 400;
-  }
-
-  &__load {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 12px;
-
-    div {
-      padding: 14px;
-      background: var(--el-fill-color-lighter);
-      border-radius: 6px;
-    }
-
-    span,
-    strong {
-      display: block;
-    }
-
-    span {
-      color: var(--el-text-color-secondary);
-      font-size: 13px;
-    }
-
-    strong {
-      margin-top: 8px;
-      color: var(--el-text-color-primary);
-      font-size: 24px;
-      line-height: 30px;
-    }
   }
 
   &__soc-grid {
