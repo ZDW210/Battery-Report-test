@@ -1,22 +1,5 @@
 <template>
   <div class="energy-telemetry">
-    <div class="monitor-platform-bar">
-      <div class="monitor-platform-bar__title">
-        <Icon icon="ep:fold" :size="26" />
-        <strong>能源物联网云平台</strong>
-      </div>
-      <div class="monitor-platform-bar__tools">
-        <Icon icon="ep:search" :size="22" />
-        <span class="alarm-pill is-normal">一般 <em>{{ statusCounts.normal }}</em></span>
-        <span class="alarm-pill is-urgent">紧急 <em>{{ statusCounts.fault }}</em></span>
-        <span class="alarm-pill is-serious">严重 <em>{{ statusCounts.alarm }}</em></span>
-        <el-button link @click="loadAll">
-          <Icon icon="ep:refresh" />
-        </el-button>
-        <span>HSXNY</span>
-      </div>
-    </div>
-
     <el-tabs v-model="activeSection" class="telemetry-tabs">
       <el-tab-pane label="用电量报表" name="bill">
         <section class="bill-report-panel">
@@ -2464,90 +2447,13 @@ onMounted(() => {
   gap: 12px;
 }
 
-.monitor-platform-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  min-height: 48px;
-  padding: 0 14px;
-  background: #ffffff;
-  border: 1px solid #e8edf0;
-  border-radius: 6px 6px 0 0;
-
-  &__title,
-  &__tools {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-  }
-
-  &__title {
-    color: #020617;
-
-    strong {
-      font-size: 22px;
-      font-weight: 800;
-      line-height: 28px;
-      letter-spacing: 0;
-    }
-  }
-
-  &__tools {
-    color: #0f172a;
-    font-size: 13px;
-  }
-}
-
-.alarm-pill {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 48px;
-  height: 26px;
-  padding: 0 10px;
-  color: #ffffff;
-  font-size: 13px;
-  font-weight: 700;
-  line-height: 30px;
-
-  em {
-    position: absolute;
-    top: -8px;
-    right: -8px;
-    min-width: 20px;
-    height: 20px;
-    padding: 0 6px;
-    font-style: normal;
-    line-height: 20px;
-    text-align: center;
-    border-radius: 999px;
-  }
-
-  &.is-normal,
-  &.is-normal em {
-    background: #19c36b;
-  }
-
-  &.is-urgent,
-  &.is-urgent em {
-    background: #f5a400;
-  }
-
-  &.is-serious,
-  &.is-serious em {
-    background: #ff4d57;
-  }
-}
-
 .monitor-workbench {
   display: grid;
   grid-template-columns: 260px minmax(0, 1fr);
   min-height: calc(100vh - 190px);
   background: #ffffff;
   border: 1px solid #edf2f4;
-  border-radius: 0 0 6px 6px;
+  border-radius: 6px;
 }
 
 .monitor-sidebar {
