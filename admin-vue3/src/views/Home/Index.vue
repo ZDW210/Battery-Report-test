@@ -1,23 +1,5 @@
 <template>
   <div class="energy-dashboard">
-    <div class="energy-dashboard__header">
-      <div>
-        <div class="energy-dashboard__eyebrow">运营面板</div>
-        <h1>移动储能全局运营概览</h1>
-        <p>汇总设备规模、在线状态、运行功率、告警压力和项目覆盖情况。</p>
-      </div>
-      <div class="energy-dashboard__actions">
-        <el-button type="primary" @click="go('/energy/device')">
-          <Icon class="mr-5px" icon="ep:monitor" />
-          设备台账
-        </el-button>
-        <el-button @click="loadDashboard">
-          <Icon class="mr-5px" icon="ep:refresh" />
-          刷新
-        </el-button>
-      </div>
-    </div>
-
     <el-row :gutter="12" class="energy-dashboard__top-row">
       <el-col :lg="6" :md="8" :sm="24" :xs="24">
         <el-card shadow="never" class="energy-dashboard__stat">
@@ -422,45 +404,6 @@ onMounted(() => {
 
 <style lang="scss" scoped>
 .energy-dashboard {
-  &__header {
-    display: flex;
-    align-items: flex-end;
-    justify-content: space-between;
-    gap: 16px;
-    margin-bottom: 12px;
-    padding: 18px 20px;
-    background: #ffffff;
-    border: 1px solid var(--el-border-color-light);
-    border-radius: 8px;
-
-    h1 {
-      margin: 6px 0;
-      color: var(--el-text-color-primary);
-      font-size: 24px;
-      font-weight: 700;
-      line-height: 32px;
-    }
-
-    p {
-      margin: 0;
-      color: var(--el-text-color-secondary);
-      font-size: 14px;
-    }
-  }
-
-  &__eyebrow {
-    color: var(--el-color-primary);
-    font-size: 13px;
-    font-weight: 600;
-  }
-
-  &__actions {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: flex-end;
-    gap: 8px;
-  }
-
   &__top-row {
     margin-bottom: 12px;
 
