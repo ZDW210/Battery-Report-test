@@ -121,6 +121,30 @@
         </div>
       </template>
 
+      <section class="energy-dashboard__bill-summary">
+        <div class="energy-dashboard__bill-scope">
+          <strong>{{ billScopeTitle }}</strong>
+          <span>共 {{ billDeviceCount }} 块电表，账单月份 {{ dataQuery.billMonth }}</span>
+        </div>
+        <el-skeleton :loading="dataPanelLoading" animated>
+          <div class="energy-dashboard__bill-kpis">
+            <div
+              v-for="item in billTopCards"
+              :key="item.label"
+              class="energy-dashboard__bill-kpi"
+              :style="{ '--card-color': item.color }"
+            >
+              <div>
+                <span>{{ item.label }}</span>
+                <strong>{{ item.value }}</strong>
+                <small>{{ item.hint }}</small>
+              </div>
+              <Icon :icon="item.icon" :size="34" />
+            </div>
+          </div>
+        </el-skeleton>
+      </section>
+
       <el-form :inline="true" :model="dataQuery" class="energy-dashboard__data-form" label-width="72px">
         <el-form-item label="月份">
           <el-date-picker
@@ -165,7 +189,7 @@ import type { EnergyAlarmVO } from '@/api/energy/alarm'
 import { EnergyDeviceApi } from '@/api/energy/device'
 import type { EnergyDeviceVO } from '@/api/energy/device'
 import { EnergyReportApi } from '@/api/energy/report'
-import type { EnergyReportDailyCostRowVO } from '@/api/energy/report'
+import type { EnergyReportBillVO, EnergyReportDailyCostRowVO } from '@/api/energy/report'
 import { formatNullableDate } from '@/utils/formatTime'
 import type { EChartsOption } from 'echarts'
 import dayjs from 'dayjs'
@@ -181,6 +205,7 @@ const loading = ref(true)
 const dataPanelLoading = ref(false)
 const devices = ref<EnergyDeviceVO[]>([])
 const latestAlarms = ref<EnergyAlarmVO[]>([])
+const billReport = ref<EnergyReportBillVO>()
 const dailyCostRows = ref<EnergyReportDailyCostRowVO[]>([])
 const deviceTotal = ref(0)
 
@@ -214,6 +239,47 @@ const powerRank = computed(() => {
     .sort((a, b) => Math.abs(Number(b.lastPower || 0)) - Math.abs(Number(a.lastPower || 0)))
     .slice(0, 8)
 })
+
+const billScopeTitle = computed(() => billReport.value?.scopeName || '全部电表汇总')
+const billDeviceCount = computed(() => billReport.value?.summary?.deviceCount ?? deviceTotal.value)
+const totalChargeEnergy = computed(() => Number(billReport.value?.summary?.totalChargeEnergy || 0))
+const totalDischargeEnergy = computed(() => Number(billReport.value?.summary?.totalDischargeEnergy || 0))
+const dischargeEquivalentFee = computed(() => Number(billReport.value?.summary?.salesRevenue || 0))
+const savedCost = computed(() => {
+  const value = billReport.value?.summary?.savedCost
+  return value === null || value === undefined ? 0 : Number(value || 0)
+})
+
+const billTopCards = computed(() => [
+  {
+    label: '充入电量合计',
+    value: formatKwh(totalChargeEnergy.value),
+    hint: '按正向有功电能 EPI 首末差汇总',
+    icon: 'ep:connection',
+    color: '#2088d8'
+  },
+  {
+    label: '放出电量合计',
+    value: formatKwh(totalDischargeEnergy.value),
+    hint: '按反向有功电能 EPE 首末差汇总',
+    icon: 'ep:truck',
+    color: '#0ea5a4'
+  },
+  {
+    label: '放电等效电费',
+    value: formatCurrency(dischargeEquivalentFee.value),
+    hint: '按放电时段电价计算',
+    icon: 'ep:money',
+    color: '#16a34a'
+  },
+  {
+    label: '节约成本',
+    value: formatCurrency(savedCost.value),
+    hint: '放电等效电费减充电总成本',
+    icon: 'ep:trophy',
+    color: '#f59e0b'
+  }
+])
 
 const dataPanelSummary = computed(() => {
   const validChargeCosts = dailyCostRows.value
@@ -303,17 +369,26 @@ const loadDashboard = async () => {
 
 const loadDataPanel = async () => {
   if (!dataQuery.billMonth) {
+    billReport.value = undefined
     dailyCostRows.value = []
     return
   }
   dataPanelLoading.value = true
   try {
-    const report = await EnergyReportApi.getDailyCostReport({
-      scopeType: 'all',
-      billMonth: dataQuery.billMonth
-    })
-    dailyCostRows.value = report?.rows || []
+    const [dailyReport, bill] = await Promise.all([
+      EnergyReportApi.getDailyCostReport({
+        scopeType: 'all',
+        billMonth: dataQuery.billMonth
+      }),
+      EnergyReportApi.getBillReport({
+        scopeType: 'all',
+        billMonth: dataQuery.billMonth
+      })
+    ])
+    dailyCostRows.value = dailyReport?.rows || []
+    billReport.value = bill
   } catch (error) {
+    billReport.value = undefined
     dailyCostRows.value = []
     message.error('数据面板加载失败，请检查报表费用接口')
   } finally {
@@ -346,6 +421,13 @@ const formatCurrency = (value: number | null) => {
     return '-'
   }
   return `¥${Number(value || 0).toFixed(2)}`
+}
+
+const formatKwh = (value: number | null) => {
+  if (value === null || value === undefined) {
+    return '-'
+  }
+  return `${Number(value || 0).toFixed(2)} kWh`
 }
 
 const buildLineOptions = ({
@@ -521,6 +603,87 @@ onMounted(() => {
     margin-top: 12px;
   }
 
+  &__bill-summary {
+    margin-bottom: 12px;
+  }
+
+  &__bill-scope {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 16px;
+    color: #0f172a;
+    background: #eaf4ff;
+    border: 1px solid #d8ecff;
+    border-radius: 8px;
+
+    strong {
+      font-size: 18px;
+      line-height: 24px;
+    }
+
+    span {
+      color: #334155;
+      font-size: 14px;
+      font-weight: 600;
+    }
+  }
+
+  &__bill-kpis {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 12px;
+    margin-top: 12px;
+  }
+
+  &__bill-kpi {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    min-height: 112px;
+    padding: 18px 20px;
+    overflow: hidden;
+    background: linear-gradient(110deg, #ffffff 0%, #ffffff 62%, #e5faef 100%);
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+
+    span,
+    small {
+      display: block;
+    }
+
+    span {
+      color: #0f172a;
+      font-size: 15px;
+      font-weight: 700;
+    }
+
+    strong {
+      display: block;
+      margin-top: 10px;
+      color: #020617;
+      font-size: 30px;
+      font-weight: 800;
+      line-height: 36px;
+      white-space: nowrap;
+    }
+
+    small {
+      margin-top: 8px;
+      color: #334155;
+      font-size: 13px;
+      font-weight: 600;
+      line-height: 18px;
+    }
+
+    .iconify {
+      flex: none;
+      color: var(--card-color);
+    }
+  }
+
   &__data-form {
     padding: 2px 0 8px;
 
@@ -598,6 +761,7 @@ onMounted(() => {
   .energy-dashboard {
     &__load,
     &__soc-grid,
+    &__bill-kpis,
     &__data-summary {
       grid-template-columns: repeat(2, minmax(0, 1fr));
     }
@@ -606,15 +770,25 @@ onMounted(() => {
 
 @media (max-width: 768px) {
   .energy-dashboard {
-    &__header {
+    &__bill-scope {
       align-items: flex-start;
       flex-direction: column;
     }
 
     &__load,
     &__soc-grid,
+    &__bill-kpis,
     &__data-summary {
       grid-template-columns: 1fr;
+    }
+
+    &__bill-kpi {
+      min-height: auto;
+
+      strong {
+        font-size: 24px;
+        line-height: 30px;
+      }
     }
 
     &__data-form {
