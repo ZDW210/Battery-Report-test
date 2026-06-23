@@ -72,7 +72,7 @@
             <section class="report-section">
               <div class="section-title section-title--bill">
                 <h3>账单概况</h3>
-                <span>单位：kWh、元/kWh、元</span>
+                <span>单位：kWh、元</span>
               </div>
               <div class="bill-overview">
                 <div class="bill-overview__head">
@@ -82,9 +82,13 @@
                 </div>
                 <div
                   v-for="item in billOverviewRows"
-                  :key="item.category"
+                  :key="item.key"
                   class="bill-overview__row"
-                  :class="{ 'is-total': item.category === '合计' }"
+                  :class="{
+                    'is-primary': item.level === 'primary',
+                    'is-child': item.level === 'child',
+                    'is-total': item.level === 'total'
+                  }"
                 >
                   <span class="bill-overview__name">{{ item.category }}</span>
                   <span class="bill-overview__quantity">{{ item.quantity }}</span>
@@ -575,11 +579,46 @@ const feeRows = computed(() => [
       ])
 ])
 
-const billOverviewRows = computed(() => feeRows.value.map((row) => ({
-  category: row.category,
-  quantity: row.quantity,
-  amount: row.amount
-})))
+const billOverviewRows = computed(() => {
+  const detailRows = billReport.value?.feeDetails?.length
+    ? buildBillOverviewRowsFromDetails(billReport.value.feeDetails)
+    : feeRows.value.filter((row) => row.category !== '合计')
+  const billAmount = detailRows.reduce((sum, row) => sum + moneyNumber(row.amount), 0)
+  const amountText = moneyText(billAmount || totalBillAmount.value)
+  return [
+    {
+      key: 'industrial-electricity',
+      category: industrialElectricityOverviewLabel.value,
+      quantity: kwhText(totalPurchasedEnergy.value),
+      amount: amountText,
+      level: 'primary'
+    },
+    ...detailRows.map((row, index) => ({
+      key: `fee-category-${index}-${row.category}`,
+      category: `${index === 0 ? '其中：' : ''}${row.category}`,
+      quantity: '',
+      amount: row.amount,
+      level: 'child'
+    })),
+    {
+      key: 'total',
+      category: '合计',
+      quantity: '',
+      amount: moneyText(totalBillAmount.value),
+      level: 'total'
+    }
+  ]
+})
+
+const industrialElectricityOverviewLabel = computed(() => {
+  const labels = uniqueTextValues(applicableRules.value.map((rule) => {
+    const mode = pricingModeShortText(rule.pricingMode)
+    const voltage = voltageLevelShortText(rule.voltageLevel)
+    const category = electricityCategoryShortText(rule.electricityCategory)
+    return `（${mode}）（${voltage}）${category}`
+  }))
+  return `工商业电费：${labels.length ? labels.join('、') : '（两部制）（10kV）其它照明'}`
+})
 
 const analysisRows = computed(() => [
   {
@@ -716,7 +755,7 @@ const buildPrintableBillHtml = () => {
     ? `<div class="section-title">未匹配计费规则电量</div><table><thead><tr><th>项目场地</th><th>电表</th><th>仪表编号</th><th>分时时段</th><th>充电电量</th><th>放电电量</th><th>原因</th></tr></thead><tbody>${unmatchedHtml}</tbody></table>`
     : ''
   const overviewHtml = billOverviewRows.value
-    .map((row) => `<tr class="${row.category === '合计' ? 'total' : ''}"><td>${escapeHtml(row.category)}</td><td>${escapeHtml(row.quantity)}</td><td>${escapeHtml(row.amount)}</td></tr>`)
+    .map((row) => `<tr class="${row.level || ''}"><td>${escapeHtml(row.category)}</td><td>${escapeHtml(row.quantity)}</td><td>${escapeHtml(row.amount)}</td></tr>`)
     .join('')
   const analysisHtml = analysisRows.value.map((row) => `<p><b>${row.title}</b><br>${row.content}</p>`).join('')
   const analysisBarsHtml = analysisBarRows.value
@@ -777,6 +816,8 @@ const buildPrintableBillHtml = () => {
     .bill-box-title { display: flex; justify-content: space-between; background: #d9fbfb; color: #007273; padding: 9px 12px; font-weight: 800; font-size: 16px; }
     .bill-overview-table th { color: #334155; background: #f8ffff; }
     .bill-overview-table td:nth-child(2), .bill-overview-table td:nth-child(3), .bill-overview-table th:nth-child(2), .bill-overview-table th:nth-child(3) { text-align: right; }
+    .bill-overview-table .primary td { font-weight: 800; color: #0f172a; }
+    .bill-overview-table .child td:first-child { padding-left: 34px; color: #334155; }
     .bill-overview-table .total td { font-weight: 800; color: #0f172a; background: #f8ffff; }
     tr.group td { background: #f8ffff; color: #0f766e; font-weight: 800; }
     tr.total td { background: #f8ffff; color: #0f172a; font-weight: 800; }
@@ -1063,22 +1104,21 @@ const buildBillOverviewRowsFromDetails = (rows: Array<{
   amount?: number | null
   source?: string
 }>) => {
-  const grouped = new Map<string, { category: string; energy: number; amount: number; rates: number[] }>()
+  const grouped = new Map<string, { category: string; amount: number }>()
   rows.forEach((row) => {
     if (!row.component && row.source === '分组标题') return
+    if (row.category === '合计') return
     const key = row.category || '未分类'
-    const current = grouped.get(key) || { category: key, energy: 0, amount: 0, rates: [] }
-    current.energy += Number(row.billingEnergy || 0)
+    const current = grouped.get(key) || { category: key, amount: 0 }
     current.amount += Number(row.amount || 0)
-    if (row.rate !== null && row.rate !== undefined && Number.isFinite(Number(row.rate))) current.rates.push(Number(row.rate))
     grouped.set(key, current)
   })
-  return Array.from(grouped.values()).map((row) => ({
+  return Array.from(grouped.values()).filter((row) => Math.abs(row.amount) > 0.005).map((row) => ({
     category: row.category,
-    quantity: row.energy > 0 ? kwhText(row.energy) : '--',
-    rate: row.rates.length ? pricingRateText(row.rates.reduce((sum, value) => sum + value, 0) / row.rates.length) : '--',
+    quantity: '',
+    rate: '--',
     amount: moneyText(row.amount),
-    remark: '接口费用明细小计'
+    remark: '费用大类小计'
   }))
 }
 
@@ -1120,6 +1160,30 @@ const getElectricityCategoryText = (value?: string) => {
   }
   return options[value || ''] || '待录入'
 }
+const electricityCategoryShortText = (value?: string) => {
+  const options: Record<string, string> = {
+    general_commercial: '其它照明',
+    large_industrial: '大工业'
+  }
+  return options[value || ''] || '其它照明'
+}
+const pricingModeShortText = (value?: string) => {
+  const options: Record<string, string> = {
+    single: '单一制',
+    two_part: '两部制'
+  }
+  return options[value || ''] || '两部制'
+}
+const voltageLevelShortText = (value?: string) => {
+  const options: Record<string, string> = {
+    under_1kv: '1kV以下',
+    '10kv': '10kV',
+    '35kv': '35kV',
+    '110kv': '110kV',
+    '220kv_plus': '220kV及以上'
+  }
+  return options[value || ''] || '10kV'
+}
 const getVoltageLevelText = (value?: string) => {
   const options: Record<string, string> = {
     under_1kv: '不满1千伏',
@@ -1133,6 +1197,11 @@ const getVoltageLevelText = (value?: string) => {
 const numberOrNull = (value: unknown) => {
   const parsed = Number(value)
   return Number.isFinite(parsed) ? parsed : null
+}
+const uniqueTextValues = (values: string[]) => Array.from(new Set(values.map((value) => value.trim()).filter(Boolean)))
+const moneyNumber = (value: string) => {
+  const parsed = Number(String(value || '').replace(/[¥,\s]/g, ''))
+  return Number.isFinite(parsed) ? parsed : 0
 }
 const firstNumber = (values: Array<number | null>) => values.find((value) => value !== null) ?? null
 const lastNumber = (values: Array<number | null>) => [...values].reverse().find((value) => value !== null) ?? null
@@ -1377,6 +1446,19 @@ onMounted(async () => {
       font-size: 16px;
       font-weight: 800;
     }
+
+    &.is-primary {
+      color: #0f172a;
+      font-weight: 800;
+    }
+
+    &.is-child {
+      .bill-overview__name {
+        padding-left: 24px;
+        color: #475569;
+        font-weight: 500;
+      }
+    }
   }
 
   :deep(.is-group-row) {
@@ -1559,7 +1641,7 @@ onMounted(async () => {
 
     .bill-overview__head,
     .bill-overview__row {
-      grid-template-columns: minmax(150px, 1fr) minmax(90px, .7fr) minmax(100px, .8fr) minmax(96px, .7fr);
+      grid-template-columns: minmax(170px, 1fr) minmax(90px, .7fr) minmax(100px, .8fr);
       min-width: 480px;
       padding: 0 10px;
       column-gap: 8px;
