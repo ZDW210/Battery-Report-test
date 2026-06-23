@@ -1208,6 +1208,7 @@ const touRates = computed<TouEnergy>(() => ({
 const dischargeSessions = computed(() => billSessions.value.filter((item) => Number(item.sessionType) === 1))
 const monthlyPurchasedEnergy = computed(() => Number((billReport.value?.summary?.totalChargeEnergy ?? epiDelta.value).toFixed(2)))
 const monthlySoldEnergy = computed(() => Number((billReport.value?.summary?.totalDischargeEnergy ?? sumIntervals(billTelemetryIntervals.value, 'dischargeTotal')).toFixed(2)))
+const batteryCycleCount = computed(() => billReport.value?.summary?.cycleCount ?? countChargeCycles(billTelemetryIntervals.value))
 const chargeTouEnergy = computed(() => billReport.value?.analysis?.chargeTou ? normalizeReportTou(billReport.value.analysis.chargeTou) : buildTouEnergy('epi'))
 const dischargeTouEnergy = computed(() => billReport.value?.analysis?.dischargeTou ? normalizeReportTou(billReport.value.analysis.dischargeTou) : buildTouEnergy('epe'))
 const chargeTouSum = computed(() => sumTouEnergy(chargeTouEnergy.value))
@@ -1318,7 +1319,7 @@ const finalProfitText = computed(() => {
 const batteryRows = computed(() => [
   { label: 'EPI充入电量合计', value: formatKwh(monthlyPurchasedEnergy.value) },
   { label: 'EPE放出电量合计', value: formatKwh(monthlySoldEnergy.value) },
-  { label: '循环次数', value: '待录入容量' },
+  { label: '循环次数', value: `${batteryCycleCount.value} 次` },
   { label: '当月任务次数', value: `${billSessions.value.length} 次` },
   { label: '电池效率', value: batteryEfficiencyText.value },
   { label: '电池折旧成本', value: formatPricingFee(batteryDepreciationCost.value) },
@@ -2205,6 +2206,21 @@ const roundTouEnergy = (energy: TouEnergy): TouEnergy => ({
 
 const sumIntervals = (intervals: TelemetryInterval[], key: 'chargeTotal' | 'dischargeTotal') => {
   return Number(intervals.reduce((sum, item) => sum + item[key], 0).toFixed(2))
+}
+
+const countChargeCycles = (intervals: TelemetryInterval[]) => {
+  let cycles = 0
+  let canStartNextChargeCycle = true
+  intervals.forEach((interval) => {
+    if (interval.chargeTotal > 0.0001 && canStartNextChargeCycle) {
+      cycles += 1
+      canStartNextChargeCycle = false
+    }
+    if (interval.dischargeTotal > 0.0001) {
+      canStartNextChargeCycle = true
+    }
+  })
+  return cycles
 }
 
 const sumIntervalTou = (intervals: TelemetryInterval[], source: TouSource): TouEnergy => {

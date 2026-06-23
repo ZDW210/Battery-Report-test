@@ -14,6 +14,7 @@ type TouSource = 'epi' | 'epe'
 type AccessScope = { isCustomerAccount: boolean; customerId: number | null }
 
 const ADMIN_PREFIX = '/admin-api'
+const ENERGY_DELTA_EPS = 0.0001
 const DAILY_FIELDS = new Set([
   'pa', 'pb', 'pc', 'ua', 'ub', 'uc', 'ia', 'ib', 'ic', 'p', 'pf',
   'epi', 'epij', 'epif', 'epip', 'epig', 'epe', 'epej', 'epef', 'epep', 'epeg'
@@ -1623,6 +1624,7 @@ async function reportBill(url: URL, env: Env, accessScope: AccessScope) {
   const telemetryRows = await reportTelemetryRows(env, deviceIds, monthStart, monthEnd)
   const chargeEnergy = sumDeviceTouEnergy(deviceDetails, 'chargeTou')
   const dischargeEnergy = sumDeviceTouEnergy(deviceDetails, 'dischargeTou')
+  const cycleCount = deviceDetails.reduce((sum, item) => sum + Number(item.cycleCount || 0), 0)
   const totalChargeEnergy = round4(sumTouEnergy(chargeEnergy) || deviceDetails.reduce((sum, item) => sum + item.chargeEnergy, 0))
   const totalDischargeEnergy = round4(sumTouEnergy(dischargeEnergy) || deviceDetails.reduce((sum, item) => sum + item.dischargeEnergy, 0))
   const ruleRows = uniqueRules(Array.from(rulesByDevice.values()).filter(Boolean) as AnyRecord[])
@@ -1651,6 +1653,7 @@ async function reportBill(url: URL, env: Env, accessScope: AccessScope) {
       salesRevenue,
       averageSellRate: totalDischargeEnergy > 0 ? round4(salesRevenue / totalDischargeEnergy) : null,
       savedCost: chargeCost !== null ? round2(salesRevenue - chargeCost) : null,
+      cycleCount,
       touSource: deviceDetails.some((item) => item.touSource === 'interval') ? 'interval' : 'telemetry'
     },
     deviceDetails,
@@ -2008,6 +2011,8 @@ async function upsertDailyCostFromInterval(env: Env, device: AnyRecord, rule: An
 }
 
 async function buildReportDeviceDetail(env: Env, device: AnyRecord, rule: AnyRecord | null, start: string, end: string) {
+  const intervals = await reportIntervals(env, [Number(device.id)], start, end)
+  const intervalSummary = summarizeIntervals(intervals)
   const first = await firstTelemetryInRange(env, Number(device.id), start, end)
   const last = await lastTelemetryInRange(env, Number(device.id), start, end)
   const startEpi = numberOrNull(first?.epi)
@@ -2016,8 +2021,9 @@ async function buildReportDeviceDetail(env: Env, device: AnyRecord, rule: AnyRec
   const endEpe = numberOrNull(last?.epe)
   const chargeEnergy = startEpi !== null && endEpi !== null ? round4(Math.max(0, endEpi - startEpi)) : 0
   const dischargeEnergy = startEpe !== null && endEpe !== null ? round4(Math.max(0, endEpe - startEpe)) : 0
-  let chargeTou = await reportDeviceTouEnergy(env, Number(device.id), start, end, 'charge')
-  let dischargeTou = await reportDeviceTouEnergy(env, Number(device.id), start, end, 'discharge')
+  let chargeTou = intervalSummary.charge
+  let dischargeTou = intervalSummary.discharge
+  const cycleCount = countChargeCycles(intervals)
   let touSource = sumTouEnergy(chargeTou) > 0 || sumTouEnergy(dischargeTou) > 0 ? 'interval' : 'telemetry'
   if (sumTouEnergy(chargeTou) <= 0 && chargeEnergy > 0) {
     chargeTou = splitEnergyByPricingTime(
@@ -2060,6 +2066,7 @@ async function buildReportDeviceDetail(env: Env, device: AnyRecord, rule: AnyRec
     purchaseCost: rule && hasChargeTou ? sumByTou(chargeTou, rates) : null,
     salesRevenue: rule && hasDischargeTou ? sumByTou(dischargeTou, rates) : 0,
     touSource,
+    cycleCount,
     pricingRuleId: rule?.id || null
   }
 }
@@ -2148,6 +2155,23 @@ function summarizeIntervals(intervals: AnyRecord[]) {
     discharge.deepValley += Number(row.discharge_deep_valley || 0)
   })
   return { charge: roundTouEnergy(charge), discharge: roundTouEnergy(discharge), count: intervals.length }
+}
+
+function countChargeCycles(intervals: AnyRecord[]) {
+  let cycles = 0
+  let canStartNextChargeCycle = true
+  intervals.forEach((row) => {
+    const charge = Number(row.charge_total || row.chargeTotal || 0)
+    const discharge = Number(row.discharge_total || row.dischargeTotal || 0)
+    if (charge > ENERGY_DELTA_EPS && canStartNextChargeCycle) {
+      cycles += 1
+      canStartNextChargeCycle = false
+    }
+    if (discharge > ENERGY_DELTA_EPS) {
+      canStartNextChargeCycle = true
+    }
+  })
+  return cycles
 }
 
 function buildReportEnergyDetails(deviceDetails: AnyRecord[], charge: TouEnergy, discharge: TouEnergy) {
@@ -2379,7 +2403,7 @@ function emptyReportBill(billMonth: string, start: string, end: string, scopeTyp
     scopeType,
     scopeName: '暂无电表',
     billHeader: buildReportHeader([], [], billMonth, start, end, scopeType),
-    summary: { deviceCount: 0, totalChargeEnergy: 0, totalDischargeEnergy: 0, totalFee: 0, chargeCost: 0, averageBuyRate: null, salesRevenue: 0, averageSellRate: null, savedCost: 0, touSource: 'empty' },
+    summary: { deviceCount: 0, totalChargeEnergy: 0, totalDischargeEnergy: 0, totalFee: 0, chargeCost: 0, averageBuyRate: null, salesRevenue: 0, averageSellRate: null, savedCost: 0, cycleCount: 0, touSource: 'empty' },
     deviceDetails: [],
     energyDetails: [],
     feeDetails: [],

@@ -18,6 +18,7 @@ export interface EnergyReportBillSummaryVO {
   salesRevenue: number
   averageSellRate?: number | null
   savedCost?: number | null
+  cycleCount?: number
   touSource?: string
 }
 
@@ -40,6 +41,7 @@ export interface EnergyReportDeviceDetailVO {
   dischargeTou?: EnergyReportTouVO
   purchaseCost?: number | null
   salesRevenue?: number | null
+  cycleCount?: number
   pricingRuleId?: number | null
 }
 
