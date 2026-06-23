@@ -7,8 +7,7 @@
     "build": "npx --yes pnpm@10 --dir admin-vue3 install --frozen-lockfile && npx --yes pnpm@10 --dir admin-vue3 exec vite build --mode worker",
     "deploy": "wrangler deploy",
     "upload": "wrangler versions upload",
-    "dev": "wrangler dev",
-    "simulate:eiot": "node scripts/simulate-eiot-meter.mjs"
+    "dev": "wrangler dev"
   },
   "devDependencies": {
     "wrangler": "^4.0.0"
