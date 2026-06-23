@@ -207,6 +207,8 @@ import { EnergyTelemetryApi } from '@/api/energy/telemetry'
 import type { EnergyTelemetryVO } from '@/api/energy/telemetry'
 import { archiveReport } from '@/utils/reportArchive'
 import dayjs from 'dayjs'
+import html2canvas from 'html2canvas'
+import { jsPDF } from 'jspdf'
 
 defineOptions({ name: 'EnergyReportPanel' })
 
@@ -720,9 +722,7 @@ const ensureScopeSelection = () => {
 
 const exportBillPdf = async () => {
   const html = buildPrintableBillHtml()
-  const filename = `用电电量报表_${query.billMonth}_${reportScopeTitle.value}.html`.replace(/[\\/:*?"<>|]/g, '_')
-  const blob = new Blob([html], { type: 'text/html;charset=utf-8' })
-  void archiveReport(filename, blob, '报表面板导出').catch(() => undefined)
+  const filename = `用电电量报表_${query.billMonth}_${reportScopeTitle.value}.pdf`.replace(/[\\/:*?"<>|]/g, '_')
   const win = window.open('', '_blank')
   if (!win) {
     message.warning('浏览器拦截了导出窗口，请允许弹窗后重试')
@@ -732,14 +732,79 @@ const exportBillPdf = async () => {
   win.document.write(html)
   win.document.close()
   win.focus()
-  if (isMobileBrowser()) {
-    message.info('已打开A4报表页，请点击页面顶部“下载PDF/打印”')
-  } else {
-    setTimeout(() => win.print(), 300)
+  try {
+    writeExportStatus(win, '正在生成PDF文件...')
+    await waitForPrintableWindow(win)
+    const pdfBlob = await createPdfBlobFromPrintableWindow(win)
+    void archiveReport(filename, pdfBlob, '报表面板导出').catch(() => undefined)
+    const pdfUrl = URL.createObjectURL(pdfBlob)
+    writeExportStatus(win, 'PDF已生成，正在打开...')
+    if (isMobileBrowser()) {
+      win.location.href = pdfUrl
+      message.success('PDF已生成，已在新页面打开')
+    } else {
+      const link = win.document.createElement('a')
+      link.href = pdfUrl
+      link.download = filename
+      win.document.body.appendChild(link)
+      link.click()
+      link.remove()
+      message.success('PDF已开始下载')
+    }
+    setTimeout(() => URL.revokeObjectURL(pdfUrl), 30000)
+  } catch (error) {
+    console.error(error)
+    writeExportStatus(win, 'PDF生成失败，请使用“打印/保存为PDF”')
+    message.error('PDF生成失败，请使用导出页里的打印/保存为PDF')
   }
 }
 
 const isMobileBrowser = () => /Android|iPhone|iPad|iPod|Mobile|Windows Phone/i.test(navigator.userAgent)
+
+const waitForPrintableWindow = (win: Window) => new Promise<void>((resolve) => {
+  const done = () => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+  if (win.document.readyState === 'complete') {
+    done()
+    return
+  }
+  win.addEventListener('load', done, { once: true })
+  setTimeout(done, 500)
+})
+
+const writeExportStatus = (win: Window, text: string) => {
+  const el = win.document.getElementById('exportStatus')
+  if (el) el.textContent = text
+}
+
+const createPdfBlobFromPrintableWindow = async (win: Window) => {
+  const sheet = win.document.querySelector('.sheet') as HTMLElement | null
+  if (!sheet) throw new Error('报表内容不存在')
+  const canvas = await html2canvas(sheet, {
+    backgroundColor: '#ffffff',
+    scale: Math.min(2, Math.max(1.5, window.devicePixelRatio || 1)),
+    useCORS: true,
+    width: 794,
+    windowWidth: 794,
+    height: sheet.scrollHeight
+  })
+  const pdf = new jsPDF({ orientation: 'p', unit: 'pt', format: 'a4', compress: true })
+  const pageWidth = pdf.internal.pageSize.getWidth()
+  const pageHeight = pdf.internal.pageSize.getHeight()
+  const imageWidth = pageWidth
+  const imageHeight = canvas.height * imageWidth / canvas.width
+  const imageData = canvas.toDataURL('image/jpeg', 0.92)
+  let remainingHeight = imageHeight
+  let y = 0
+  pdf.addImage(imageData, 'JPEG', 0, y, imageWidth, imageHeight, undefined, 'FAST')
+  remainingHeight -= pageHeight
+  while (remainingHeight > 0) {
+    y -= pageHeight
+    pdf.addPage()
+    pdf.addImage(imageData, 'JPEG', 0, y, imageWidth, imageHeight, undefined, 'FAST')
+    remainingHeight -= pageHeight
+  }
+  return pdf.output('blob')
+}
 
 const buildPrintableBillHtml = () => {
   const header = billHeaderInfo.value
@@ -778,7 +843,6 @@ const buildPrintableBillHtml = () => {
       </div>`
     })
     .join('')
-  const pdfFilename = `用电电量报表_${query.billMonth}_${reportScopeTitle.value}.pdf`.replace(/[\\/:*?"<>|]/g, '_')
   return `<!doctype html>
 <html>
 <head>
@@ -857,11 +921,10 @@ const buildPrintableBillHtml = () => {
 </head>
 <body>
   <div class="print-toolbar">
-    <button onclick="directDownloadPdf()">直接下载PDF</button>
     <button class="secondary" onclick="window.print()">打印/保存为PDF</button>
     <button class="secondary" onclick="window.close()">关闭</button>
-    <span class="print-hint">手机端优先点“直接下载PDF”；若浏览器拦截下载，再使用打印保存。</span>
-    <span id="exportStatus" class="export-status"></span>
+    <span class="print-hint">系统正在生成PDF；若未自动打开，可使用打印保存。</span>
+    <span id="exportStatus" class="export-status">正在准备报表...</span>
   </div>
   <main class="sheet">
   <header class="bill-head">
@@ -940,146 +1003,6 @@ const buildPrintableBillHtml = () => {
   ${unmatchedSectionHtml}
   <div class="note">备注：当前项目未接入电网账单中的上期示数、倍率、变损、线损、峰平谷真实分项、功率因数调整等字段，因此导出报表仅展示项目已接入和已录入的数据。</div>
   </main>
-  <script>
-    var PDF_FILENAME = ${JSON.stringify(pdfFilename)};
-    function setExportStatus(text) {
-      var el = document.getElementById('exportStatus');
-      if (el) el.textContent = text || '';
-    }
-    function escapeXml(text) {
-      return String(text || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    }
-    function loadImage(url) {
-      return new Promise(function(resolve, reject) {
-        var image = new Image();
-        image.onload = function() { resolve(image); };
-        image.onerror = reject;
-        image.src = url;
-      });
-    }
-    function bytesFromBase64(base64) {
-      var raw = atob(base64);
-      var bytes = new Uint8Array(raw.length);
-      for (var i = 0; i < raw.length; i += 1) bytes[i] = raw.charCodeAt(i);
-      return bytes;
-    }
-    function textBytes(text) {
-      return new TextEncoder().encode(text);
-    }
-    function padOffset(value) {
-      return ('0000000000' + value).slice(-10);
-    }
-    function buildPdfFromCanvas(canvas) {
-      var pageWidthPt = 595.28;
-      var pageHeightPt = 841.89;
-      var pageHeightPx = Math.floor(canvas.width * pageHeightPt / pageWidthPt);
-      var pages = [];
-      for (var y = 0; y < canvas.height; y += pageHeightPx) {
-        var pageCanvas = document.createElement('canvas');
-        pageCanvas.width = canvas.width;
-        pageCanvas.height = pageHeightPx;
-        var pageCtx = pageCanvas.getContext('2d');
-        pageCtx.fillStyle = '#fff';
-        pageCtx.fillRect(0, 0, pageCanvas.width, pageCanvas.height);
-        var sliceHeight = Math.min(pageHeightPx, canvas.height - y);
-        pageCtx.drawImage(canvas, 0, y, canvas.width, sliceHeight, 0, 0, canvas.width, sliceHeight);
-        pages.push(bytesFromBase64(pageCanvas.toDataURL('image/jpeg', 0.92).split(',')[1]));
-      }
-
-      var objectCount = 2 + pages.length * 3;
-      var offsets = new Array(objectCount + 1).fill(0);
-      var chunks = [];
-      var position = 0;
-      function pushBytes(bytes) {
-        chunks.push(bytes);
-        position += bytes.length;
-      }
-      function pushText(text) {
-        pushBytes(textBytes(text));
-      }
-      function writeObject(id, writer) {
-        offsets[id] = position;
-        pushText(id + ' 0 obj\\n');
-        writer();
-        pushText('\\nendobj\\n');
-      }
-
-      pushText('%PDF-1.4\\n');
-      writeObject(1, function() {
-        pushText('<< /Type /Catalog /Pages 2 0 R >>');
-      });
-      writeObject(2, function() {
-        var refs = pages.map(function(_, index) { return (5 + index * 3) + ' 0 R'; }).join(' ');
-        pushText('<< /Type /Pages /Count ' + pages.length + ' /Kids [' + refs + '] >>');
-      });
-      pages.forEach(function(jpegBytes, index) {
-        var imageObj = 3 + index * 3;
-        var contentObj = 4 + index * 3;
-        var pageObj = 5 + index * 3;
-        var imageName = 'Im' + (index + 1);
-        var content = 'q\\n' + pageWidthPt + ' 0 0 ' + pageHeightPt + ' 0 0 cm\\n/' + imageName + ' Do\\nQ';
-        writeObject(imageObj, function() {
-          pushText('<< /Type /XObject /Subtype /Image /Width ' + canvas.width + ' /Height ' + pageHeightPx + ' /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ' + jpegBytes.length + ' >>\\nstream\\n');
-          pushBytes(jpegBytes);
-          pushText('\\nendstream');
-        });
-        writeObject(contentObj, function() {
-          pushText('<< /Length ' + textBytes(content).length + ' >>\\nstream\\n' + content + '\\nendstream');
-        });
-        writeObject(pageObj, function() {
-          pushText('<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ' + pageWidthPt + ' ' + pageHeightPt + '] /Resources << /XObject << /' + imageName + ' ' + imageObj + ' 0 R >> >> /Contents ' + contentObj + ' 0 R >>');
-        });
-      });
-      var xrefPosition = position;
-      pushText('xref\\n0 ' + (objectCount + 1) + '\\n0000000000 65535 f \\n');
-      for (var i = 1; i <= objectCount; i += 1) {
-        pushText(padOffset(offsets[i]) + ' 00000 n \\n');
-      }
-      pushText('trailer\\n<< /Size ' + (objectCount + 1) + ' /Root 1 0 R >>\\nstartxref\\n' + xrefPosition + '\\n%%EOF');
-      return new Blob(chunks, { type: 'application/pdf' });
-    }
-    async function directDownloadPdf() {
-      try {
-        setExportStatus('正在生成PDF...');
-        var sheet = document.querySelector('.sheet');
-        if (!sheet) throw new Error('报表内容不存在');
-        var width = 794;
-        var height = Math.max(1123, sheet.scrollHeight);
-        var scale = Math.min(2, Math.max(1.35, window.devicePixelRatio || 1));
-        var clone = sheet.cloneNode(true);
-        clone.style.margin = '0';
-        clone.style.boxShadow = 'none';
-        var styleText = Array.prototype.map.call(document.querySelectorAll('style'), function(style) {
-          return style.textContent || '';
-        }).join('\\n') + '\\n.print-toolbar{display:none!important}.sheet{margin:0!important;box-shadow:none!important;}body{background:#fff!important;}';
-        var serialized = new XMLSerializer().serializeToString(clone);
-        var svg = '<svg xmlns="http://www.w3.org/2000/svg" width="' + width + '" height="' + height + '" viewBox="0 0 ' + width + ' ' + height + '"><foreignObject width="100%" height="100%"><div xmlns="http://www.w3.org/1999/xhtml"><style>' + escapeXml(styleText) + '</style>' + serialized + '</div></foreignObject></svg>';
-        var svgUrl = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml;charset=utf-8' }));
-        var image = await loadImage(svgUrl);
-        URL.revokeObjectURL(svgUrl);
-        var canvas = document.createElement('canvas');
-        canvas.width = Math.round(width * scale);
-        canvas.height = Math.round(height * scale);
-        var ctx = canvas.getContext('2d');
-        ctx.fillStyle = '#fff';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-        ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
-        var pdfBlob = buildPdfFromCanvas(canvas);
-        var url = URL.createObjectURL(pdfBlob);
-        var link = document.createElement('a');
-        link.href = url;
-        link.download = PDF_FILENAME;
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
-        setTimeout(function() { URL.revokeObjectURL(url); }, 30000);
-        setExportStatus('PDF已生成');
-      } catch (error) {
-        console.error(error);
-        setExportStatus('下载失败，请使用打印/保存为PDF');
-      }
-    }
-  <\/script>
 </body>
 </html>`
 }
