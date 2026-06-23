@@ -1657,7 +1657,7 @@ async function reportBill(url: URL, env: Env, accessScope: AccessScope) {
       touSource: deviceDetails.some((item) => item.touSource === 'interval') ? 'interval' : 'telemetry'
     },
     deviceDetails,
-    energyDetails: buildReportEnergyDetails(deviceDetails, chargeEnergy, dischargeEnergy),
+    energyDetails: buildReportEnergyDetails(deviceDetails, chargeEnergy, telemetryRows),
     feeDetails,
     unmatchedPricingDetails,
     analysis: {
@@ -2174,24 +2174,20 @@ function countChargeCycles(intervals: AnyRecord[]) {
   return cycles
 }
 
-function buildReportEnergyDetails(deviceDetails: AnyRecord[], charge: TouEnergy, discharge: TouEnergy) {
+function buildReportEnergyDetails(deviceDetails: AnyRecord[], charge: TouEnergy, telemetryRows: AnyRecord[]) {
   const totalStartEpi = nullableNumberSum(deviceDetails.map((row) => row.startEpi))
   const totalEndEpi = nullableNumberSum(deviceDetails.map((row) => row.endEpi))
-  const totalStartEpe = nullableNumberSum(deviceDetails.map((row) => row.startEpe))
-  const totalEndEpe = nullableNumberSum(deviceDetails.map((row) => row.endEpe))
+  const demand = round4(maxDemandFromTelemetry(telemetryRows))
+  const peakEnergy = round4(Number(charge.sharpPeak || 0) + Number(charge.peak || 0))
   return [
     energyDetailRow('正向有功（总）', totalStartEpi, totalEndEpi, sumTouEnergy(charge), 'EPI'),
-    energyDetailRow('正向有功（尖）', null, null, charge.sharpPeak, 'EPIJ'),
-    energyDetailRow('正向有功（峰）', null, null, charge.peak, 'EPIF'),
+    energyDetailRow('正向有功（峰）', null, null, peakEnergy, charge.sharpPeak > 0 ? 'EPIJ/EPIF' : 'EPIF'),
     energyDetailRow('正向有功（平）', null, null, charge.flat, 'EPIP'),
     energyDetailRow('正向有功（谷）', null, null, charge.valley, 'EPIG'),
     energyDetailRow('正向有功（深谷）', null, null, charge.deepValley, '计费时段/深谷'),
-    energyDetailRow('反向有功（总）', totalStartEpe, totalEndEpe, sumTouEnergy(discharge), 'EPE'),
-    energyDetailRow('反向有功（尖）', null, null, discharge.sharpPeak, 'EPEJ'),
-    energyDetailRow('反向有功（峰）', null, null, discharge.peak, 'EPEF'),
-    energyDetailRow('反向有功（平）', null, null, discharge.flat, 'EPEP'),
-    energyDetailRow('反向有功（谷）', null, null, discharge.valley, 'EPEG'),
-    energyDetailRow('反向有功（深谷）', null, null, discharge.deepValley, '计费时段/深谷')
+    energyDetailRow('正向无功（总）', null, null, 0, '未接入'),
+    energyDetailRow('反向无功（总）', null, null, 0, '未接入'),
+    energyDetailRow('需量（总）', null, null, demand, 'P/15分钟窗口')
   ]
 }
 

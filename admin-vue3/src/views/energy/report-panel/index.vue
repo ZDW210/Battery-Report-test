@@ -56,7 +56,7 @@
             <span>账单周期 {{ activeBillRangeText }}</span>
             <strong>{{ reportScopeTitle }}</strong>
           </div>
-          <small>参考电费账单样式生成，未接入字段以“待录入”展示。</small>
+          <small>账单概况为费用组成汇总，账单详情用于展开电量依据和电费明细。</small>
         </div>
 
         <div class="summary-grid">
@@ -93,7 +93,7 @@
                   <strong class="bill-overview__amount">{{ item.amount }}</strong>
                 </div>
                 <div class="bill-overview__note">
-                  <p>正向有功电量按当前范围内每块电表 EPI 首末差汇总；尖峰平谷分项优先读取 EPIJ、EPIF、EPIP、EPIG。</p>
+                  <p>账单概况汇总下方电费明细的费用组成，本期电量按当前范围内每块电表 EPI 首末差汇总。</p>
                   <p>账单中未接入的电网字段不自动伪造，缺失项保持待录入或 ¥0。</p>
                 </div>
               </div>
@@ -129,27 +129,22 @@
           </el-col>
         </el-row>
 
-        <section class="report-section">
-          <div class="section-title">
-            <h3>电表用电明细</h3>
-            <span>期初/期末来自 EIOT 的 EPI 正向有功电能</span>
+        <section class="report-section bill-detail">
+          <div class="section-title section-title--detail">
+            <h3>账单详情</h3>
+            <span>先展示计费用电依据，再展开账单概况中的费用组成明细</span>
           </div>
-          <el-table :data="deviceRows" border size="small" show-overflow-tooltip>
-            <el-table-column label="电表" prop="deviceName" min-width="150" />
-            <el-table-column label="项目场地" prop="projectName" min-width="130" />
-            <el-table-column label="仪表编号" prop="meterNo" min-width="150" />
-            <el-table-column label="期初累计电能" prop="startEpiText" align="right" width="140" />
-            <el-table-column label="期末累计电能" prop="endEpiText" align="right" width="140" />
-            <el-table-column label="本期电量" prop="purchasedEnergyText" align="right" width="120" />
-            <el-table-column label="放出电量" prop="dischargeEnergyText" align="right" width="120" />
-            <el-table-column label="购电成本" prop="purchaseCostText" align="right" width="120" />
-          </el-table>
-        </section>
+          <div class="bill-detail__meter-list">
+            <div v-for="item in meterSummaryRows" :key="item.key" class="bill-detail__meter">
+              <strong>{{ item.title }}</strong>
+              <span>{{ item.meta }}</span>
+              <b>{{ item.amount }}</b>
+            </div>
+          </div>
 
-        <section class="report-section">
-          <div class="section-title">
+          <div class="section-title section-title--sub">
             <h3>电量明细</h3>
-            <span>接口按 EPI/EPE 与分时字段统一返回，未接入字段不伪造</span>
+            <span>正向有功分时、无功和需量作为电费明细的计量依据</span>
           </div>
           <el-table :data="energyDetailRows" border size="small" show-overflow-tooltip>
             <el-table-column label="示数类型" prop="label" min-width="150" />
@@ -162,12 +157,10 @@
             <el-table-column label="加减" prop="adjustmentText" align="right" width="90" />
             <el-table-column label="计费电量" prop="billingEnergyText" align="right" width="120" />
           </el-table>
-        </section>
 
-        <section class="report-section">
-          <div class="section-title">
+          <div class="section-title section-title--sub">
             <h3>电费明细</h3>
-            <span>费用类别、费用组成、分时时段、计费电量、计费标准和电费均来自报表接口</span>
+            <span>不同电费类别按费用组成、分时时段、计费电量和计费标准展开</span>
           </div>
           <el-table :data="feeDetailRows" border size="small" :row-class-name="feeDetailRowClassName" show-overflow-tooltip>
             <el-table-column label="费用类别" prop="category" min-width="160" />
@@ -207,7 +200,7 @@ import type { EnergyDeviceVO } from '@/api/energy/device'
 import { EnergyPricingRuleApi } from '@/api/energy/pricingRule'
 import type { EnergyPricingRuleVO } from '@/api/energy/pricingRule'
 import { EnergyReportApi } from '@/api/energy/report'
-import type { EnergyReportBillVO } from '@/api/energy/report'
+import type { EnergyReportBillVO, EnergyReportEnergyDetailVO } from '@/api/energy/report'
 import { EnergyTelemetryApi } from '@/api/energy/telemetry'
 import type { EnergyTelemetryVO } from '@/api/energy/telemetry'
 import { archiveReport } from '@/utils/reportArchive'
@@ -353,6 +346,13 @@ const deviceRows = computed(() => {
   })
 })
 
+const meterSummaryRows = computed(() => deviceRows.value.map((row, index) => ({
+  key: `${row.deviceId || index}-${row.meterNo}`,
+  title: `受电点：${row.projectName || '未绑定场地'}`,
+  meta: `电表：${row.deviceName || '-'}；电能表编号：${row.meterNo || '-'}`,
+  amount: row.purchaseCost === null || row.purchaseCost === undefined ? moneyText(0) : row.purchaseCostText
+})))
+
 const totalPurchasedEnergy = computed(() => billReport.value?.summary ? Number(billReport.value.summary.totalChargeEnergy || 0) : Number(deviceRows.value.reduce((sum, row) => sum + row.purchasedEnergy, 0).toFixed(2)))
 const totalDischargeEnergy = computed(() => billReport.value?.summary ? Number(billReport.value.summary.totalDischargeEnergy || 0) : Number(deviceRows.value.reduce((sum, row) => sum + row.dischargeEnergy, 0).toFixed(2)))
 const totalPurchaseCost = computed(() => {
@@ -464,47 +464,75 @@ const summaryCards = computed(() => [
 ])
 
 const energyDetailRows = computed(() => {
-  if (billReport.value?.energyDetails?.length) {
-    return billReport.value.energyDetails.map((row) => ({
-      ...row,
-      startReadingText: row.startReading === null || row.startReading === undefined ? '--' : numText(Number(row.startReading)),
-      endReadingText: row.endReading === null || row.endReading === undefined ? '--' : numText(Number(row.endReading)),
-      multiplierText: row.multiplier === null || row.multiplier === undefined ? '--' : numText(Number(row.multiplier)),
-      copiedEnergyText: kwhText(Number(row.copiedEnergy || 0)),
-      transformerLossText: kwhText(Number(row.transformerLoss || 0)),
-      lineLossText: kwhText(Number(row.lineLoss || 0)),
-      adjustmentText: kwhText(Number(row.adjustment || 0)),
-      billingEnergyText: kwhText(Number(row.billingEnergy || 0)),
-      sourceField: row.sourceField || '--'
-    }))
-  }
-  return [
+  return buildOrderedEnergyDetailRows(billReport.value?.energyDetails || [])
+})
+
+const buildOrderedEnergyDetailRows = (rows: EnergyReportEnergyDetailVO[]) => {
+  const rowMap = new Map(rows.map((row) => [row.label, row]))
+  const sharp = rowMap.get('正向有功（尖）')
+  const peak = rowMap.get('正向有功（峰）')
+  const peakBillingEnergy = Number(sharp?.billingEnergy || 0) + Number(peak?.billingEnergy || 0)
+  const totalStartEpi = nullableSum(deviceRows.value.map((row) => numberOrNull(row.startEpi)))
+  const totalEndEpi = nullableSum(deviceRows.value.map((row) => numberOrNull(row.endEpi)))
+  const labels = [
     {
       label: '正向有功（总）',
-      startReadingText: deviceRows.value.length ? deviceRows.value.map((row) => row.startEpiText).join(' / ') : '--',
-      endReadingText: deviceRows.value.length ? deviceRows.value.map((row) => row.endEpiText).join(' / ') : '--',
-      multiplierText: '1',
-      copiedEnergyText: kwhText(totalPurchasedEnergy.value),
-      transformerLossText: kwhText(0),
-      lineLossText: kwhText(0),
-      adjustmentText: kwhText(0),
-      billingEnergyText: kwhText(totalPurchasedEnergy.value),
-      sourceField: 'EPI'
+      fallback: {
+        startReading: totalStartEpi,
+        endReading: totalEndEpi,
+        billingEnergy: totalPurchasedEnergy.value
+      }
     },
-    {
-      label: '反向有功（总）',
-      startReadingText: '--',
-      endReadingText: '--',
-      multiplierText: '1',
-      copiedEnergyText: kwhText(totalDischargeEnergy.value),
-      transformerLossText: kwhText(0),
-      lineLossText: kwhText(0),
-      adjustmentText: kwhText(0),
-      billingEnergyText: kwhText(totalDischargeEnergy.value),
-      sourceField: 'EPE'
-    }
+    { label: '正向有功（峰）', fallback: { billingEnergy: peakBillingEnergy || chargeTouEnergy.value.sharp + chargeTouEnergy.value.peak } },
+    { label: '正向有功（平）', fallback: { billingEnergy: chargeTouEnergy.value.flat } },
+    { label: '正向有功（谷）', fallback: { billingEnergy: chargeTouEnergy.value.valley } },
+    { label: '正向有功（深谷）', fallback: { billingEnergy: chargeTouEnergy.value.deepValley } },
+    { label: '正向无功（总）', fallback: { billingEnergy: 0 } },
+    { label: '反向无功（总）', fallback: { billingEnergy: 0 } },
+    { label: '需量（总）', fallback: { billingEnergy: maxDemandKw.value } }
   ]
+  return labels.map(({ label, fallback }) => {
+    const row = label === '正向有功（峰）'
+      ? mergePeakEnergyDetailRows(peak, sharp, fallback.billingEnergy)
+      : rowMap.get(label) || { label, multiplier: 1, copiedEnergy: fallback.billingEnergy, billingEnergy: fallback.billingEnergy, ...fallback }
+    return formatEnergyDetailRow(row)
+  })
+}
+
+const mergePeakEnergyDetailRows = (
+  peak?: EnergyReportEnergyDetailVO,
+  sharp?: EnergyReportEnergyDetailVO,
+  fallbackBillingEnergy = 0
+) => {
+  const billingEnergy = Number(peak?.billingEnergy || 0) + Number(sharp?.billingEnergy || 0)
+  const copiedEnergy = Number(peak?.copiedEnergy || 0) + Number(sharp?.copiedEnergy || 0)
+  return {
+    ...(peak || sharp || {}),
+    label: '正向有功（峰）',
+    multiplier: peak?.multiplier ?? sharp?.multiplier ?? 1,
+    copiedEnergy: billingEnergy > 0 || copiedEnergy > 0 ? copiedEnergy || billingEnergy : fallbackBillingEnergy,
+    billingEnergy: billingEnergy > 0 ? billingEnergy : fallbackBillingEnergy
+  }
+}
+
+const formatEnergyDetailRow = (row: Partial<EnergyReportEnergyDetailVO> & { label: string }) => ({
+  ...row,
+  startReadingText: row.startReading === null || row.startReading === undefined ? '--' : numText(Number(row.startReading)),
+  endReadingText: row.endReading === null || row.endReading === undefined ? '--' : numText(Number(row.endReading)),
+  multiplierText: row.multiplier === null || row.multiplier === undefined ? '--' : numText(Number(row.multiplier)),
+  copiedEnergyText: energyValueText(row.label, Number(row.copiedEnergy || 0)),
+  transformerLossText: row.label.includes('需量') ? '--' : energyValueText(row.label, Number(row.transformerLoss || 0)),
+  lineLossText: row.label.includes('需量') ? '--' : energyValueText(row.label, Number(row.lineLoss || 0)),
+  adjustmentText: row.label.includes('需量') ? '--' : energyValueText(row.label, Number(row.adjustment || 0)),
+  billingEnergyText: energyValueText(row.label, Number(row.billingEnergy || 0)),
+  sourceField: row.sourceField || '--'
 })
+
+const energyValueText = (label: string, value: number) => {
+  if (label.includes('无功')) return `${numText(value)} kvarh`
+  if (label.includes('需量')) return `${numText(value)} kW`
+  return kwhText(value)
+}
 
 const feeDetailRows = computed(() => {
   if (billReport.value?.feeDetails?.length) return billReport.value.feeDetails.map((row) => feeDetailToRow(row))
@@ -564,7 +592,7 @@ const analysisRows = computed(() => [
   {
     title: '2. 峰谷比例',
     content: hasChargeTouData.value
-      ? `已接收分时字段，尖峰 ${kwhText(chargeTouEnergy.value.sharp)}、高峰 ${kwhText(chargeTouEnergy.value.peak)}、平时 ${kwhText(chargeTouEnergy.value.flat)}、低谷 ${kwhText(chargeTouEnergy.value.valley)}；分项合计 ${kwhText(chargeTouTotal.value)}。`
+      ? `已接收分时字段，峰 ${kwhText(chargeTouEnergy.value.sharp + chargeTouEnergy.value.peak)}、平 ${kwhText(chargeTouEnergy.value.flat)}、谷 ${kwhText(chargeTouEnergy.value.valley)}、深谷 ${kwhText(chargeTouEnergy.value.deepValley)}；分项合计 ${kwhText(chargeTouTotal.value)}。`
       : '当前范围内未接收到 EPIJ、EPIF、EPIP、EPIG 的有效差值，先按 EPI 总量展示。'
   },
   {
@@ -585,10 +613,10 @@ const analysisRows = computed(() => [
 
 const analysisBarRows = computed(() => {
   const rows = [
-    { label: '尖', value: chargeTouEnergy.value.sharp },
-    { label: '峰', value: chargeTouEnergy.value.peak },
+    { label: '峰', value: chargeTouEnergy.value.sharp + chargeTouEnergy.value.peak },
     { label: '平', value: chargeTouEnergy.value.flat },
-    { label: '谷', value: chargeTouEnergy.value.valley }
+    { label: '谷', value: chargeTouEnergy.value.valley },
+    { label: '深谷', value: chargeTouEnergy.value.deepValley }
   ]
   const max = Math.max(...rows.map((row) => row.value), 1)
   return rows.map((row) => ({
@@ -673,9 +701,9 @@ const exportBillPdf = async () => {
 
 const buildPrintableBillHtml = () => {
   const header = billHeaderInfo.value
-  const detailRows = deviceRows.value
+  const meterInfoHtml = meterSummaryRows.value
     .map(
-      (row) => `<tr><td>${escapeHtml(row.deviceName)}</td><td>${escapeHtml(row.projectName)}</td><td>${escapeHtml(row.meterNo)}</td><td>${row.startEpiText}</td><td>${row.endEpiText}</td><td>${row.purchasedEnergyText}</td><td>${row.purchaseCostText}</td></tr>`
+      (row) => `<div class="meter-line"><span>${escapeHtml(row.title)}</span><em>${escapeHtml(row.meta)}</em><b>${escapeHtml(row.amount)}</b></div>`
     )
     .join('')
   const energyHtml = energyDetailRows.value
@@ -755,6 +783,11 @@ const buildPrintableBillHtml = () => {
     .bill-overview-table .total td { font-weight: 800; color: #0f172a; background: #f8ffff; }
     tr.group td { background: #f8ffff; color: #0f766e; font-weight: 800; }
     tr.total td { background: #f8ffff; color: #0f172a; font-weight: 800; }
+    .detail-head { margin-top: 16px; padding: 10px 12px; color: #007273; background: #d9fbfb; border-left: 4px solid #0f766e; font-size: 18px; font-weight: 800; }
+    .meter-line { display: grid; grid-template-columns: 1.2fr 2fr 120px; gap: 10px; align-items: center; margin-top: 8px; padding: 8px 10px; color: #007273; border-bottom: 2px solid #0f766e; background: #fff3ec; }
+    .meter-line span { font-weight: 800; }
+    .meter-line em { color: #9a3412; font-style: normal; }
+    .meter-line b { text-align: right; color: #007273; }
     .analysis { padding: 10px 12px 12px; }
     .analysis p { margin: 0 0 9px; line-height: 1.55; }
     .analysis p b { color: #007273; }
@@ -833,10 +866,10 @@ const buildPrintableBillHtml = () => {
       <div class="print-bars">${analysisBarsHtml}</div>
     </section>
   </div>
+  <div class="detail-head">账单详情</div>
+  ${meterInfoHtml}
   <div class="section-title">电量明细</div>
   <table><thead><tr><th>示数类型</th><th>上期示数</th><th>本期示数</th><th>倍率</th><th>抄见电量</th><th>变损</th><th>线损</th><th>加减</th><th>计费电量</th></tr></thead><tbody>${energyHtml}</tbody></table>
-  <div class="section-title">电表用电明细</div>
-  <table><thead><tr><th>电表</th><th>项目场地</th><th>仪表编号</th><th>期初累计</th><th>期末累计</th><th>本期电量</th><th>购电成本</th></tr></thead><tbody>${detailRows}</tbody></table>
   <div class="section-title">电费明细</div>
   <table><thead><tr><th>费用类别</th><th>费用组成</th><th>分时时段</th><th>计费电量</th><th>计费标准</th><th>电费</th></tr></thead><tbody>${feeHtml}</tbody></table>
   ${unmatchedSectionHtml}
@@ -873,7 +906,8 @@ const calcTouEnergy = (fields: Array<keyof EnergyTelemetryVO>) => {
     sharp: calcTelemetryDelta(sharpField),
     peak: calcTelemetryDelta(peakField),
     flat: calcTelemetryDelta(flatField),
-    valley: calcTelemetryDelta(valleyField)
+    valley: calcTelemetryDelta(valleyField),
+    deepValley: 0
   }
 }
 const calcTelemetryDelta = (field: keyof EnergyTelemetryVO) => {
@@ -886,7 +920,8 @@ const calcDeviceTouEnergy = (device: EnergyDeviceVO, fields: Array<keyof EnergyT
     sharp: calcDeviceTelemetryDelta(device, sharpField),
     peak: calcDeviceTelemetryDelta(device, peakField),
     flat: calcDeviceTelemetryDelta(device, flatField),
-    valley: calcDeviceTelemetryDelta(device, valleyField)
+    valley: calcDeviceTelemetryDelta(device, valleyField),
+    deepValley: 0
   }
 }
 const calcDeviceTelemetryDelta = (device: EnergyDeviceVO, field: keyof EnergyTelemetryVO) => {
@@ -1076,7 +1111,8 @@ const toLocalTou = (value: { sharpPeak?: number; peak?: number; flat?: number; v
   sharp: Number(value.sharpPeak || 0),
   peak: Number(value.peak || 0),
   flat: Number(value.flat || 0),
-  valley: Number(value.valley || 0)
+  valley: Number(value.valley || 0),
+  deepValley: Number(value.deepValley || 0)
 })
 const firstText = (values: Array<unknown>) => values.map((value) => String(value || '').trim()).find(Boolean) || ''
 const deviceLabel = (device?: EnergyDeviceVO) => device ? `${device.deviceName || device.deviceNo || `电表 ${device.id}`} / ${device.meterNo || '-'}` : ''
@@ -1243,6 +1279,61 @@ onMounted(async () => {
       color: #007273;
       font-size: 20px;
       letter-spacing: 0;
+    }
+  }
+
+  .section-title--detail {
+    margin: -14px -14px 12px;
+    padding: 12px 14px;
+    border-bottom: 2px solid #0f766e;
+    border-radius: 6px 6px 0 0;
+    background: #dffbfb;
+
+    h3 {
+      color: #007273;
+      font-size: 20px;
+    }
+  }
+
+  .section-title--sub {
+    margin-top: 16px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid #0f766e;
+
+    h3 {
+      color: #007273;
+    }
+  }
+
+  .bill-detail__meter-list {
+    display: grid;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+
+  .bill-detail__meter {
+    display: grid;
+    grid-template-columns: minmax(170px, .9fr) minmax(260px, 1.6fr) minmax(110px, .45fr);
+    gap: 12px;
+    align-items: center;
+    min-height: 42px;
+    padding: 9px 12px;
+    border-left: 8px solid #fdba74;
+    border-bottom: 2px solid #0f766e;
+    background: #fff4ed;
+
+    strong {
+      color: #007273;
+      font-size: 15px;
+    }
+
+    span {
+      color: #9a3412;
+    }
+
+    b {
+      color: #007273;
+      text-align: right;
     }
   }
 
@@ -1428,6 +1519,14 @@ onMounted(async () => {
     .bill-cards,
     .cards {
       grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .bill-detail__meter {
+      grid-template-columns: 1fr;
+
+      b {
+        text-align: left;
+      }
     }
 
     .bill-info,
