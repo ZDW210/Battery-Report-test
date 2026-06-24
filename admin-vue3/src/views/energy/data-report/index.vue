@@ -154,7 +154,7 @@
               </thead>
               <tbody>
                 <tr v-for="row in touRows" :key="row.key">
-                  <td>{{ row.label }}：{{ row.timeRange }}</td>
+                  <td>{{ row.label }}</td>
                   <td>{{ numberText(row.energy) }}</td>
                   <td>{{ rateText(row.rate) }}</td>
                   <td>{{ amountNumberText(row.amount) }}</td>
