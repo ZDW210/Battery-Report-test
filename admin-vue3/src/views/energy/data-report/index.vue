@@ -124,7 +124,7 @@
 
           <div class="metric-grid">
             <div class="metric-card is-soft">
-              <span>本期用电量（放电）</span>
+              <span>本期电量</span>
               <strong>{{ kwhNumberText(totalUsage) }}</strong>
             </div>
             <div class="metric-card">
@@ -132,7 +132,7 @@
               <strong>{{ rateText(averageServiceRate) }}</strong>
             </div>
             <div class="metric-card is-amount">
-              <span>本期应付金额</span>
+              <span>本期电费</span>
               <strong>{{ moneyText(payableAmount) }}</strong>
             </div>
             <div class="metric-card is-due">
@@ -669,6 +669,7 @@ onMounted(async () => {
     color: #0f172a;
     border: 1px solid #dbeafe;
     border-radius: 6px;
+    font-family: "Times New Roman", SimSun, "宋体", serif;
   }
 
   .bill-head--receipt {
