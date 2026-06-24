@@ -186,6 +186,7 @@ CREATE TABLE IF NOT EXISTS energy_pricing_rule (
   platform_service_fee REAL NOT NULL DEFAULT 0,
   battery_depreciation_cost REAL NOT NULL DEFAULT 0,
   other_fixed_fee REAL NOT NULL DEFAULT 0,
+  guarantee_energy REAL NOT NULL DEFAULT 2500,
   effective_start TEXT,
   effective_end TEXT,
   status INTEGER NOT NULL DEFAULT 0,

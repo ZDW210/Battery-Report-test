@@ -37,6 +37,7 @@ export interface EnergyPricingRuleVO {
   platformServiceFee?: number
   batteryDepreciationCost?: number
   otherFixedFee?: number
+  guaranteeEnergy?: number
   effectiveStart?: string | Date
   effectiveEnd?: string | Date
   status?: number

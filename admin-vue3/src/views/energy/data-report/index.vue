@@ -380,10 +380,20 @@ const touRows = computed(() => {
   }))
 })
 const touAmount = computed(() => round2(touRows.value.reduce((sum, row) => sum + row.amount, 0)))
-const guaranteeEnergy = computed(() => 2500)
+const guaranteeEnergy = computed(() => {
+  const value = sumRuleField('guaranteeEnergy')
+  return value > 0 ? value : 2500
+})
 const averageServiceRate = computed(() => totalUsage.value > 0 ? round4(touAmount.value / totalUsage.value) : avgRuleField(['flatRate'], 1.36))
 const guaranteeAmount = computed(() => round2(guaranteeEnergy.value * averageServiceRate.value))
-const baseServiceFee = computed(() => round2(sumRuleField('platformServiceFee') + sumRuleField('communicationFee') + sumRuleField('otherFixedFee')))
+const baseServiceFee = computed(() => round2(
+  sumRuleField('siteFee') +
+  sumRuleField('maintenanceFee') +
+  sumRuleField('communicationFee') +
+  sumRuleField('platformServiceFee') +
+  sumRuleField('batteryDepreciationCost') +
+  sumRuleField('otherFixedFee')
+))
 const payableAmount = computed(() => round2(Math.max(guaranteeAmount.value, touAmount.value) + baseServiceFee.value))
 const guaranteeDiffText = computed(() => {
   const diff = round2(totalUsage.value - guaranteeEnergy.value)

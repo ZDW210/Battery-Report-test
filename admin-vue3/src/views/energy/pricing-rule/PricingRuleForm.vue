@@ -284,6 +284,18 @@
           </el-form-item>
         </el-col>
         <el-col :span="12">
+          <el-form-item label="约定保底用电量" prop="guaranteeEnergy">
+            <el-input-number
+              v-model="formData.guaranteeEnergy"
+              :min="0"
+              :precision="2"
+              class="!w-1/1"
+              controls-position="right"
+            />
+            <div class="fee-config-tip">单位：kWh/月，用于数据报表基础服务费保底核算</div>
+          </el-form-item>
+        </el-col>
+        <el-col :span="12">
           <el-form-item label="生效开始" prop="effectiveStart">
             <el-date-picker
               v-model="formData.effectiveStart"
@@ -503,6 +515,7 @@ const formData = ref<EnergyPricingRuleVO>({
   platformServiceFee: 0,
   batteryDepreciationCost: 0,
   otherFixedFee: 0,
+  guaranteeEnergy: 2500,
   effectiveStart: undefined,
   effectiveEnd: undefined,
   status: 0,
@@ -643,6 +656,7 @@ const resetForm = () => {
     platformServiceFee: 0,
     batteryDepreciationCost: 0,
     otherFixedFee: 0,
+    guaranteeEnergy: 2500,
     effectiveStart: undefined,
     effectiveEnd: undefined,
     status: 0,

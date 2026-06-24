@@ -58,6 +58,7 @@ const PRICING_RULE_FIELDS = [
   'platformServiceFee',
   'batteryDepreciationCost',
   'otherFixedFee',
+  'guaranteeEnergy',
   'effectiveStart',
   'effectiveEnd',
   'status',
@@ -89,7 +90,8 @@ const PRICING_RULE_FEE_COLUMNS: Record<string, string> = {
   communication_fee: 'REAL NOT NULL DEFAULT 0',
   platform_service_fee: 'REAL NOT NULL DEFAULT 0',
   battery_depreciation_cost: 'REAL NOT NULL DEFAULT 0',
-  other_fixed_fee: 'REAL NOT NULL DEFAULT 0'
+  other_fixed_fee: 'REAL NOT NULL DEFAULT 0',
+  guarantee_energy: 'REAL NOT NULL DEFAULT 2500'
 }
 const DEVICE_FIELDS = [
   'deviceNo', 'deviceName', 'deviceType', 'runMode', 'gatewaySn', 'meterSn', 'meterNo', 'customerId', 'projectId',

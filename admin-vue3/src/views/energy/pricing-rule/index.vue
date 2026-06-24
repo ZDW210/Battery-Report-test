@@ -134,6 +134,7 @@
       <el-descriptions-item label="平台服务费">{{ formatCurrency(matchedRule.platformServiceFee) }}</el-descriptions-item>
       <el-descriptions-item label="电池折旧成本">{{ formatCurrency(matchedRule.batteryDepreciationCost) }}</el-descriptions-item>
       <el-descriptions-item label="其他固定费用">{{ formatCurrency(matchedRule.otherFixedFee) }}</el-descriptions-item>
+      <el-descriptions-item label="约定保底用电量">{{ formatNumber(matchedRule.guaranteeEnergy) }} kWh/月</el-descriptions-item>
       <el-descriptions-item label="生效开始">
         {{ formatDateText(matchedRule.effectiveStart) }}
       </el-descriptions-item>
@@ -216,6 +217,9 @@
       </el-table-column>
       <el-table-column align="right" label="其他固定费用" width="130">
         <template #default="{ row }">{{ formatCurrency(row.otherFixedFee) }}</template>
+      </el-table-column>
+      <el-table-column align="right" label="约定保底电量" width="140">
+        <template #default="{ row }">{{ formatNumber(row.guaranteeEnergy) }} kWh/月</template>
       </el-table-column>
       <el-table-column align="center" label="生效开始" width="180" prop="effectiveStart">
         <template #default="{ row }">{{ formatDateText(row.effectiveStart) }}</template>

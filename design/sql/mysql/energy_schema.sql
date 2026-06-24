@@ -327,6 +327,7 @@ CREATE TABLE IF NOT EXISTS energy_pricing_rule (
   platform_service_fee DECIMAL(12,2) NOT NULL DEFAULT 0 COMMENT '平台服务费',
   battery_depreciation_cost DECIMAL(12,2) NOT NULL DEFAULT 0 COMMENT '电池折旧成本',
   other_fixed_fee DECIMAL(12,2) NOT NULL DEFAULT 0 COMMENT '其他固定费用',
+  guarantee_energy DECIMAL(12,2) NOT NULL DEFAULT 2500 COMMENT '约定保底用电量(kWh/月)',
   effective_start DATETIME NOT NULL COMMENT '生效开始时间',
   effective_end DATETIME NULL COMMENT '生效结束时间',
   status TINYINT NOT NULL DEFAULT 0 COMMENT '状态：0 启用，1 停用',
