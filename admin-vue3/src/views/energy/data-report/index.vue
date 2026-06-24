@@ -138,6 +138,11 @@
               <strong>{{ moneyText(payableAmount) }}</strong>
               <small>按保底电量条款核算</small>
             </div>
+            <div class="metric-card is-due">
+              <span>交费截止日期</span>
+              <strong>{{ paymentDueDate }}</strong>
+              <small>请在截止日前完成交费</small>
+            </div>
           </div>
 
           <section class="bill-section">
@@ -874,6 +879,10 @@ onMounted(async () => {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
+  .metric-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
   .metric-card {
     min-height: 90px;
     padding: 18px;
@@ -891,6 +900,15 @@ onMounted(async () => {
 
     &.is-amount strong {
       color: #0f766e;
+    }
+
+    &.is-due {
+      background: linear-gradient(120deg, #f6f6f6 0%, #eefcfb 58%, #d8fbf8 100%);
+
+      strong {
+        color: #0f766e;
+        font-size: 24px;
+      }
     }
 
     span,
@@ -1099,6 +1117,20 @@ onMounted(async () => {
 
     .data-bill-sheet {
       margin: 0;
+    }
+
+    .metric-grid,
+    .cost-grid,
+    .guarantee-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+
+  @media (max-width: 560px) {
+    .metric-grid,
+    .cost-grid,
+    .guarantee-grid {
+      grid-template-columns: 1fr;
     }
   }
 }
