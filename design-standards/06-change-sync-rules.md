@@ -674,3 +674,11 @@
 已同步标准：04-api-standards.md 补充客户账号后端强隔离、关联客户归属反查、客户账号只读边界和 refresh-token 禁用用户校验要求。
 备注：客户账号权限不能只依赖菜单隐藏；后续新增客户可访问的 API 必须同时补后端 accessScope 过滤。
 ```
+
+```text
+日期：2026-06-24
+变更内容：新增客户侧“电量数据”同级菜单，位于数据面板之前；页面复用数据报表的本期电费、保底电量、基础服务费、用能成本对比和节约成本计算口径，并将首页充电总成本和节约成本月度指标切换到同一套账单计算 helper。
+影响范围：admin-vue3/src/views/energy/electricity-data，admin-vue3/src/views/energy/shared/billMetrics.ts，admin-vue3/src/views/Home/Index.vue，admin-vue3/src/store/modules/permission.ts，worker/src/index.ts，design-standards/02-module-standards.md，design-standards/05-frontend-standards.md，design-standards/06-change-sync-rules.md
+已同步标准：02-module-standards.md 补充电量数据客户侧定位；05-frontend-standards.md 更新菜单顺序、首页成本指标口径和电量数据页面原则。
+备注：客户账号是否可见“电量数据”仍由客户账号管理中的开放板块控制；管理员账号默认可见全部移动储能菜单。
+```

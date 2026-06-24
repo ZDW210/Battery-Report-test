@@ -109,8 +109,11 @@
 import { Echart } from '@/components/Echart'
 import { EnergyDeviceApi } from '@/api/energy/device'
 import type { EnergyDeviceVO } from '@/api/energy/device'
+import { EnergyPricingRuleApi } from '@/api/energy/pricingRule'
+import type { EnergyPricingRuleVO } from '@/api/energy/pricingRule'
 import { EnergyReportApi } from '@/api/energy/report'
 import type { EnergyReportBillVO, EnergyReportDailyCostRowVO } from '@/api/energy/report'
+import { calculateCustomerBillMetrics, moneyText } from '@/views/energy/shared/billMetrics'
 import type { EChartsOption } from 'echarts'
 import dayjs from 'dayjs'
 import { useRouter } from 'vue-router'
@@ -124,6 +127,7 @@ const currentMonth = dayjs().format('YYYY-MM')
 const loading = ref(true)
 const dataPanelLoading = ref(false)
 const devices = ref<EnergyDeviceVO[]>([])
+const pricingRules = ref<EnergyPricingRuleVO[]>([])
 const billReport = ref<EnergyReportBillVO>()
 const dailyCostRows = ref<EnergyReportDailyCostRowVO[]>([])
 const deviceTotal = ref(0)
@@ -138,40 +142,38 @@ const onlineTotal = computed(() => devices.value.filter((item) => item.status ==
 
 const billScopeTitle = computed(() => billReport.value?.scopeName || '全部电表汇总')
 const billDeviceCount = computed(() => billReport.value?.summary?.deviceCount ?? deviceTotal.value)
-const totalChargeEnergy = computed(() => Number(billReport.value?.summary?.totalChargeEnergy || 0))
-const totalDischargeEnergy = computed(() => Number(billReport.value?.summary?.totalDischargeEnergy || 0))
-const dischargeEquivalentFee = computed(() => Number(billReport.value?.summary?.salesRevenue || 0))
-const savedCost = computed(() => {
-  const value = billReport.value?.summary?.savedCost
-  return value === null || value === undefined ? 0 : Number(value || 0)
-})
+const billMetrics = computed(() => calculateCustomerBillMetrics({
+  billReport: billReport.value,
+  pricingRules: pricingRules.value,
+  devices: devices.value
+}))
 
 const billTopCards = computed(() => [
   {
     label: '充入电量合计',
-    value: formatKwh(totalChargeEnergy.value),
-    hint: '按正向有功电能 EPI 首末差汇总',
+    value: formatKwh(billMetrics.value.totalChargeEnergy),
+    hint: '按正向有功电能首末差汇总',
     icon: 'ep:connection',
     color: '#2088d8'
   },
   {
     label: '放出电量合计',
-    value: formatKwh(totalDischargeEnergy.value),
-    hint: '按反向有功电能 EPE 首末差汇总',
+    value: formatKwh(billMetrics.value.totalDischargeEnergy),
+    hint: '按反向有功电能首末差汇总',
     icon: 'ep:truck',
     color: '#0ea5a4'
   },
   {
-    label: '放电等效电费',
-    value: formatCurrency(dischargeEquivalentFee.value),
-    hint: '按放电时段电价计算',
+    label: '本期电费',
+    value: moneyText(billMetrics.value.payableAmount),
+    hint: '按数据报表保底和基础服务费口径',
     icon: 'ep:money',
     color: '#16a34a'
   },
   {
     label: '节约成本',
-    value: formatCurrency(savedCost.value),
-    hint: '放电等效电费减充电总成本',
+    value: moneyText(billMetrics.value.savedCost),
+    hint: '按数据报表成本对比口径',
     icon: 'ep:trophy',
     color: '#f59e0b'
   }
@@ -187,8 +189,8 @@ const dataPanelSummary = computed(() => {
   const latest = [...dailyCostRows.value].reverse().find((item) => normalizeNumber(item.chargeCost) !== null || normalizeNumber(item.savedCost) !== null)
   return [
     { label: '统计天数', value: dailyCostRows.value.length },
-    { label: '充电总成本', value: formatCurrency(sumNumbers(validChargeCosts)) },
-    { label: '节约成本', value: formatCurrency(sumNumbers(validSavedCosts)) },
+    { label: '充电总成本', value: moneyText(billMetrics.value.chargeCost || sumNumbers(validChargeCosts)) },
+    { label: '节约成本', value: moneyText(billMetrics.value.savedCost || sumNumbers(validSavedCosts)) },
     { label: '最近日期', value: latest?.date || '-' }
   ]
 })
@@ -251,7 +253,7 @@ const loadDataPanel = async () => {
   }
   dataPanelLoading.value = true
   try {
-    const [dailyReport, bill] = await Promise.all([
+    const [dailyReport, bill, rules] = await Promise.all([
       EnergyReportApi.getDailyCostReport({
         scopeType: 'all',
         billMonth: dataQuery.billMonth
@@ -259,13 +261,16 @@ const loadDataPanel = async () => {
       EnergyReportApi.getBillReport({
         scopeType: 'all',
         billMonth: dataQuery.billMonth
-      })
+      }),
+      EnergyPricingRuleApi.getPricingRulePage({ pageNo: 1, pageSize: 5000 })
     ])
     dailyCostRows.value = dailyReport?.rows || []
     billReport.value = bill
+    pricingRules.value = rules?.list || []
   } catch (error) {
     billReport.value = undefined
     dailyCostRows.value = []
+    pricingRules.value = []
     message.error('数据面板加载失败，请检查报表费用接口')
   } finally {
     dataPanelLoading.value = false
@@ -282,13 +287,6 @@ const normalizeNumber = (value: unknown): number | null => {
 
 const sumNumbers = (values: number[]) => {
   return Number(values.reduce((sum, value) => sum + value, 0).toFixed(2))
-}
-
-const formatCurrency = (value: number | null) => {
-  if (value === null || value === undefined) {
-    return '-'
-  }
-  return `¥${Number(value || 0).toFixed(2)}`
 }
 
 const formatKwh = (value: number | null) => {
