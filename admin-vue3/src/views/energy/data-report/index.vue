@@ -555,7 +555,8 @@ const waitForFonts = async () => {
 const insertPdfPageSpacers = (root: HTMLElement) => {
   const pageHeight = 1123
   const topSafe = 28
-  const bottomSafe = 96
+  const bottomSafe = 72
+  const minUsefulRemaining = 220
   let pageStart = 0
   const blocks = Array.from(root.children).filter((child) => !child.classList.contains('pdf-page-spacer')) as HTMLElement[]
 
@@ -563,7 +564,13 @@ const insertPdfPageSpacers = (root: HTMLElement) => {
     const blockHeight = block.offsetHeight
     const blockTop = block.offsetTop
     const pageBottom = pageStart + pageHeight - bottomSafe
-    if (blockTop > pageStart + topSafe && blockTop + blockHeight > pageBottom && blockHeight < pageHeight - topSafe - bottomSafe) {
+    const remainingSpace = pageBottom - blockTop
+    if (
+      blockTop > pageStart + topSafe &&
+      blockTop + blockHeight > pageBottom &&
+      remainingSpace < minUsefulRemaining &&
+      blockHeight < pageHeight - topSafe - bottomSafe
+    ) {
       const spacer = document.createElement('div')
       spacer.className = 'pdf-page-spacer'
       spacer.style.height = `${Math.max(0, pageStart + pageHeight - blockTop)}px`
