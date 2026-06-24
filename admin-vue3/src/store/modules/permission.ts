@@ -22,7 +22,8 @@ const ENERGY_MENU_CHILDREN = new Set([
   'pricing-rule',
   'charge-session',
   'customer-account',
-  'report-panel'
+  'report-panel',
+  'data-report'
 ])
 
 const keepProjectRoute = (route: AppRouteRecordRaw): boolean => {
