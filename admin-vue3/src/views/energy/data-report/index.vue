@@ -208,24 +208,6 @@
             </div>
           </section>
 
-          <section class="bill-section">
-            <h3>④ 用能成本对比（增值服务）</h3>
-            <div class="cost-grid">
-              <div>
-                <span>若自购柴油发电成本</span>
-                <strong>{{ moneyText(dieselCost) }}</strong>
-              </div>
-              <div>
-                <span>若直接接入电网（估算）</span>
-                <strong>{{ moneyText(gridCost) }}</strong>
-              </div>
-              <div class="is-saving">
-                <span>使用移动储能为您节省</span>
-                <strong>{{ moneyText(savedCost) }} 起</strong>
-              </div>
-            </div>
-          </section>
-
           <p class="bill-note">
             说明：本账单电量为移动储能站反向放电量，不等同于电网侧充电采购电量；电网采购成本及损耗已计入服务单价，不在本账单单独列示。分时时段依据当前计费规则展示，保底电量条款后续可接入计费规则统一维护。
           </p>
@@ -404,12 +386,6 @@ const touFormulaText = computed(() => touRows.value
   .filter((row) => row.energy > 0)
   .map((row) => `${numberText(row.energy)}×${rateText(row.rate)}`)
   .join(' + ') || '0')
-const dieselGenerationRate = computed(() => avgRuleField(['dieselGenerationRate'], 2))
-const gridEstimateBaseRate = computed(() => avgRuleField(['gridEstimateBaseRate'], 1.5))
-const gridEstimateExtraRate = computed(() => avgRuleField(['gridEstimateExtraRate'], 0.18))
-const dieselCost = computed(() => round2(totalUsage.value * dieselGenerationRate.value))
-const gridCost = computed(() => round2(totalUsage.value * Math.max(averageServiceRate.value + gridEstimateExtraRate.value, gridEstimateBaseRate.value)))
-const savedCost = computed(() => round2(Math.max(0, Math.min(dieselCost.value, gridCost.value) - payableAmount.value)))
 
 const loadOptions = async () => {
   devices.value = await EnergyDeviceApi.getDeviceSimpleList()
@@ -891,7 +867,6 @@ onMounted(async () => {
   }
 
   .metric-grid,
-  .cost-grid,
   .guarantee-grid {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1058,8 +1033,7 @@ onMounted(async () => {
     }
   }
 
-  .guarantee-grid,
-  .cost-grid {
+  .guarantee-grid {
     border: 1px solid #bdebe8;
     border-radius: 0 0 8px 8px;
     overflow: hidden;
@@ -1089,8 +1063,7 @@ onMounted(async () => {
       font-weight: 900;
     }
 
-    .highlight,
-    .is-saving strong {
+    .highlight {
       color: #00716d;
     }
   }
@@ -1112,17 +1085,6 @@ onMounted(async () => {
       margin-top: 10px;
       color: #00716d;
       font-size: 16px;
-    }
-  }
-
-  .cost-grid {
-    div {
-      text-align: center;
-      background: #fbffff;
-
-      &.is-saving {
-        background: linear-gradient(120deg, #d8fbf8, #fbffff);
-      }
     }
   }
 
@@ -1163,7 +1125,6 @@ onMounted(async () => {
     }
 
     .metric-grid,
-    .cost-grid,
     .guarantee-grid {
       grid-template-columns: repeat(2, minmax(0, 1fr));
     }
@@ -1171,7 +1132,6 @@ onMounted(async () => {
 
   @media (max-width: 560px) {
     .metric-grid,
-    .cost-grid,
     .guarantee-grid {
       grid-template-columns: 1fr;
     }
