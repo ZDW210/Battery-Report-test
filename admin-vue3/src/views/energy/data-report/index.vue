@@ -471,6 +471,9 @@ const exportPdf = async () => {
       useCORS: true,
       width: 794,
       windowWidth: 794,
+      windowHeight: pdfElement.scrollHeight,
+      scrollX: 0,
+      scrollY: 0,
       height: pdfElement.scrollHeight
     })
     const pdf = new jsPDF({ orientation: 'p', unit: 'pt', format: 'a4', compress: true })
@@ -539,6 +542,7 @@ const createPagedPdfElement = async (source: HTMLElement) => {
   await nextTick()
   await waitForFonts()
   insertPdfPageSpacers(clone)
+  fillPdfLastPage(clone)
   await nextTick()
   return wrapper
 }
@@ -551,7 +555,7 @@ const waitForFonts = async () => {
 const insertPdfPageSpacers = (root: HTMLElement) => {
   const pageHeight = 1123
   const topSafe = 28
-  const bottomSafe = 34
+  const bottomSafe = 96
   let pageStart = 0
   const blocks = Array.from(root.children).filter((child) => !child.classList.contains('pdf-page-spacer')) as HTMLElement[]
 
@@ -571,6 +575,16 @@ const insertPdfPageSpacers = (root: HTMLElement) => {
       pageStart += pageHeight
     }
   }
+}
+
+const fillPdfLastPage = (root: HTMLElement) => {
+  const pageHeight = 1123
+  const remainder = root.scrollHeight % pageHeight
+  if (remainder === 0) return
+  const spacer = document.createElement('div')
+  spacer.className = 'pdf-page-spacer pdf-page-tail-spacer'
+  spacer.style.height = `${pageHeight - remainder}px`
+  root.appendChild(spacer)
 }
 
 const matchRuleForDevice = (device: EnergyDeviceVO) => {
