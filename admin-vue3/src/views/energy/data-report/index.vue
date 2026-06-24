@@ -126,22 +126,18 @@
             <div class="metric-card is-soft">
               <span>本期用电量（放电）</span>
               <strong>{{ kwhNumberText(totalUsage) }}</strong>
-              <small>来自移动储能反向放电电量</small>
             </div>
             <div class="metric-card">
               <span>本期平均单价</span>
               <strong>{{ rateText(averageServiceRate) }}</strong>
-              <small>已含分时服务费口径</small>
             </div>
             <div class="metric-card is-amount">
               <span>本期应付金额</span>
               <strong>{{ moneyText(payableAmount) }}</strong>
-              <small>按保底电量条款核算</small>
             </div>
             <div class="metric-card is-due">
               <span>交费截止日期</span>
               <strong>{{ paymentDueDate }}</strong>
-              <small>请在截止日前完成交费</small>
             </div>
           </div>
 
@@ -884,11 +880,28 @@ onMounted(async () => {
   }
 
   .metric-card {
-    min-height: 90px;
-    padding: 18px;
+    position: relative;
+    display: grid;
+    grid-template-columns: minmax(96px, 1fr) auto;
+    align-items: center;
+    min-height: 62px;
+    overflow: hidden;
+    padding: 12px 14px;
     border: 1px solid #c9f3f0;
+    border-radius: 6px;
     background: linear-gradient(120deg, #f6f6f6 0%, #f6f6f6 42%, #eefcfb 100%);
-    text-align: center;
+    text-align: left;
+
+    &::after {
+      position: absolute;
+      right: 22px;
+      bottom: -34px;
+      width: 108px;
+      height: 108px;
+      border-radius: 999px;
+      background: rgba(45, 212, 191, 0.16);
+      content: '';
+    }
 
     &.is-soft {
       background: linear-gradient(120deg, #f3f3f3 0%, #f3f3f3 45%, #d9fbf8 100%);
@@ -906,23 +919,31 @@ onMounted(async () => {
       background: linear-gradient(120deg, #f6f6f6 0%, #eefcfb 58%, #d8fbf8 100%);
 
       strong {
-        color: #0f766e;
-        font-size: 24px;
+        color: #334155;
       }
     }
 
     span,
     small {
       display: block;
-      color: #64748b;
+      position: relative;
+      z-index: 1;
+      color: #00716d;
+      font-size: 15px;
+      font-weight: 800;
     }
 
     strong {
       display: block;
-      margin: 10px 0 6px;
-      color: #00716d;
-      font-size: 28px;
-      font-weight: 900;
+      position: relative;
+      z-index: 1;
+      min-width: 0;
+      color: #334155;
+      font-family: "Times New Roman", SimSun, serif;
+      font-size: 15px;
+      font-weight: 500;
+      text-align: right;
+      white-space: nowrap;
     }
   }
 
