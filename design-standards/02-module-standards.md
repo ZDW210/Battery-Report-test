@@ -50,7 +50,14 @@ yudao-module-energy
 - `EnergySessionService`：充放电会话、费用汇总
 - `EnergyDispatchService`：调度任务、下发、状态跟踪
 - `EnergyEiotService`：安科瑞 EIOT 数据解析和同步
-- `EnergyReportService`：统计报表和导出
+- `EnergyReportService`：统计报表、客户数据报表和导出
+
+### 数据报表模块标准
+
+- 数据报表必须与报表面板平级，不作为报表面板内的子区域。
+- 数据报表面向客户账单，优先展示反向放电用电量、分时服务单价、保底电量核算和成本对比。
+- 数据来源必须复用现有设备、计费规则和报表接口，不得在前端伪造已接入遥测数据；当前没有数据库字段的服务条款可先使用页面默认值，并在后续计费规则扩展时同步迁移。
+- PDF 导出必须使用固定 A4 版式，手机端不能只依赖浏览器打印提示。
 
 ## 字典标准
 
@@ -66,4 +73,3 @@ yudao-module-energy
 - `energy_session_type`
 - `energy_session_status`
 - `energy_dispatch_status`
-
