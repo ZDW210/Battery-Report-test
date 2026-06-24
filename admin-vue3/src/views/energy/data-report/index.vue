@@ -867,16 +867,20 @@ onMounted(async () => {
   .metric-card {
     min-height: 90px;
     padding: 18px;
-    border: 1px solid #c8f2ee;
-    background: #f7ffff;
+    border: 1px solid #c9f3f0;
+    background: linear-gradient(120deg, #f6f6f6 0%, #f6f6f6 42%, #eefcfb 100%);
     text-align: center;
 
     &.is-soft {
-      background: linear-gradient(90deg, #e3fbf6, #f7ffff);
+      background: linear-gradient(120deg, #f3f3f3 0%, #f3f3f3 45%, #d9fbf8 100%);
+    }
+
+    &:nth-child(2) {
+      background: linear-gradient(120deg, #d8fbf8 0%, #c8f6f2 55%, #f6f6f6 100%);
     }
 
     &.is-amount strong {
-      color: #ea580c;
+      color: #0f766e;
     }
 
     span,
@@ -888,7 +892,7 @@ onMounted(async () => {
     strong {
       display: block;
       margin: 10px 0 6px;
-      color: #0f766e;
+      color: #00716d;
       font-size: 28px;
       font-weight: 900;
     }
@@ -902,9 +906,10 @@ onMounted(async () => {
     h3 {
       margin: 0 0 12px;
       padding: 9px 12px;
-      border-radius: 4px;
-      background: #20b6aa;
-      color: #fff;
+      border: 1px solid #bcefeb;
+      border-radius: 8px 8px 0 0;
+      background: #d5fbfa;
+      color: #00716d;
       font-size: 15px;
       font-weight: 800;
     }
@@ -917,13 +922,13 @@ onMounted(async () => {
     th,
     td {
       padding: 10px 12px;
-      border-bottom: 1px solid #e2e8f0;
+      border-bottom: 1px dashed #bdebe8;
       text-align: left;
     }
 
     th {
-      background: #effafa;
-      color: #0f766e;
+      background: #eafafa;
+      color: #00716d;
       font-weight: 800;
     }
 
@@ -933,7 +938,7 @@ onMounted(async () => {
     }
 
     .is-total td {
-      background: #f8ffff;
+      background: #f7ffff;
       color: #0f172a;
       font-weight: 800;
     }
@@ -978,20 +983,20 @@ onMounted(async () => {
     }
 
     small {
-      color: #0faaa0;
+      color: #18a9a0;
     }
   }
 
   .guarantee-grid,
   .cost-grid {
-    border: 1px solid #dbe4ee;
-    border-radius: 6px;
+    border: 1px solid #bdebe8;
+    border-radius: 0 0 8px 8px;
     overflow: hidden;
 
     div {
       min-height: 80px;
       padding: 14px;
-      border-right: 1px solid #dbe4ee;
+      border-right: 1px dashed #bdebe8;
 
       &:last-child {
         border-right: 0;
@@ -1015,15 +1020,15 @@ onMounted(async () => {
 
     .highlight,
     .is-saving strong {
-      color: #0faaa0;
+      color: #00716d;
     }
   }
 
   .formula-box {
     padding: 16px 18px;
-    border: 1px dashed #cbd5e1;
-    border-radius: 6px;
-    background: #fbfbfc;
+    border: 1px dashed #bdebe8;
+    border-radius: 0 0 8px 8px;
+    background: #fbffff;
 
     p {
       margin: 0 0 8px;
@@ -1034,7 +1039,7 @@ onMounted(async () => {
     strong {
       display: block;
       margin-top: 10px;
-      color: #ea580c;
+      color: #00716d;
       font-size: 16px;
     }
   }
@@ -1042,10 +1047,10 @@ onMounted(async () => {
   .cost-grid {
     div {
       text-align: center;
-      background: #f8fafc;
+      background: #fbffff;
 
       &.is-saving {
-        background: linear-gradient(90deg, #e4fbf6, #f7ffff);
+        background: linear-gradient(120deg, #d8fbf8, #fbffff);
       }
     }
   }
