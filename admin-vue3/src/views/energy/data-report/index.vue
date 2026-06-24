@@ -146,24 +146,21 @@
             <table class="tou-table">
               <thead>
                 <tr>
-                  <th>时段</th>
-                  <th>时间范围</th>
-                  <th>用电量（kWh）</th>
-                  <th>服务单价（元/kWh）</th>
-                  <th>金额（元）</th>
+                  <th>分时时段</th>
+                  <th>计费电量（kWh）</th>
+                  <th>计费标准（元/kWh）</th>
+                  <th>电费（元）</th>
                 </tr>
               </thead>
               <tbody>
                 <tr v-for="row in touRows" :key="row.key">
-                  <td>{{ row.label }}</td>
-                  <td>{{ row.timeRange }}</td>
+                  <td>{{ row.label }}：{{ row.timeRange }}</td>
                   <td>{{ numberText(row.energy) }}</td>
                   <td>{{ rateText(row.rate) }}</td>
                   <td>{{ amountNumberText(row.amount) }}</td>
                 </tr>
                 <tr class="is-total">
                   <td>合计</td>
-                  <td>--</td>
                   <td>{{ numberText(totalUsage) }}</td>
                   <td>--</td>
                   <td>{{ amountNumberText(touAmount) }}</td>

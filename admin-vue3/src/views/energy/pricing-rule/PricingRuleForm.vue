@@ -190,31 +190,6 @@
           </el-form-item>
         </el-col>
         <el-col :span="24">
-          <el-divider content-position="left">运营结算参数</el-divider>
-        </el-col>
-        <el-col :span="12">
-          <el-form-item label="时间单价" prop="timeRate">
-            <el-input-number
-              v-model="formData.timeRate"
-              :min="0"
-              :precision="4"
-              class="!w-1/1"
-              controls-position="right"
-            />
-          </el-form-item>
-        </el-col>
-        <el-col :span="12">
-          <el-form-item label="结算电量单价" prop="energyRate">
-            <el-input-number
-              v-model="formData.energyRate"
-              :min="0"
-              :precision="6"
-              class="!w-1/1"
-              controls-position="right"
-            />
-          </el-form-item>
-        </el-col>
-        <el-col :span="24">
           <el-divider content-position="left">固定费用参数</el-divider>
         </el-col>
         <el-col :span="12">
@@ -567,8 +542,6 @@ const formRules = reactive({
   customerId: [{ required: true, message: '客户不能为空', trigger: 'change' }],
   projectId: [{ required: true, message: '项目不能为空', trigger: 'change' }],
   deviceId: [{ required: true, message: '设备不能为空', trigger: 'change' }],
-  timeRate: [{ required: true, message: '时间单价不能为空', trigger: 'blur' }],
-  energyRate: [{ required: true, message: '电量单价不能为空', trigger: 'blur' }],
   effectiveStart: [{ required: true, message: '生效开始时间不能为空', trigger: 'change' }],
   status: [{ required: true, message: '状态不能为空', trigger: 'change' }]
 })

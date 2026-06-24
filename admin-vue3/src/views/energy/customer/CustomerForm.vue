@@ -1,18 +1,71 @@
 <template>
-  <Dialog v-model="dialogVisible" :title="dialogTitle" width="640px">
-    <el-form ref="formRef" v-loading="formLoading" :model="formData" :rules="formRules" label-width="90px">
+  <Dialog v-model="dialogVisible" :title="dialogTitle" width="860px">
+    <el-form ref="formRef" v-loading="formLoading" :model="formData" :rules="formRules" label-width="118px">
       <el-form-item label="客户名称" prop="name">
         <el-input v-model="formData.name" maxlength="128" placeholder="请输入客户名称" />
       </el-form-item>
-      <el-form-item label="联系人" prop="contactName">
-        <el-input v-model="formData.contactName" maxlength="64" placeholder="请输入联系人" />
-      </el-form-item>
-      <el-form-item label="联系电话" prop="contactMobile">
-        <el-input v-model="formData.contactMobile" maxlength="32" placeholder="请输入联系电话" />
-      </el-form-item>
+      <el-row :gutter="16">
+        <el-col :span="12">
+          <el-form-item label="联系人" prop="contactName">
+            <el-input v-model="formData.contactName" maxlength="64" placeholder="请输入联系人" />
+          </el-form-item>
+        </el-col>
+        <el-col :span="12">
+          <el-form-item label="联系电话" prop="contactMobile">
+            <el-input v-model="formData.contactMobile" maxlength="32" placeholder="请输入联系电话" />
+          </el-form-item>
+        </el-col>
+      </el-row>
       <el-form-item label="区域" prop="region">
         <el-input v-model="formData.region" maxlength="64" placeholder="请输入区域" />
       </el-form-item>
+      <el-divider content-position="left">账单表头信息</el-divider>
+      <el-row :gutter="16">
+        <el-col :span="12">
+          <el-form-item label="户号" prop="accountNo">
+            <el-input v-model="formData.accountNo" maxlength="64" placeholder="请输入账单户号" />
+          </el-form-item>
+        </el-col>
+        <el-col :span="12">
+          <el-form-item label="供电服务单位" prop="supplyOrg">
+            <el-input v-model="formData.supplyOrg" maxlength="128" placeholder="请输入供电服务单位" />
+          </el-form-item>
+        </el-col>
+        <el-col :span="12">
+          <el-form-item label="市场化属性" prop="marketAttribute">
+            <el-select v-model="formData.marketAttribute" allow-create clearable filterable placeholder="请选择或输入市场化属性" class="!w-1/1">
+              <el-option label="市场化交易" value="市场化交易" />
+              <el-option label="代理购电" value="代理购电" />
+              <el-option label="非市场化" value="非市场化" />
+            </el-select>
+          </el-form-item>
+        </el-col>
+        <el-col :span="12">
+          <el-form-item label="交费截止日" prop="paymentDueDay">
+            <el-input-number v-model="formData.paymentDueDay" :min="1" :max="31" :precision="0" class="!w-1/1" controls-position="right" />
+          </el-form-item>
+        </el-col>
+        <el-col :span="12">
+          <el-form-item label="客户服务" prop="customerService">
+            <el-input v-model="formData.customerService" maxlength="64" placeholder="请输入客户服务电话" />
+          </el-form-item>
+        </el-col>
+        <el-col :span="12">
+          <el-form-item label="监督电话" prop="supervisePhone">
+            <el-input v-model="formData.supervisePhone" maxlength="64" placeholder="请输入监督电话" />
+          </el-form-item>
+        </el-col>
+        <el-col :span="12">
+          <el-form-item label="打印人" prop="printPerson">
+            <el-input v-model="formData.printPerson" maxlength="64" placeholder="默认 system" />
+          </el-form-item>
+        </el-col>
+        <el-col :span="24">
+          <el-form-item label="用电地址" prop="usageAddress">
+            <el-input v-model="formData.usageAddress" maxlength="256" placeholder="请输入账单用电地址" />
+          </el-form-item>
+        </el-col>
+      </el-row>
       <el-form-item label="状态" prop="status">
         <el-radio-group v-model="formData.status">
           <el-radio
@@ -47,7 +100,24 @@ const dialogVisible = ref(false)
 const dialogTitle = ref('')
 const formLoading = ref(false)
 const formType = ref('')
-const formData = ref<EnergyCustomerVO>({ id: undefined, name: undefined, contactName: undefined, contactMobile: undefined, region: undefined, status: 0, remark: undefined })
+const emptyFormData = (): EnergyCustomerVO => ({
+  id: undefined,
+  name: undefined,
+  contactName: undefined,
+  contactMobile: undefined,
+  region: undefined,
+  accountNo: undefined,
+  usageAddress: undefined,
+  supplyOrg: undefined,
+  marketAttribute: undefined,
+  customerService: undefined,
+  supervisePhone: undefined,
+  printPerson: undefined,
+  paymentDueDay: 12,
+  status: 0,
+  remark: undefined
+})
+const formData = ref<EnergyCustomerVO>(emptyFormData())
 const formRules = reactive({
   name: [{ required: true, message: '客户名称不能为空', trigger: 'blur' }],
   status: [{ required: true, message: '状态不能为空', trigger: 'change' }]
@@ -62,7 +132,7 @@ const open = async (type: string, id?: number) => {
   if (id) {
     formLoading.value = true
     try {
-      formData.value = await EnergyCustomerApi.getCustomer(id)
+      formData.value = { ...emptyFormData(), ...(await EnergyCustomerApi.getCustomer(id)) }
     } finally {
       formLoading.value = false
     }
@@ -91,7 +161,7 @@ const submitForm = async () => {
 }
 
 const resetForm = () => {
-  formData.value = { id: undefined, name: undefined, contactName: undefined, contactMobile: undefined, region: undefined, status: 0, remark: undefined }
+  formData.value = emptyFormData()
   formRef.value?.resetFields()
 }
 </script>

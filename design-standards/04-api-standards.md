@@ -91,6 +91,15 @@ GET    /export
 - 计费匹配优先级固定为设备级 > 项目级 > 客户级；只允许返回启用且覆盖计费时间的规则，同一范围多条命中时取最新生效、最新编号的一条。
 - 充放电任务、会话结算、后台试算等需要确定价格时，必须复用计费规则匹配服务，不得在其他模块重复写不同优先级。
 
+管理端客户接口使用独立资源路径：
+
+```text
+/admin-api/energy/customer/**
+```
+
+- 保存请求体必须支持账单表头字段：`accountNo`、`usageAddress`、`supplyOrg`、`marketAttribute`、`customerService`、`supervisePhone`、`printPerson`、`paymentDueDay`。
+- 数据报表账单头必须优先读取客户表头字段；用电类别和电压等级读取命中计费规则；账单周期、打印日期和报表编号由系统生成。
+
 管理端充放电会话接口使用独立资源路径：
 
 ```text

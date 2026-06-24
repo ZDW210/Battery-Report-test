@@ -6,6 +6,14 @@ export interface EnergyCustomerVO {
   contactName?: string
   contactMobile?: string
   region?: string
+  accountNo?: string
+  usageAddress?: string
+  supplyOrg?: string
+  marketAttribute?: string
+  customerService?: string
+  supervisePhone?: string
+  printPerson?: string
+  paymentDueDay?: number
   status?: number
   remark?: string
   createTime?: Date

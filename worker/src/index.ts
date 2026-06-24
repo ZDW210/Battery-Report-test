@@ -99,6 +99,32 @@ const PRICING_RULE_FEE_COLUMNS: Record<string, string> = {
   grid_estimate_base_rate: 'REAL NOT NULL DEFAULT 1.5',
   grid_estimate_extra_rate: 'REAL NOT NULL DEFAULT 0.18'
 }
+const CUSTOMER_FIELDS = [
+  'name',
+  'contactName',
+  'contactMobile',
+  'region',
+  'accountNo',
+  'usageAddress',
+  'supplyOrg',
+  'marketAttribute',
+  'customerService',
+  'supervisePhone',
+  'printPerson',
+  'paymentDueDay',
+  'status',
+  'remark'
+]
+const CUSTOMER_BILL_COLUMNS: Record<string, string> = {
+  account_no: 'TEXT',
+  usage_address: 'TEXT',
+  supply_org: 'TEXT',
+  market_attribute: 'TEXT',
+  customer_service: 'TEXT',
+  supervise_phone: 'TEXT',
+  print_person: 'TEXT',
+  payment_due_day: 'INTEGER NOT NULL DEFAULT 12'
+}
 const DEVICE_FIELDS = [
   'deviceNo', 'deviceName', 'deviceType', 'runMode', 'gatewaySn', 'meterSn', 'meterNo', 'customerId', 'projectId',
   'latitude', 'longitude', 'lastSoc', 'lastSoh', 'lastPower', 'lastVoltage', 'lastCurrent', 'lastTemp',
@@ -630,11 +656,12 @@ function customerAccountForbidden() {
 }
 
 async function customerApi(request: Request, url: URL, env: Env, path: string, accessScope: AccessScope) {
+  await ensureCustomerBillColumns(env)
   if (path === '/energy/customer/page' && request.method === 'GET') return customerPage(url, env, accessScope)
   if (path === '/energy/customer/simple-list' && request.method === 'GET') return customerSimpleList(url, env, accessScope)
   if (path === '/energy/customer/get' && request.method === 'GET') return customerGet(url, env, accessScope)
   if (accessScope.isCustomerAccount) return customerAccountForbidden()
-  return crud(request, url, env, 'energy_customer', ['name', 'contactName', 'contactMobile', 'region', 'status', 'remark'])
+  return crud(request, url, env, 'energy_customer', CUSTOMER_FIELDS)
 }
 
 async function customerPage(url: URL, env: Env, accessScope: AccessScope) {
@@ -1377,6 +1404,23 @@ async function ensurePricingRuleFeeColumns(env: Env) {
   }
 }
 
+async function ensureCustomerBillColumns(env: Env) {
+  const info = await env.DB.prepare('PRAGMA table_info(energy_customer)').all<AnyRecord>()
+  const existing = new Set((info.results || []).map((row) => String(row.name)))
+  for (const [column, definition] of Object.entries(CUSTOMER_BILL_COLUMNS)) {
+    if (!existing.has(column)) {
+      try {
+        await env.DB.prepare(`ALTER TABLE energy_customer ADD COLUMN ${column} ${definition}`).run()
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        if (!message.toLowerCase().includes('duplicate column')) {
+          throw error
+        }
+      }
+    }
+  }
+}
+
 async function chargeSessionApi(request: Request, url: URL, env: Env, path: string, accessScope: AccessScope, user: AnyRecord) {
   await ensureChargeSessionSecurityColumns(env)
   if (path === '/energy/charge-session/page' && request.method === 'GET') return chargeSessionPage(url, env, accessScope)
@@ -1620,6 +1664,7 @@ async function reportApi(request: Request, url: URL, env: Env, path: string, acc
 }
 
 async function reportBill(url: URL, env: Env, accessScope: AccessScope) {
+  await ensureCustomerBillColumns(env)
   const billMonth = cleanText(url.searchParams.get('billMonth')) || localNowText().slice(0, 7)
   const monthStart = `${billMonth}-01 00:00:00`
   const monthEnd = endOfMonthText(billMonth)
@@ -1762,6 +1807,7 @@ async function reportDailyCost(url: URL, env: Env, accessScope: AccessScope) {
 }
 
 async function reportDevices(url: URL, env: Env, accessScope: AccessScope, scopeType: string) {
+  await ensureCustomerBillColumns(env)
   const where: string[] = []
   const args: any[] = []
   if (scopeType === 'project') {
@@ -1775,7 +1821,12 @@ async function reportDevices(url: URL, env: Env, accessScope: AccessScope, scope
   applyCustomerScope(where, args, 'COALESCE(d.customer_id, p.customer_id)', accessScope)
   const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : ''
   const rows = await env.DB.prepare(
-    `SELECT d.*, c.name AS customer_name, p.name AS project_name, p.customer_id AS project_customer_id
+    `SELECT d.*, c.name AS customer_name, c.account_no AS customer_account_no,
+        c.usage_address AS customer_usage_address, c.supply_org AS customer_supply_org,
+        c.market_attribute AS customer_market_attribute, c.customer_service AS customer_service,
+        c.supervise_phone AS customer_supervise_phone, c.print_person AS customer_print_person,
+        c.payment_due_day AS customer_payment_due_day,
+        p.name AS project_name, p.customer_id AS project_customer_id
      FROM energy_device d
      LEFT JOIN energy_project p ON p.id = d.project_id
      LEFT JOIN energy_customer c ON c.id = COALESCE(d.customer_id, p.customer_id)
@@ -2521,20 +2572,38 @@ function reportBillingFeeTotal(rows: AnyRecord[]) {
 function buildReportHeader(devices: AnyRecord[], rules: AnyRecord[], billMonth: string, start: string, end: string, scopeType: string) {
   const device = devices[0] || {}
   const rule = rules[0] || {}
+  const paymentDueDay = numberOrNull(device.customer_payment_due_day) || 12
   return {
     billStartDate: start.slice(0, 10),
     billEndDate: end.slice(0, 10),
-    accountNo: '待录入',
+    accountNo: cleanText(device.customer_account_no) || '待录入',
     customerName: device.customer_name || rule.customer_name || '待录入',
-    usageAddress: scopeType === 'project' ? device.project_name || '待录入' : device.project_name || '待录入',
+    usageAddress: cleanText(device.customer_usage_address) || device.project_name || '待录入',
     electricityCategory: rule.electricity_category || '待录入',
     voltageLevel: rule.voltage_level || '待录入',
-    serviceUnit: '待录入',
-    marketType: scopeType === 'device' ? '单表统计' : scopeType === 'project' ? '场站汇总' : '全部电表汇总',
-    printer: 'system',
+    supplyOrg: cleanText(device.customer_supply_org) || '待录入',
+    serviceUnit: cleanText(device.customer_supply_org) || '待录入',
+    marketAttribute: cleanText(device.customer_market_attribute) || (scopeType === 'device' ? '单表统计' : scopeType === 'project' ? '场站汇总' : '全部电表汇总'),
+    marketType: cleanText(device.customer_market_attribute) || (scopeType === 'device' ? '单表统计' : scopeType === 'project' ? '场站汇总' : '全部电表汇总'),
+    customerService: cleanText(device.customer_service) || '待录入',
+    supervisePhone: cleanText(device.customer_supervise_phone) || '待录入',
+    paymentDueDate: paymentDueDateFromBillMonth(billMonth, paymentDueDay),
+    printer: cleanText(device.customer_print_person) || 'system',
+    printPerson: cleanText(device.customer_print_person) || 'system',
     printDate: nowText().slice(0, 10),
     reportNo: `ES-${billMonth.replace('-', '')}-${Date.now()}`
   }
+}
+
+function paymentDueDateFromBillMonth(billMonth: string, dueDay: number) {
+  const [yearText, monthText] = billMonth.split('-')
+  const year = Number(yearText)
+  const month = Number(monthText)
+  const safeYear = Number.isFinite(year) ? year : new Date().getUTCFullYear()
+  const safeMonth = Number.isFinite(month) ? month : new Date().getUTCMonth() + 1
+  const lastDay = new Date(Date.UTC(safeYear, safeMonth + 1, 0)).getUTCDate()
+  const day = Math.min(Math.max(1, Math.trunc(dueDay || 12)), lastDay)
+  return new Date(Date.UTC(safeYear, safeMonth, day)).toISOString().slice(0, 10)
 }
 
 function emptyReportBill(billMonth: string, start: string, end: string, scopeType: string) {

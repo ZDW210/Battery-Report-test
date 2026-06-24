@@ -28,6 +28,9 @@
       <el-table-column align="center" label="联系人" min-width="120" prop="contactName" />
       <el-table-column align="center" label="联系电话" min-width="140" prop="contactMobile" />
       <el-table-column align="center" label="区域" min-width="120" prop="region" />
+      <el-table-column align="center" label="户号" min-width="140" prop="accountNo" />
+      <el-table-column align="center" label="供电服务单位" min-width="160" prop="supplyOrg" />
+      <el-table-column align="center" label="市场化属性" min-width="130" prop="marketAttribute" />
       <el-table-column align="center" label="状态" width="100" prop="status">
         <template #default="scope"><dict-tag :type="DICT_TYPE.COMMON_STATUS" :value="scope.row.status" /></template>
       </el-table-column>
