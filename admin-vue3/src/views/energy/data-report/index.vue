@@ -88,12 +88,12 @@
                 <strong>{{ billEndDate }}</strong>
               </div>
             </div>
-            <div class="info-list">
+            <div class="info-list info-list--customer">
               <div><span>户号</span><strong>{{ accountNoText }}</strong></div>
               <div><span>户名</span><strong>{{ customerNameText }}</strong></div>
               <div><span>用电地址</span><strong>{{ usageAddressText }}</strong></div>
             </div>
-            <div class="info-list">
+            <div class="info-list info-list--billing">
               <div><span>用电类别</span><strong>{{ usageCategoryText }}</strong></div>
               <div><span>电压等级</span><strong>{{ voltageLevelText }}</strong></div>
               <div><span>供电服务单位</span><strong>{{ supplyOrgText }}</strong></div>
@@ -311,15 +311,15 @@ const accountNoText = computed(() => firstText([
   headerInfo.value.userNo,
   selectedDevices.value[0]?.meterNo
 ]) || '待录入')
-const usageCategoryText = computed(() => firstText([
+const usageCategoryText = computed(() => formatElectricityCategory(firstText([
+  applicableRules.value[0]?.electricityCategory,
   headerInfo.value.electricityCategory,
-  headerInfo.value.usageCategory,
-  applicableRules.value[0]?.electricityCategory
-]) || 'general_commercial')
-const voltageLevelText = computed(() => firstText([
-  headerInfo.value.voltageLevel,
-  applicableRules.value[0]?.voltageLevel
-]) || 'under_1kv')
+  headerInfo.value.usageCategory
+]) || 'general_commercial'))
+const voltageLevelText = computed(() => formatVoltageLevel(firstText([
+  applicableRules.value[0]?.voltageLevel,
+  headerInfo.value.voltageLevel
+]) || 'under_1kv'))
 const supplyOrgText = computed(() => firstText([
   headerInfo.value.supplyOrg,
   headerInfo.value.supplyCompany,
@@ -605,6 +605,23 @@ const numberOrNull = (value: unknown) => {
   return Number.isFinite(parsed) ? parsed : null
 }
 const firstText = (values: Array<unknown>) => values.map((value) => String(value || '').trim()).find(Boolean) || ''
+const formatElectricityCategory = (value: string) => {
+  const options: Record<string, string> = {
+    general_commercial: '一般工商业用电',
+    large_industrial: '大工业用电'
+  }
+  return options[value] || value
+}
+const formatVoltageLevel = (value: string) => {
+  const options: Record<string, string> = {
+    under_1kv: '不满1千伏',
+    '1_10kv': '1-10千伏',
+    '10kv': '10千伏',
+    '35kv': '35千伏',
+    '110kv': '110千伏'
+  }
+  return options[value] || value
+}
 const uniqueRowsById = <T extends { id?: number }>(rows: T[]) => Array.from(new Map(rows.map((row, index) => [row.id || index, row])).values())
 const deviceLabel = (device?: EnergyDeviceVO) => device ? `${device.deviceName || device.deviceNo || `电表 ${device.id}`} / ${device.meterNo || '-'}` : ''
 const round2 = (value: number) => Number((Number(value) || 0).toFixed(2))
@@ -780,26 +797,34 @@ onMounted(async () => {
 
   .bill-receipt-meta {
     display: grid;
-    grid-template-columns: 230px 1fr 1.2fr;
-    gap: 38px;
-    margin: 28px 0 26px;
+    grid-template-columns: 170px minmax(280px, 1.35fr) minmax(245px, .95fr);
+    gap: 22px;
+    align-items: start;
+    margin: 24px 0 24px;
     font-size: 13px;
   }
 
   .period-block {
     display: grid;
     align-content: start;
-    gap: 22px;
-    padding-left: 24px;
+    gap: 12px;
+    padding-left: 6px;
 
     .period-row {
-      display: flex;
-      align-items: center;
-      gap: 3px;
+      display: grid;
+      grid-template-columns: 64px minmax(0, 1fr);
+      align-items: baseline;
+      column-gap: 8px;
     }
 
     .period-row--end {
-      padding-left: 50px;
+      padding-left: 0;
+      grid-template-columns: 64px minmax(0, 1fr);
+
+      &::before {
+        color: #94a3b8;
+        content: '';
+      }
     }
 
     .period-separator,
@@ -811,18 +836,19 @@ onMounted(async () => {
       color: #00716d;
       font-size: 14px;
       font-weight: 700;
+      white-space: nowrap;
     }
   }
 
   .info-list {
     display: grid;
-    gap: 18px;
+    gap: 14px;
 
     div {
       display: grid;
-      grid-template-columns: 88px minmax(0, 1fr);
-      align-items: center;
-      gap: 8px;
+      grid-template-columns: 76px minmax(0, 1fr);
+      align-items: baseline;
+      gap: 10px;
     }
 
     span {
@@ -834,6 +860,22 @@ onMounted(async () => {
       color: #0f172a;
       font-weight: 700;
       word-break: break-word;
+    }
+  }
+
+  .info-list--customer {
+    div {
+      grid-template-columns: 70px minmax(0, 1fr);
+    }
+
+    strong {
+      line-height: 1.32;
+    }
+  }
+
+  .info-list--billing {
+    div {
+      grid-template-columns: 92px minmax(0, 1fr);
     }
   }
 
