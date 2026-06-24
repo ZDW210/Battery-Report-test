@@ -503,22 +503,33 @@ const exportPdf = async () => {
 }
 
 const createPagedPdfElement = async (source: HTMLElement) => {
-  const clone = source.cloneNode(true) as HTMLElement
-  clone.classList.add('pdf-export-mode')
-  Object.assign(clone.style, {
+  const wrapper = document.createElement('div')
+  wrapper.className = 'energy-data-report pdf-export-wrapper'
+  source.getAttributeNames()
+    .filter((name) => name.startsWith('data-v-'))
+    .forEach((name) => wrapper.setAttribute(name, source.getAttribute(name) || ''))
+  Object.assign(wrapper.style, {
     position: 'fixed',
     left: '-10000px',
     top: '0',
     width: '794px',
     margin: '0',
-    zIndex: '-1'
+    zIndex: '0',
+    background: '#ffffff'
   })
-  document.body.appendChild(clone)
+  const clone = source.cloneNode(true) as HTMLElement
+  clone.classList.add('pdf-export-mode')
+  Object.assign(clone.style, {
+    width: '794px',
+    margin: '0'
+  })
+  wrapper.appendChild(clone)
+  document.body.appendChild(wrapper)
   await nextTick()
   await waitForFonts()
   insertPdfPageSpacers(clone)
   await nextTick()
-  return clone
+  return wrapper
 }
 
 const waitForFonts = async () => {
