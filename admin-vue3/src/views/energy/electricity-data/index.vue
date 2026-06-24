@@ -4,7 +4,7 @@
       <div class="electricity-data__header">
         <div>
           <h2>电量数据</h2>
-          <p>面向客户查看本期充放电量、服务电费、基础服务费和节约成本，计算口径与数据报表保持一致。</p>
+          <p>面向客户查看本期充放电量、服务电费和基础服务费，计算口径与数据报表保持一致。</p>
         </div>
         <div class="electricity-data__actions">
           <el-button :loading="loading" @click="loadReport">
@@ -128,34 +128,7 @@
               本期电费 = MAX（约定保底用电量 × 本期平均单价，实际分时服务电费） + 基础服务费。
             </p>
           </section>
-
-          <section class="electricity-data__section">
-            <h3>用能成本对比</h3>
-            <div class="electricity-data__compare">
-              <div>
-                <span>若自购柴油发电成本</span>
-                <strong>{{ moneyText(metrics.dieselCost) }}</strong>
-              </div>
-              <div>
-                <span>若直接接入电网估算</span>
-                <strong>{{ moneyText(metrics.gridCost) }}</strong>
-              </div>
-              <div class="is-saving">
-                <span>使用移动储能节约成本</span>
-                <strong>{{ moneyText(metrics.savedCost) }}</strong>
-              </div>
-            </div>
-          </section>
         </div>
-
-        <section class="electricity-data__trend">
-          <div class="electricity-data__section-head">
-            <h3>按日费用趋势</h3>
-            <span>用于查看每日充电总成本与节约成本变化，月度合计以数据报表算法为准。</span>
-          </div>
-          <el-empty v-if="dailyRows.length === 0" description="暂无按日费用数据" />
-          <Echart v-else :options="dailyChartOptions" height="320px" />
-        </section>
       </div>
     </ContentWrap>
   </div>
@@ -168,14 +141,13 @@ import type { EnergyDeviceVO } from '@/api/energy/device'
 import { EnergyPricingRuleApi } from '@/api/energy/pricingRule'
 import type { EnergyPricingRuleVO } from '@/api/energy/pricingRule'
 import { EnergyReportApi } from '@/api/energy/report'
-import type { EnergyReportBillVO, EnergyReportDailyCostRowVO } from '@/api/energy/report'
+import type { EnergyReportBillVO } from '@/api/energy/report'
 import {
   buildProjectOptionsFromDevices,
   calculateCustomerBillMetrics,
   deviceDisplayLabel,
   kwhText,
   moneyText,
-  numberOrNull,
   numberText,
   rateText,
   selectDevicesByScope
@@ -193,7 +165,6 @@ const loading = ref(false)
 const devices = ref<EnergyDeviceVO[]>([])
 const pricingRules = ref<EnergyPricingRuleVO[]>([])
 const billReport = ref<EnergyReportBillVO>()
-const dailyRows = ref<EnergyReportDailyCostRowVO[]>([])
 
 const query = reactive<{
   scopeType: ElectricityScopeType
@@ -244,13 +215,6 @@ const topCards = computed(() => [
     hint: '分时服务电费、保底和基础服务费合计',
     icon: 'ep:money',
     color: '#16a34a'
-  },
-  {
-    label: '节约成本',
-    value: moneyText(metrics.value.savedCost),
-    hint: '按数据报表成本对比口径计算',
-    icon: 'ep:trophy',
-    color: '#f59e0b'
   }
 ])
 
@@ -288,34 +252,6 @@ const energyPieOptions = computed<EChartsOption>(() => ({
   ]
 }))
 
-const dailyChartOptions = computed<EChartsOption>(() => {
-  const sortedRows = [...dailyRows.value].sort((a, b) => dayjs(a.date).valueOf() - dayjs(b.date).valueOf())
-  return {
-    color: ['#2563eb', '#f59e0b'],
-    tooltip: { trigger: 'axis' },
-    legend: { top: 0 },
-    grid: { left: 52, right: 24, top: 48, bottom: 36 },
-    xAxis: { type: 'category', data: sortedRows.map((item) => dayjs(item.date).format('MM-DD')), boundaryGap: false },
-    yAxis: { type: 'value', name: '元' },
-    series: [
-      {
-        name: '充电总成本',
-        type: 'line',
-        smooth: true,
-        showSymbol: true,
-        data: sortedRows.map((item) => numberOrNull(item.chargeCost))
-      },
-      {
-        name: '节约成本',
-        type: 'line',
-        smooth: true,
-        showSymbol: true,
-        data: sortedRows.map((item) => numberOrNull(item.savedCost))
-      }
-    ]
-  }
-})
-
 const loadOptions = async () => {
   devices.value = await EnergyDeviceApi.getDeviceSimpleList()
   ensureScopeSelection()
@@ -332,17 +268,14 @@ const loadReport = async () => {
       deviceId: query.scopeType === 'device' ? query.deviceId : undefined,
       billMonth: query.billMonth
     }
-    const [rules, report, dailyReport] = await Promise.all([
+    const [rules, report] = await Promise.all([
       EnergyPricingRuleApi.getPricingRulePage({ pageNo: 1, pageSize: 5000 }),
-      EnergyReportApi.getBillReport(params),
-      EnergyReportApi.getDailyCostReport(params)
+      EnergyReportApi.getBillReport(params)
     ])
     pricingRules.value = rules?.list || []
     billReport.value = report
-    dailyRows.value = dailyReport?.rows || []
   } catch (error) {
     billReport.value = undefined
-    dailyRows.value = []
     message.error('电量数据加载失败，请检查电表、计费规则和报表接口')
   } finally {
     loading.value = false
@@ -493,8 +426,7 @@ onMounted(async () => {
     gap: 12px;
   }
 
-  &__section,
-  &__trend {
+  &__section {
     padding: 16px;
     background: #ffffff;
     border: 1px solid #e2e8f0;
@@ -508,25 +440,7 @@ onMounted(async () => {
     }
   }
 
-  &__section-head {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    margin-bottom: 12px;
-
-    h3 {
-      margin: 0;
-    }
-
-    span {
-      color: #64748b;
-      font-size: 13px;
-    }
-  }
-
-  &__list,
-  &__compare {
+  &__list {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 10px;
@@ -555,14 +469,6 @@ onMounted(async () => {
       line-height: 26px;
     }
 
-    .is-saving {
-      background: #ecfdf5;
-      border: 1px solid #bbf7d0;
-
-      strong {
-        color: #047857;
-      }
-    }
   }
 
   &__table {
@@ -606,9 +512,6 @@ onMounted(async () => {
     line-height: 1.6;
   }
 
-  &__trend {
-    margin-top: 12px;
-  }
 }
 
 @media (max-width: 1200px) {
@@ -623,8 +526,7 @@ onMounted(async () => {
 @media (max-width: 768px) {
   .electricity-data {
     &__header,
-    &__scope,
-    &__section-head {
+    &__scope {
       align-items: flex-start;
       flex-direction: column;
     }
@@ -632,7 +534,6 @@ onMounted(async () => {
     &__kpis,
     &__grid,
     &__list,
-    &__compare,
     &__total {
       grid-template-columns: 1fr;
     }
