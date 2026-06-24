@@ -38,6 +38,9 @@ export interface EnergyPricingRuleVO {
   batteryDepreciationCost?: number
   otherFixedFee?: number
   guaranteeEnergy?: number
+  dieselGenerationRate?: number
+  gridEstimateBaseRate?: number
+  gridEstimateExtraRate?: number
   effectiveStart?: string | Date
   effectiveEnd?: string | Date
   status?: number

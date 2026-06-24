@@ -407,8 +407,11 @@ const touFormulaText = computed(() => touRows.value
   .filter((row) => row.energy > 0)
   .map((row) => `${numberText(row.energy)}×${rateText(row.rate)}`)
   .join(' + ') || '0')
-const dieselCost = computed(() => round2(totalUsage.value * 2))
-const gridCost = computed(() => round2(totalUsage.value * Math.max(averageServiceRate.value + 0.18, 1.5)))
+const dieselGenerationRate = computed(() => avgRuleField(['dieselGenerationRate'], 2))
+const gridEstimateBaseRate = computed(() => avgRuleField(['gridEstimateBaseRate'], 1.5))
+const gridEstimateExtraRate = computed(() => avgRuleField(['gridEstimateExtraRate'], 0.18))
+const dieselCost = computed(() => round2(totalUsage.value * dieselGenerationRate.value))
+const gridCost = computed(() => round2(totalUsage.value * Math.max(averageServiceRate.value + gridEstimateExtraRate.value, gridEstimateBaseRate.value)))
 const savedCost = computed(() => round2(Math.max(0, Math.min(dieselCost.value, gridCost.value) - payableAmount.value)))
 
 const loadOptions = async () => {

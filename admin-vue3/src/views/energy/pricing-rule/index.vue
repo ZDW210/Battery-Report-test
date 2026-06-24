@@ -135,6 +135,9 @@
       <el-descriptions-item label="电池折旧成本">{{ formatCurrency(matchedRule.batteryDepreciationCost) }}</el-descriptions-item>
       <el-descriptions-item label="其他固定费用">{{ formatCurrency(matchedRule.otherFixedFee) }}</el-descriptions-item>
       <el-descriptions-item label="约定保底用电量">{{ formatNumber(matchedRule.guaranteeEnergy) }} kWh/月</el-descriptions-item>
+      <el-descriptions-item label="柴油发电估算单价">{{ formatRate(matchedRule.dieselGenerationRate) }}</el-descriptions-item>
+      <el-descriptions-item label="电网估算下限单价">{{ formatRate(matchedRule.gridEstimateBaseRate) }}</el-descriptions-item>
+      <el-descriptions-item label="电网估算加价">{{ formatRate(matchedRule.gridEstimateExtraRate) }}</el-descriptions-item>
       <el-descriptions-item label="生效开始">
         {{ formatDateText(matchedRule.effectiveStart) }}
       </el-descriptions-item>
@@ -220,6 +223,15 @@
       </el-table-column>
       <el-table-column align="right" label="约定保底电量" width="140">
         <template #default="{ row }">{{ formatNumber(row.guaranteeEnergy) }} kWh/月</template>
+      </el-table-column>
+      <el-table-column align="right" label="柴油估算单价" width="130">
+        <template #default="{ row }">{{ formatRate(row.dieselGenerationRate) }}</template>
+      </el-table-column>
+      <el-table-column align="right" label="电网估算下限" width="130">
+        <template #default="{ row }">{{ formatRate(row.gridEstimateBaseRate) }}</template>
+      </el-table-column>
+      <el-table-column align="right" label="电网估算加价" width="130">
+        <template #default="{ row }">{{ formatRate(row.gridEstimateExtraRate) }}</template>
       </el-table-column>
       <el-table-column align="center" label="生效开始" width="180" prop="effectiveStart">
         <template #default="{ row }">{{ formatDateText(row.effectiveStart) }}</template>

@@ -85,6 +85,7 @@ GET    /export
 - 保存请求体时间字段使用 `yyyy-MM-dd HH:mm:ss` 字符串，由 Service 层显式解析。
 - 保存请求体必须支持上海工商业电价表类字段：`electricityCategory`、`pricingMode`、`voltageLevel`、`agentPurchasePrice`、`lineLossPrice`、`transmissionDistributionPrice`、`systemOperationFee`、`governmentFundSurcharge`、`sharpPeakRate`、`peakRate`、`flatRate`、`valleyRate`、`deepValleyRate`、`capacityBillingMode`、`maxDemandPrice`、`transformerCapacityKva`、`transformerCapacityPrice`。
 - 保存请求体必须支持固定费用字段：`siteFee`、`maintenanceFee`、`communicationFee`、`platformServiceFee`、`batteryDepreciationCost`、`otherFixedFee`，并支持 `guaranteeEnergy` 约定保底用电量；这些字段由运营人员手动维护，用于数据报表基础服务费和保底核算。
+- 保存请求体必须支持用能成本对比字段：`dieselGenerationRate`、`gridEstimateBaseRate`、`gridEstimateExtraRate`；数据报表必须读取命中计费规则中的这些字段计算柴油发电估算成本、直接接入电网估算成本和节省金额，不得在前端写死估算单价。
 - 分页响应必须聚合返回客户名称、项目名称、设备名称和设备编码，避免前端再做多次明细查询。
 - 生效规则匹配接口使用 `GET /admin-api/energy/pricing-rule/match`，参数为 `deviceId` 和可选 `billingTime`。
 - 计费匹配优先级固定为设备级 > 项目级 > 客户级；只允许返回启用且覆盖计费时间的规则，同一范围多条命中时取最新生效、最新编号的一条。

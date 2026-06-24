@@ -59,6 +59,9 @@ const PRICING_RULE_FIELDS = [
   'batteryDepreciationCost',
   'otherFixedFee',
   'guaranteeEnergy',
+  'dieselGenerationRate',
+  'gridEstimateBaseRate',
+  'gridEstimateExtraRate',
   'effectiveStart',
   'effectiveEnd',
   'status',
@@ -91,7 +94,10 @@ const PRICING_RULE_FEE_COLUMNS: Record<string, string> = {
   platform_service_fee: 'REAL NOT NULL DEFAULT 0',
   battery_depreciation_cost: 'REAL NOT NULL DEFAULT 0',
   other_fixed_fee: 'REAL NOT NULL DEFAULT 0',
-  guarantee_energy: 'REAL NOT NULL DEFAULT 2500'
+  guarantee_energy: 'REAL NOT NULL DEFAULT 2500',
+  diesel_generation_rate: 'REAL NOT NULL DEFAULT 2',
+  grid_estimate_base_rate: 'REAL NOT NULL DEFAULT 1.5',
+  grid_estimate_extra_rate: 'REAL NOT NULL DEFAULT 0.18'
 }
 const DEVICE_FIELDS = [
   'deviceNo', 'deviceName', 'deviceType', 'runMode', 'gatewaySn', 'meterSn', 'meterNo', 'customerId', 'projectId',
