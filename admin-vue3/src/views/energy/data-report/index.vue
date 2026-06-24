@@ -52,46 +52,75 @@
       <el-empty v-if="selectedDevices.length === 0" description="当前范围下暂无电表" />
       <div v-else v-loading="loading" class="report-scroll">
         <section ref="billSheetRef" class="data-bill-sheet">
-          <header class="bill-head">
-            <div class="brand">
+          <header class="bill-head bill-head--receipt">
+            <div class="bill-brand-block">
               <div class="brand-mark">ES</div>
               <div>
-                <strong>移动储能运营管理平台</strong>
-                <span>ENERGY STORAGE | 客户用电账单</span>
+                <strong>移动储能</strong>
+                <span>ENERGY STORAGE</span>
               </div>
             </div>
-            <div class="bill-title">
-              <h1>客户电费账单</h1>
-              <span>账单编号：{{ billNo }}</span>
+            <div class="bill-title-block">
+              <div class="platform-title">移动储能运营管理平台</div>
+              <div class="title-line"></div>
+              <h1>电费账单</h1>
+            </div>
+            <div class="bill-contact-block">
+              <div>
+                <span>客户服务</span>
+                <strong>{{ customerServiceText }}</strong>
+              </div>
+              <div>
+                <span>监督电话</span>
+                <strong>{{ supervisePhoneText }}</strong>
+              </div>
             </div>
           </header>
 
-          <div class="bill-meta">
+          <section class="bill-receipt-meta">
+            <div class="period-block">
+              <div class="period-row">
+                <span>账单周期</span>
+                <strong>{{ billStartDate }}</strong>
+              </div>
+              <div class="period-separator">至</div>
+              <div class="period-row period-row--end">
+                <strong>{{ billEndDate }}</strong>
+              </div>
+            </div>
+            <div class="info-list">
+              <div><span>户号</span><strong>{{ accountNoText }}</strong></div>
+              <div><span>户名</span><strong>{{ customerNameText }}</strong></div>
+              <div><span>用电地址</span><strong>{{ usageAddressText }}</strong></div>
+            </div>
+            <div class="info-list">
+              <div><span>用电类别</span><strong>{{ usageCategoryText }}</strong></div>
+              <div><span>电压等级</span><strong>{{ voltageLevelText }}</strong></div>
+              <div><span>供电服务单位</span><strong>{{ supplyOrgText }}</strong></div>
+              <div><span>市场化属性</span><strong>{{ marketAttributeText }}</strong></div>
+            </div>
+          </section>
+
+          <section class="bill-print-row">
+            <span>打印人：{{ printPersonText }}</span>
+            <span>账单打印日期：{{ printDateText }}</span>
+            <span>报表编号：{{ billNo }}</span>
+          </section>
+
+          <section class="bill-summary-strip">
             <div>
-              <span>客户名称</span>
-              <strong>{{ headerInfo.customerName }}</strong>
+              <span>账单周期：</span><strong>{{ billRangeText }}</strong>
             </div>
             <div>
-              <span>账单周期</span>
-              <strong>{{ billRangeText }}</strong>
+              <span>统计范围：</span><strong>{{ servicePointText }}</strong>
             </div>
             <div>
-              <span>用电地址</span>
-              <strong>{{ headerInfo.usageAddress }}</strong>
+              <span>电表数量：</span><strong>{{ selectedDevices.length }}</strong>
             </div>
             <div>
-              <span>出账日期</span>
-              <strong>{{ headerInfo.printDate }}</strong>
+              <span>生成日期：</span><strong>{{ generatedAtText }}</strong>
             </div>
-            <div>
-              <span>服务点位</span>
-              <strong>{{ servicePointText }}</strong>
-            </div>
-            <div>
-              <span>缴费截止</span>
-              <strong class="due-date">{{ paymentDueDate }}</strong>
-            </div>
-          </div>
+          </section>
 
           <div class="metric-grid">
             <div class="metric-card is-soft">
@@ -283,6 +312,49 @@ const paymentDueDate = computed(() => firstText([
   headerInfo.value.paymentDeadline,
   dayjs(query.billMonth || dayjs().format('YYYY-MM')).add(1, 'month').date(12).format('YYYY-MM-DD')
 ]))
+const billStartDate = computed(() => billReport.value?.billRange?.start?.slice(0, 10) || dayjs(query.billMonth).startOf('month').format('YYYY-MM-DD'))
+const billEndDate = computed(() => billReport.value?.billRange?.end?.slice(0, 10) || dayjs(query.billMonth).endOf('month').format('YYYY-MM-DD'))
+const customerNameText = computed(() => firstText([
+  headerInfo.value.customerName,
+  selectedDevices.value[0]?.customerName,
+  query.scopeType === 'all' ? '全部客户' : ''
+]) || '待录入')
+const usageAddressText = computed(() => firstText([
+  headerInfo.value.usageAddress,
+  headerInfo.value.address,
+  query.scopeType === 'project' ? servicePointText.value : '',
+  selectedDevices.value[0]?.projectName
+]) || '待录入')
+const accountNoText = computed(() => firstText([
+  headerInfo.value.accountNo,
+  headerInfo.value.accountNumber,
+  headerInfo.value.userNo,
+  selectedDevices.value[0]?.meterNo
+]) || '待录入')
+const usageCategoryText = computed(() => firstText([
+  headerInfo.value.electricityCategory,
+  headerInfo.value.usageCategory,
+  applicableRules.value[0]?.electricityCategory
+]) || 'general_commercial')
+const voltageLevelText = computed(() => firstText([
+  headerInfo.value.voltageLevel,
+  applicableRules.value[0]?.voltageLevel
+]) || 'under_1kv')
+const supplyOrgText = computed(() => firstText([
+  headerInfo.value.supplyOrg,
+  headerInfo.value.supplyCompany,
+  (applicableRules.value[0] as Record<string, unknown> | undefined)?.supplyOrg
+]) || '待录入')
+const marketAttributeText = computed(() => firstText([
+  headerInfo.value.marketAttribute,
+  headerInfo.value.marketType,
+  query.scopeType === 'all' ? '全部电表汇总' : servicePointText.value
+]))
+const customerServiceText = computed(() => firstText([headerInfo.value.customerService, headerInfo.value.servicePhone]) || '待录入')
+const supervisePhoneText = computed(() => firstText([headerInfo.value.supervisePhone, headerInfo.value.hotline]) || '待录入')
+const printPersonText = computed(() => firstText([headerInfo.value.printPerson, headerInfo.value.operator]) || 'system')
+const printDateText = computed(() => firstText([headerInfo.value.printDate]) || dayjs().format('YYYY-MM-DD'))
+const generatedAtText = computed(() => firstText([headerInfo.value.generatedAt, headerInfo.value.printTime]) || dayjs().format('YYYY-MM-DD HH:mm:ss'))
 
 const dischargeTou = computed(() => toLocalTou(billReport.value?.analysis?.dischargeTou))
 const totalUsage = computed(() => round2(billReport.value?.summary?.totalDischargeEnergy || sumTou(dischargeTou.value)))
@@ -525,84 +597,198 @@ onMounted(async () => {
     border-radius: 6px;
   }
 
-  .bill-head {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    padding-bottom: 16px;
-    border-bottom: 3px solid #1fb6aa;
+  .bill-head--receipt {
+    display: grid;
+    grid-template-columns: 190px 1fr 244px;
+    gap: 26px;
+    align-items: start;
+    padding: 8px 0 24px;
   }
 
-  .brand {
+  .bill-brand-block {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 12px;
 
     .brand-mark {
       display: grid;
       place-items: center;
-      width: 42px;
-      height: 42px;
-      border-radius: 8px;
-      background: #0faaa0;
-      color: #fff;
-      font-size: 18px;
-      font-weight: 800;
+      width: 58px;
+      height: 58px;
+      border: 3px solid #0f766e;
+      border-radius: 50%;
+      color: #0f766e;
+      font-size: 19px;
+      font-weight: 900;
+      line-height: 1;
+    }
+
+    strong,
+    span {
+      display: block;
+      color: #00716d;
+      letter-spacing: 0;
+      line-height: 1.15;
     }
 
     strong {
-      display: block;
-      color: #0f766e;
-      font-size: 18px;
-      font-weight: 800;
+      font-size: 22px;
+      font-weight: 900;
     }
 
     span {
-      color: #64748b;
-      font-size: 11px;
-      letter-spacing: .6px;
+      margin-top: 4px;
+      font-size: 12px;
+      font-weight: 700;
     }
   }
 
-  .bill-title {
-    text-align: right;
+  .bill-title-block {
+    padding-top: 6px;
+    text-align: center;
+
+    .platform-title {
+      color: #00716d;
+      font-size: 19px;
+      font-weight: 700;
+      letter-spacing: 9px;
+      line-height: 1.3;
+    }
+
+    .title-line {
+      width: 360px;
+      max-width: 100%;
+      height: 3px;
+      margin: 8px auto 10px;
+      background: #334155;
+    }
 
     h1 {
-      margin: 0 0 8px;
-      color: #0f766e;
-      font-size: 22px;
-      letter-spacing: 4px;
-    }
-
-    span {
-      color: #64748b;
-      font-size: 12px;
+      margin: 0;
+      color: #00716d;
+      font-size: 25px;
+      font-weight: 900;
+      letter-spacing: 9px;
+      line-height: 1.1;
     }
   }
 
-  .bill-meta {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 9px 70px;
-    margin: 22px 0;
+  .bill-contact-block {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
 
     div {
-      display: flex;
-      justify-content: space-between;
-      gap: 12px;
-      min-height: 22px;
+      min-width: 84px;
+      padding: 8px 10px;
+      border: 1px solid #7ee8df;
+      border-radius: 18px;
+      text-align: center;
     }
 
+    span,
+    strong {
+      display: block;
+      color: #00716d;
+      line-height: 1.2;
+    }
+
+    span {
+      font-size: 11px;
+    }
+
+    strong {
+      margin-top: 3px;
+      font-size: 14px;
+      font-weight: 900;
+    }
+  }
+
+  .bill-receipt-meta {
+    display: grid;
+    grid-template-columns: 230px 1fr 1.2fr;
+    gap: 38px;
+    margin: 28px 0 26px;
+    font-size: 13px;
+  }
+
+  .period-block {
+    display: grid;
+    align-content: start;
+    gap: 22px;
+    padding-left: 24px;
+
+    .period-row {
+      display: flex;
+      align-items: center;
+      gap: 3px;
+    }
+
+    .period-row--end {
+      padding-left: 50px;
+    }
+
+    .period-separator,
     span {
       color: #94a3b8;
     }
 
     strong {
-      color: #0f172a;
+      color: #00716d;
+      font-size: 14px;
+      font-weight: 700;
+    }
+  }
+
+  .info-list {
+    display: grid;
+    gap: 18px;
+
+    div {
+      display: grid;
+      grid-template-columns: 88px minmax(0, 1fr);
+      align-items: center;
+      gap: 8px;
     }
 
-    .due-date {
-      color: #ea580c;
+    span {
+      color: #94a3b8;
+      text-align: right;
+    }
+
+    strong {
+      color: #0f172a;
+      font-weight: 700;
+      word-break: break-word;
+    }
+  }
+
+  .bill-print-row {
+    display: flex;
+    justify-content: center;
+    gap: 44px;
+    margin: 6px 0 22px;
+    color: #64748b;
+    font-size: 13px;
+    letter-spacing: .5px;
+  }
+
+  .bill-summary-strip {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px 80px;
+    padding: 12px 0 10px;
+    border-top: 3px solid #0f766e;
+    border-bottom: 1px solid #cbd5e1;
+    color: #0f172a;
+    font-size: 13px;
+
+    div {
+      min-width: 0;
+    }
+
+    strong {
+      font-weight: 700;
     }
   }
 
