@@ -270,45 +270,6 @@
             <div class="fee-config-tip">单位：kWh/月，用于数据报表基础服务费保底核算</div>
           </el-form-item>
         </el-col>
-        <el-col :span="24">
-          <el-divider content-position="left">用能成本对比参数</el-divider>
-        </el-col>
-        <el-col :span="8">
-          <el-form-item label="柴油发电估算单价" prop="dieselGenerationRate">
-            <el-input-number
-              v-model="formData.dieselGenerationRate"
-              :min="0"
-              :precision="4"
-              class="!w-1/1"
-              controls-position="right"
-            />
-            <div class="fee-config-tip">单位：元/kWh</div>
-          </el-form-item>
-        </el-col>
-        <el-col :span="8">
-          <el-form-item label="电网估算下限单价" prop="gridEstimateBaseRate">
-            <el-input-number
-              v-model="formData.gridEstimateBaseRate"
-              :min="0"
-              :precision="4"
-              class="!w-1/1"
-              controls-position="right"
-            />
-            <div class="fee-config-tip">单位：元/kWh</div>
-          </el-form-item>
-        </el-col>
-        <el-col :span="8">
-          <el-form-item label="电网估算加价" prop="gridEstimateExtraRate">
-            <el-input-number
-              v-model="formData.gridEstimateExtraRate"
-              :min="0"
-              :precision="4"
-              class="!w-1/1"
-              controls-position="right"
-            />
-            <div class="fee-config-tip">单位：元/kWh，在本期平均单价基础上增加</div>
-          </el-form-item>
-        </el-col>
         <el-col :span="12">
           <el-form-item label="生效开始" prop="effectiveStart">
             <el-date-picker
@@ -530,9 +491,6 @@ const formData = ref<EnergyPricingRuleVO>({
   batteryDepreciationCost: 0,
   otherFixedFee: 0,
   guaranteeEnergy: 2500,
-  dieselGenerationRate: 2,
-  gridEstimateBaseRate: 1.5,
-  gridEstimateExtraRate: 0.18,
   effectiveStart: undefined,
   effectiveEnd: undefined,
   status: 0,
@@ -585,11 +543,11 @@ const submitForm = async () => {
   formLoading.value = true
   try {
     syncLegacyFieldsFromFeeConfig()
-    const data = normalizeScope({
+    const data = omitCostComparisonFields(normalizeScope({
       ...formData.value,
       touPeriods: JSON.stringify(normalizeTouPeriods(touPeriodRows.value)),
       feeConfigJson: JSON.stringify(normalizeFeeConfigRows(feeConfigRows.value))
-    })
+    }))
     if (formType.value === 'create') {
       await EnergyPricingRuleApi.createPricingRule(data)
       message.success(t('common.createSuccess'))
@@ -636,6 +594,14 @@ const normalizeScope = (data: EnergyPricingRuleVO): EnergyPricingRuleVO => {
   }
 }
 
+const omitCostComparisonFields = (data: EnergyPricingRuleVO): EnergyPricingRuleVO => {
+  const next = { ...data }
+  delete next.dieselGenerationRate
+  delete next.gridEstimateBaseRate
+  delete next.gridEstimateExtraRate
+  return next
+}
+
 const resetForm = () => {
   scopeType.value = 'customer'
   formData.value = {
@@ -672,9 +638,6 @@ const resetForm = () => {
     batteryDepreciationCost: 0,
     otherFixedFee: 0,
     guaranteeEnergy: 2500,
-    dieselGenerationRate: 2,
-    gridEstimateBaseRate: 1.5,
-    gridEstimateExtraRate: 0.18,
     effectiveStart: undefined,
     effectiveEnd: undefined,
     status: 0,
