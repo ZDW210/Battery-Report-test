@@ -183,20 +183,28 @@ const dataPanelSummary = computed(() => {
   const validChargeCosts = dailyCostRows.value
     .map((item) => normalizeNumber(item.chargeCost))
     .filter((value): value is number => value !== null)
-  const validSavedCosts = dailyCostRows.value
-    .map((item) => normalizeNumber(item.savedCost))
-    .filter((value): value is number => value !== null)
   const latest = [...dailyCostRows.value].reverse().find((item) => normalizeNumber(item.chargeCost) !== null || normalizeNumber(item.savedCost) !== null)
   return [
     { label: '统计天数', value: dailyCostRows.value.length },
     { label: '充电总成本', value: moneyText(billMetrics.value.chargeCost || sumNumbers(validChargeCosts)) },
-    { label: '节约成本', value: moneyText(billMetrics.value.savedCost || sumNumbers(validSavedCosts)) },
+    { label: '节约成本', value: moneyText(billMetrics.value.savedCost) },
     { label: '最近日期', value: latest?.date || '-' }
   ]
 })
 
+const sortedDailyCostRows = computed(() => {
+  return [...dailyCostRows.value].sort((a, b) => dayjs(a.date).valueOf() - dayjs(b.date).valueOf())
+})
+
+const dailySavedCostSeries = computed(() => {
+  const rows = sortedDailyCostRows.value
+  const totalSavedCost = Math.max(0, normalizeNumber(billMetrics.value.savedCost) ?? 0)
+  const weights = rows.map((item) => normalizeNumber(item.totalDischargeEnergy) ?? 0)
+  return distributeAmount(totalSavedCost, weights)
+})
+
 const dataPanelChartOptions = computed<EChartsOption>(() => {
-  const sortedRows = [...dailyCostRows.value].sort((a, b) => dayjs(a.date).valueOf() - dayjs(b.date).valueOf())
+  const sortedRows = sortedDailyCostRows.value
 
   return buildLineOptions({
     xData: sortedRows.map((item) => dayjs(item.date).format('MM-DD')),
@@ -207,7 +215,7 @@ const dataPanelChartOptions = computed<EChartsOption>(() => {
       },
       {
         name: '节约成本',
-        data: sortedRows.map((item) => normalizeNumber(item.savedCost))
+        data: dailySavedCostSeries.value
       }
     ],
     yName: '元'
@@ -287,6 +295,30 @@ const normalizeNumber = (value: unknown): number | null => {
 
 const sumNumbers = (values: number[]) => {
   return Number(values.reduce((sum, value) => sum + value, 0).toFixed(2))
+}
+
+const distributeAmount = (total: number, weights: number[]) => {
+  if (!weights.length) return []
+  if (total <= 0) return weights.map(() => 0)
+
+  const totalWeight = weights.reduce((sum, value) => sum + Math.max(0, value), 0)
+  if (totalWeight <= 0) {
+    const average = Number((total / weights.length).toFixed(2))
+    let accumulated = 0
+    return weights.map((_, index) => {
+      if (index === weights.length - 1) return Number((total - accumulated).toFixed(2))
+      accumulated += average
+      return average
+    })
+  }
+
+  let accumulated = 0
+  return weights.map((value, index) => {
+    if (index === weights.length - 1) return Number((total - accumulated).toFixed(2))
+    const current = Number((total * Math.max(0, value) / totalWeight).toFixed(2))
+    accumulated += current
+    return current
+  })
 }
 
 const formatKwh = (value: number | null) => {
