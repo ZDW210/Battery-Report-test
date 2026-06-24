@@ -451,14 +451,16 @@ const ensureScopeSelection = () => {
 const exportPdf = async () => {
   if (!billSheetRef.value) return
   exporting.value = true
+  let pdfElement: HTMLElement | null = null
   try {
-    const canvas = await html2canvas(billSheetRef.value, {
+    pdfElement = await createPagedPdfElement(billSheetRef.value)
+    const canvas = await html2canvas(pdfElement, {
       backgroundColor: '#ffffff',
       scale: Math.min(2, Math.max(1.5, window.devicePixelRatio || 1)),
       useCORS: true,
       width: 794,
       windowWidth: 794,
-      height: billSheetRef.value.scrollHeight
+      height: pdfElement.scrollHeight
     })
     const pdf = new jsPDF({ orientation: 'p', unit: 'pt', format: 'a4', compress: true })
     const pageWidth = pdf.internal.pageSize.getWidth()
@@ -495,7 +497,57 @@ const exportPdf = async () => {
     console.error(error)
     message.error('PDF生成失败，请稍后重试')
   } finally {
+    pdfElement?.remove()
     exporting.value = false
+  }
+}
+
+const createPagedPdfElement = async (source: HTMLElement) => {
+  const clone = source.cloneNode(true) as HTMLElement
+  clone.classList.add('pdf-export-mode')
+  Object.assign(clone.style, {
+    position: 'fixed',
+    left: '-10000px',
+    top: '0',
+    width: '794px',
+    margin: '0',
+    zIndex: '-1'
+  })
+  document.body.appendChild(clone)
+  await nextTick()
+  await waitForFonts()
+  insertPdfPageSpacers(clone)
+  await nextTick()
+  return clone
+}
+
+const waitForFonts = async () => {
+  const fonts = (document as Document & { fonts?: { ready?: Promise<FontFaceSet> } }).fonts
+  await fonts?.ready?.catch(() => undefined)
+}
+
+const insertPdfPageSpacers = (root: HTMLElement) => {
+  const pageHeight = 1123
+  const topSafe = 28
+  const bottomSafe = 34
+  let pageStart = 0
+  const blocks = Array.from(root.children).filter((child) => !child.classList.contains('pdf-page-spacer')) as HTMLElement[]
+
+  for (const block of blocks) {
+    const blockHeight = block.offsetHeight
+    const blockTop = block.offsetTop
+    const pageBottom = pageStart + pageHeight - bottomSafe
+    if (blockTop > pageStart + topSafe && blockTop + blockHeight > pageBottom && blockHeight < pageHeight - topSafe - bottomSafe) {
+      const spacer = document.createElement('div')
+      spacer.className = 'pdf-page-spacer'
+      spacer.style.height = `${Math.max(0, pageStart + pageHeight - blockTop)}px`
+      block.parentElement?.insertBefore(spacer, block)
+      pageStart += pageHeight
+    }
+
+    while (block.offsetTop + block.offsetHeight > pageStart + pageHeight) {
+      pageStart += pageHeight
+    }
   }
 }
 
@@ -599,8 +651,8 @@ onMounted(async () => {
 
   .bill-head--receipt {
     display: grid;
-    grid-template-columns: 190px 1fr 244px;
-    gap: 26px;
+    grid-template-columns: 170px minmax(0, 1fr) 178px;
+    gap: 16px;
     align-items: start;
     padding: 8px 0 24px;
   }
@@ -613,8 +665,8 @@ onMounted(async () => {
     .brand-mark {
       display: grid;
       place-items: center;
-      width: 58px;
-      height: 58px;
+      width: 52px;
+      height: 52px;
       border: 3px solid #0f766e;
       border-radius: 50%;
       color: #0f766e;
@@ -632,7 +684,7 @@ onMounted(async () => {
     }
 
     strong {
-      font-size: 22px;
+      font-size: 19px;
       font-weight: 900;
     }
 
@@ -649,14 +701,14 @@ onMounted(async () => {
 
     .platform-title {
       color: #00716d;
-      font-size: 19px;
+      font-size: 18px;
       font-weight: 700;
-      letter-spacing: 9px;
+      letter-spacing: 7px;
       line-height: 1.3;
     }
 
     .title-line {
-      width: 360px;
+      width: 320px;
       max-width: 100%;
       height: 3px;
       margin: 8px auto 10px;
@@ -668,7 +720,7 @@ onMounted(async () => {
       color: #00716d;
       font-size: 25px;
       font-weight: 900;
-      letter-spacing: 9px;
+      letter-spacing: 8px;
       line-height: 1.1;
     }
   }
@@ -679,11 +731,13 @@ onMounted(async () => {
     gap: 10px;
 
     div {
-      min-width: 84px;
-      padding: 8px 10px;
+      width: 78px;
+      min-width: 0;
+      padding: 8px 6px;
       border: 1px solid #7ee8df;
       border-radius: 18px;
       text-align: center;
+      box-sizing: border-box;
     }
 
     span,
@@ -699,7 +753,7 @@ onMounted(async () => {
 
     strong {
       margin-top: 3px;
-      font-size: 14px;
+      font-size: 13px;
       font-weight: 900;
     }
   }
@@ -831,6 +885,8 @@ onMounted(async () => {
 
   .bill-section {
     margin-top: 20px;
+    break-inside: avoid;
+    page-break-inside: avoid;
 
     h3 {
       margin: 0 0 12px;
@@ -990,6 +1046,23 @@ onMounted(async () => {
     color: #64748b;
     font-size: 12px;
     line-height: 1.7;
+  }
+
+  .pdf-export-mode {
+    min-height: 0;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .pdf-export-mode > * {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .pdf-page-spacer {
+    display: block;
+    flex: 0 0 auto;
   }
 
   @media (max-width: 900px) {
